@@ -64,7 +64,7 @@ export function elideMessages(messages: Message[], targetTokens: number): Elisio
   });
 
   // Phase 2: drop reasoning blocks, oldest first.
-  current = runPass(current, targetTokens, (block) => block.type === "reasoning", (block) => {
+  current = runPass(current, targetTokens, (block) => block.type === "reasoning", (_block) => {
     dropped += 1;
     return null;
   });
