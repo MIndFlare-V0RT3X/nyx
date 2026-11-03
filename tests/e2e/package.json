@@ -1,0 +1,28 @@
+{
+  "name": "@nyx/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nyx/protocol": "workspace:*",
+    "@nyx/config": "workspace:*",
+    "@nyx/kernel": "workspace:*",
+    "@nyx/session": "workspace:*",
+    "@nyx/model": "workspace:*",
+    "@nyx/scope": "workspace:*",
+    "@nyx/policy": "workspace:*",
+    "@nyx/sandbox": "workspace:*",
+    "@nyx/memory": "workspace:*",
+    "@nyx/persona": "workspace:*",
+    "@nyx/tools": "workspace:*",
+    "@nyx/agent": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.8",
+    "@types/node": "^22.10.2"
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "name": "@nyx/tools",
+  "version": "0.1.0",
+  "description": "NYX — tools package",
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@nyx/protocol": "workspace:*",
+    "@nyx/policy": "workspace:*",
+    "@nyx/scope": "workspace:*",
+    "@nyx/sandbox": "workspace:*",
+    "nanoid": "^5.0.9",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.8",
+    "@types/node": "^22.10.2"
+  }
+}

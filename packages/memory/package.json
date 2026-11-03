@@ -1,0 +1,34 @@
+{
+  "name": "@nyx/memory",
+  "version": "0.1.0",
+  "description": "NYX — memory package",
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@nyx/protocol": "workspace:*",
+    "better-sqlite3": "^11.8.1",
+    "nanoid": "^5.0.9",
+    "yaml": "^2.6.1"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.8",
+    "@types/node": "^22.10.2",
+    "@types/better-sqlite3": "^7.6.12"
+  }
+}
