@@ -13,7 +13,7 @@ import type {
   PolicyVerdict,
   RiskTier,
 } from "@nyx/protocol";
-import type Database from "better-sqlite3";
+import Database from "better-sqlite3";
 
 export interface ApprovalEngineOptions {
   now?: () => number;
@@ -259,5 +259,24 @@ export class ApprovalEngineImpl implements ApprovalEngine {
 
   private getRow(id: string): ApprovalRow | undefined {
     return this.db.prepare("SELECT * FROM approvals WHERE id = ?").get(id) as ApprovalRow | undefined;
+  }
+}
+
+/**
+ * Opens a dedicated SQLite file (or ":memory:") for the approval engine and
+ * audit chain. Surfaces use this so no package outside @nyx/policy needs a
+ * better-sqlite3 dependency just to construct the engine.
+ */
+export function openApprovalEngine(
+  dbPath: string,
+  opts: ApprovalEngineOptions = {},
+): { engine: ApprovalEngineImpl; close(): void } {
+  const db = new Database(dbPath);
+  try {
+    const engine = new ApprovalEngineImpl(db, opts);
+    return { engine, close: () => db.close() };
+  } catch (err) {
+    db.close();
+    throw err;
   }
 }

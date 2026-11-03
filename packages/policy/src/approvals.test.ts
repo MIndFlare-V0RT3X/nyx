@@ -306,4 +306,25 @@ describe("ApprovalEngineImpl", () => {
     expect(resolved[0]!.decision).toBe("deny");
     expect(resolved[0]!.decided_by).toBe("system:expiry");
   });
+
+  it("openApprovalEngine opens a file-backed engine and close() shuts it down", async () => {
+    const dir = await import("node:fs/promises").then((fsp) =>
+      fsp.mkdtemp((await import("node:os")).tmpdir() + "/nyx-approval-"),
+    );
+    const path = dir + "/policy.db";
+    const { engine, close } = openApprovalEngine(path, { now: () => 9000, ttl_ms: 60_000, poll_ms: 2 });
+    const v = verdict();
+    const p = engine.request(v, CTX);
+    await until(async () => (await engine.pending("s1")).length === 1);
+    const [rec] = await engine.pending("s1");
+    await engine.resolve(rec!.id, "deny", "owner");
+    await p;
+    close();
+    // Reopening the same file sees the resolved record (durability).
+    const reopened = openApprovalEngine(path);
+    const stored = await reopened.engine.get(rec!.id);
+    expect(stored?.decision).toBe("deny");
+    reopened.close();
+    await import("node:fs/promises").then((fsp) => fsp.rm(dir, { recursive: true, force: true }));
+  });
 });
