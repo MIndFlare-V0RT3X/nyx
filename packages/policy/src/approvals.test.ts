@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { afterAll, describe, expect, it } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
 import { ApprovalEngineImpl } from "./approvals.js";
 import { verifyAuditChain } from "./audit.js";
@@ -308,9 +310,7 @@ describe("ApprovalEngineImpl", () => {
   });
 
   it("openApprovalEngine opens a file-backed engine and close() shuts it down", async () => {
-    const dir = await import("node:fs/promises").then((fsp) =>
-      fsp.mkdtemp((await import("node:os")).tmpdir() + "/nyx-approval-"),
-    );
+    const dir = await mkdtemp(tmpdir() + "/nyx-approval-");
     const path = dir + "/policy.db";
     const { engine, close } = openApprovalEngine(path, { now: () => 9000, ttl_ms: 60_000, poll_ms: 2 });
     const v = verdict();
@@ -325,6 +325,6 @@ describe("ApprovalEngineImpl", () => {
     const stored = await reopened.engine.get(rec!.id);
     expect(stored?.decision).toBe("deny");
     reopened.close();
-    await import("node:fs/promises").then((fsp) => fsp.rm(dir, { recursive: true, force: true }));
+    await rm(dir, { recursive: true, force: true });
   });
 });
