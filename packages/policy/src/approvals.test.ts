@@ -3,7 +3,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
-import { ApprovalEngineImpl } from "./approvals.js";
+import { ApprovalEngineImpl, openApprovalEngine } from "./approvals.js";
 import { verifyAuditChain } from "./audit.js";
 import type { ApprovalRecord, PolicyVerdict } from "@nyx/protocol";
 
