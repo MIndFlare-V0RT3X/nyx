@@ -1,0 +1,80 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Fully-explicit fixture: every section spelled out with static values (no env
+# refs, no ~ paths) so the parsed, frozen result deep-equals a fixed literal
+# (see loader.test.ts).
+server:
+  host: "127.0.0.1"
+  port: 9000
+  auth:
+    owner_token: full-fixture-owner-token
+    tokens:
+      alice: full-fixture-alice-token
+providers:
+  mock:
+    kind: mock
+  local:
+    kind: openai
+    base_url: "http://127.0.0.1:8080/v1"
+    models:
+      - id: glm-4.9
+        context_window: 128000
+        max_output: 8192
+        supports: [tools, streaming_tools]
+  cloud:
+    kind: anthropic
+    base_url: "https://proxy.example.test/anthropic"
+    api_key_env: NYX_FULL_FIXTURE_KEY
+    models:
+      - id: claude-sonnet-4-5
+        context_window: 200000
+        max_output: 64000
+        supports: [tools, vision, reasoning, json_schema]
+router:
+  default:
+    chain:
+      - provider: local
+        model: glm-4.9
+        reasoning_effort: high
+        max_tokens: 8192
+      - provider: mock
+        model: test-model
+        tool_choice: none
+    fallback_on: [rate_limit, timeout]
+  rules:
+    - match:
+        task: compaction
+      chain:
+        - provider: local
+          model: glm-4.9
+          reasoning_effort: low
+          max_tokens: 4096
+  budgets:
+    per_turn_tokens: 100000
+    per_session_tokens: 2000000
+    on_exceed: trim
+policy:
+  rules:
+    - id: allow-r0
+      match:
+        risk: R0
+      decision: allow
+      reason: read-only tools
+    - id: ask-r4
+      match:
+        capability: [credential.use, host.access]
+        owner_only: true
+      decision: ask
+sandbox:
+  provider: docker
+  image: "debian:12"
+  workdir_root: "/var/lib/nyx/sandboxes"
+memory:
+  root: "/var/lib/nyx/memory"
+  episode_expiry_days: 14
+persona:
+  default_id: main
+  root: "./personas"
+logging:
+  level: debug
+  redact: [api_key, authorization]
+owner_id: owner

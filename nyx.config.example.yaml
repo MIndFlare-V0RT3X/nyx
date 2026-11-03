@@ -1,0 +1,216 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# =============================================================================
+# Nyx — example configuration
+# =============================================================================
+# Copy this file to `nyx.config.yaml` and edit it. The example is deliberately
+# complete: every section is shown with its defaults spelled out, so you can
+# delete what you don't need and the documented default applies.
+#
+# Secrets never live in this file. Two mechanisms keep them out:
+#   1. `api_key_env` holds the *name* of an environment variable (the model
+#      package reads it at call time), e.g. NYX_ZAI_API_KEY.
+#   2. `${VAR}` in any string value is interpolated from the environment at
+#      load time. A missing variable is a hard error naming the field.
+# See .env.example for the matching environment template.
+#
+# Unknown keys are rejected everywhere (typos must not silently pass), and the
+# loaded config is validated and deep-frozen before the kernel ever sees it.
+
+# ─── server ─────────────────────────────────────────────────────────────────
+# The local control server. Omit this section entirely for a headless setup
+# (CLI/tools only). When present, `auth.owner_token` is required.
+server:
+  # Bind address. 127.0.0.1 keeps the server off the network interfaces.
+  host: 127.0.0.1
+  port: 8787
+  auth:
+    # The owner's bearer token, interpolated from the environment at load time.
+    # This is the R4 (owner approval) channel — keep it secret.
+    owner_token: ${NYX_OWNER_TOKEN}
+    # Extra actor tokens: map of actorName -> token, for non-owner clients.
+    # The actor name "owner" is reserved (the owner authenticates above).
+    tokens: {}
+    # tokens:
+    #   assistant-ui: put-a-generated-token-here
+
+# ─── providers ──────────────────────────────────────────────────────────────
+# Map of id -> provider config. Any OpenAI-compatible endpoint (local or
+# hosted) registers the same way. `mock` is a deterministic test double.
+# At least one provider is recommended; an empty map is allowed.
+providers:
+  # Deterministic mock — no network, no key. Useful for tests and smoke runs.
+  mock:
+    kind: mock
+
+  # llama.cpp's OpenAI-compatible server (`llama-server`). Local models need
+  # no api_key_env; note LM Studio (1234) and vLLM (8000) below are the same
+  # shape with different ports.
+  local:
+    kind: openai
+    base_url: "http://127.0.0.1:8080/v1"
+    models:
+      - id: glm-4.9
+        context_window: 128000
+        max_output: 8192
+        supports: [tools]
+
+  # LM Studio local server — same OpenAI-compatible shape.
+  lmstudio:
+    kind: openai
+    base_url: "http://127.0.0.1:1234/v1"
+    models:
+      - id: qwen2.5-coder-7b-instruct
+        context_window: 32768
+        max_output: 8192
+        supports: [tools]
+
+  # vLLM serving an OpenAI-compatible endpoint.
+  vllm:
+    kind: openai
+    base_url: "http://127.0.0.1:8000/v1"
+    models:
+      - id: qwen3-14b
+        context_window: 131072
+        max_output: 8192
+        supports: [tools, streaming_tools]
+
+  # Z.ai (GLM) via its OpenAI-compatible API. The key is read at call time
+  # from the env var named below — never stored in this file.
+  zai:
+    kind: openai
+    base_url: "https://api.z.ai/api/paas/v4"
+    api_key_env: NYX_ZAI_API_KEY
+    models:
+      - id: glm-4.9
+        context_window: 200000
+        max_output: 32768
+        supports: [tools, reasoning, streaming_tools]
+
+  # Hosted OpenAI. Adjust model ids/limits to what your account allows.
+  openai:
+    kind: openai
+    base_url: "https://api.openai.com/v1"
+    api_key_env: NYX_OPENAI_API_KEY
+    models:
+      - id: gpt-5.1
+        context_window: 400000
+        max_output: 128000
+        supports: [tools, vision, reasoning, json_schema, streaming_tools]
+
+  # Anthropic. base_url is optional here (official endpoint by default; set it
+  # only for a proxy). api_key_env is required for hosted providers.
+  anthropic:
+    kind: anthropic
+    api_key_env: NYX_ANTHROPIC_API_KEY
+    models:
+      - id: claude-sonnet-4-5
+        context_window: 200000
+        max_output: 64000
+        supports: [tools, vision, reasoning, json_schema, streaming_tools]
+
+# ─── router ─────────────────────────────────────────────────────────────────
+# Ordered-fallback routing. The default chain is tried in order; on a
+# retryable failure (see fallback_on) the next provider is used.
+router:
+  default:
+    # Primary: hosted GLM with high reasoning; fallback: the local llama.cpp
+    # copy of the same model when the hosted endpoint rate-limits or dies.
+    chain:
+      - provider: zai
+        model: glm-4.9
+        reasoning_effort: high
+        max_tokens: 32768
+      - provider: local
+        model: glm-4.9
+    # Which retryable failures trigger the next chain entry. Default: all three.
+    fallback_on: [rate_limit, server_error, timeout]
+
+  # Task-tagged rules override the default chain (match.task, see RouteOptions).
+  # Compaction is background work: route it to a cheap, low-effort model.
+  rules:
+    - match:
+        task: compaction
+      chain:
+        - provider: local
+          model: glm-4.9
+          reasoning_effort: low
+          max_tokens: 4096
+
+  # Token budgets. `ask` pauses and asks the owner before exceeding.
+  budgets:
+    per_turn_tokens: 200000
+    per_session_tokens: 5000000
+    on_exceed: ask
+
+# ─── policy ─────────────────────────────────────────────────────────────────
+# Rule list evaluated by @nyx/policy. Deny > ask > allow; structural
+# invariants (R4 owner approval, etc.) are enforced by the engine and cannot
+# be weakened from config. This is the recommended default ruleset:
+# read-only tools run free, everything else asks.
+policy:
+  rules:
+    - id: allow-r0
+      match:
+        risk: R0
+      decision: allow
+      reason: "Read-only tools (fs.read, listings) run without interruption."
+
+    - id: allow-r1
+      match:
+        risk: R1
+      decision: allow
+      reason: "Low-risk local actions are auto-allowed and audit-logged."
+
+    - id: ask-r2
+      match:
+        risk: R2
+      decision: ask
+      reason: "Mutating local actions require a one-shot approval."
+
+    - id: ask-r3
+      match:
+        risk: R3
+      decision: ask
+      reason: "Higher-impact actions require explicit approval."
+
+    - id: ask-r4
+      match:
+        risk: R4
+      decision: ask
+      reason: "Owner-level actions always route to the owner approval channel."
+
+# ─── sandbox ────────────────────────────────────────────────────────────────
+# Tool execution happens inside a sandbox with no ambient authority.
+# Docker is the default; `~` expands to your home directory at load time.
+sandbox:
+  provider: docker
+  image: "alpine:3.20"
+  workdir_root: ~/.nyx/sandboxes
+  # — Local (no Docker) alternative: runs commands directly on this machine.
+  #   Development only — the local sandbox refuses to run when NYX_ENV=production.
+  # provider: local
+  # workdir_root: ~/.nyx/sandboxes
+
+# ─── memory ─────────────────────────────────────────────────────────────────
+# Long-term memory store (episode notes expire after the window below).
+memory:
+  root: ~/.nyx/memory
+  episode_expiry_days: 30
+
+# ─── persona ────────────────────────────────────────────────────────────────
+# Which persona directory to boot with, and where persona trees live.
+# The shipped default is ./personas/default (SOUL/CONTRACT/USER/MEMORY).
+persona:
+  default_id: default
+  root: ./personas
+
+# ─── logging ────────────────────────────────────────────────────────────────
+# `redact` is a substring list: any occurrence of these substrings is masked
+# before a value reaches a log sink. Extend it if you add custom secret names.
+logging:
+  level: info
+  redact: [api_key, authorization, token, secret]
+
+# ─── identity ───────────────────────────────────────────────────────────────
+# The owner identity bound at startup (used by R4 approval routing).
+owner_id: owner

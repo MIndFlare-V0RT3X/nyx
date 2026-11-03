@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Sparse-but-valid fixture: only the non-defaultable parts are present.
+# Everything optional keeps its documented default (see loader.test.ts).
+server:
+  auth:
+    owner_token: ${NYX_TEST_OWNER_TOKEN}
+providers:
+  local:
+    kind: openai
+    base_url: "http://127.0.0.1:8080/v1"
+    models:
+      - id: test-model
+        context_window: 8192
+        max_output: 1024
+router:
+  default:
+    chain:
+      - provider: local
+        model: test-model
