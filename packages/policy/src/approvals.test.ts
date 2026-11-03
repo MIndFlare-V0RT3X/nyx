@@ -257,4 +257,53 @@ describe("ApprovalEngineImpl", () => {
       expect(results).toEqual(["deny", "deny", "deny"]);
     });
   });
+
+  it("onCreated fires with the pending record; onResolved fires on resolve", async () => {
+    const db = freshDb();
+    const created: ApprovalRecord[] = [];
+    const resolved: ApprovalRecord[] = [];
+    const engine = new ApprovalEngineImpl(db, {
+      now: () => 5000,
+      ttl_ms: 60_000,
+      poll_ms: 2,
+      onCreated: (r) => created.push(r),
+      onResolved: (r) => resolved.push(r),
+    });
+    const v = verdict();
+    const p = engine.request(v, CTX);
+    await until(() => created.length === 1);
+
+    expect(created[0]!.decision).toBe("pending");
+    expect(created[0]!.action_digest).toBe(v.action_digest);
+    expect(created[0]!.risk).toBe("R3");
+    expect(created[0]!.expires_at).toBe(5000 + 60_000);
+    expect(resolved).toHaveLength(0);
+
+    await engine.resolve(created[0]!.id, "allow", "owner");
+    await p;
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0]!.decision).toBe("allow");
+    expect(resolved[0]!.decided_by).toBe("owner");
+  });
+
+  it("onResolved fires on expiry auto-deny with decided_by system:expiry", async () => {
+    const db = freshDb();
+    let t = 0;
+    const resolved: ApprovalRecord[] = [];
+    const engine = new ApprovalEngineImpl(db, {
+      now: () => t,
+      ttl_ms: 100,
+      poll_ms: 2,
+      onResolved: (r) => resolved.push(r),
+    });
+    const p = engine.request(verdict(), CTX);
+    await until(async () => (await engine.pending("s1")).length === 1);
+
+    t = 100;
+    await expect(p).resolves.toBe("deny");
+
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0]!.decision).toBe("deny");
+    expect(resolved[0]!.decided_by).toBe("system:expiry");
+  });
 });

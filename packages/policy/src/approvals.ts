@@ -21,6 +21,18 @@ export interface ApprovalEngineOptions {
   ttl_ms?: number;
   /** Poll interval for request() in ms (default 150). */
   poll_ms?: number;
+  /**
+   * Fired post-commit when a pending approval row is created. Surfaces use
+   * this to append the `approval.requested` session event (the engine has no
+   * route to the event log itself). Must not throw.
+   */
+  onCreated?: (record: ApprovalRecord) => void;
+  /**
+   * Fired post-commit when an approval reaches a final decision — resolved
+   * by an operator or auto-denied by expiry. Surfaces append the
+   * `approval.resolved` session event. Must not throw.
+   */
+  onResolved?: (record: ApprovalRecord) => void;
 }
 
 interface ApprovalRow {
@@ -81,12 +93,16 @@ export class ApprovalEngineImpl implements ApprovalEngine {
   private readonly now: () => number;
   private readonly ttlMs: number;
   private readonly pollMs: number;
+  private readonly onCreated: ((record: ApprovalRecord) => void) | undefined;
+  private readonly onResolved: ((record: ApprovalRecord) => void) | undefined;
 
   constructor(db: Database.Database, opts: ApprovalEngineOptions = {}) {
     this.db = db;
     this.now = opts.now ?? Date.now;
     this.ttlMs = opts.ttl_ms ?? 600_000;
     this.pollMs = opts.poll_ms ?? 150;
+    this.onCreated = opts.onCreated;
+    this.onResolved = opts.onResolved;
     // Idempotent: works against any db handle, including a fresh one.
     db.exec(APPROVALS_DDL);
     ensureAuditTable(db);
@@ -121,6 +137,19 @@ export class ApprovalEngineImpl implements ApprovalEngine {
         },
       });
     })();
+    this.onCreated?.({
+      id,
+      session_id: ctx.session_id,
+      turn_id: ctx.turn_id,
+      action_digest: v.action_digest,
+      summary: v.summary,
+      risk,
+      decision: "pending",
+      decided_by: null,
+      created_at: createdAt,
+      expires_at: expiresAt,
+      used_at: null,
+    });
 
     for (;;) {
       await sleep(this.pollMs);
@@ -139,6 +168,19 @@ export class ApprovalEngineImpl implements ApprovalEngine {
             payload: { approval_id: id, session_id: ctx.session_id, action_digest: v.action_digest },
           });
         })();
+        this.onResolved?.({
+          id,
+          session_id: ctx.session_id,
+          turn_id: ctx.turn_id,
+          action_digest: v.action_digest,
+          summary: v.summary,
+          risk,
+          decision: "deny",
+          decided_by: "system:expiry",
+          created_at: createdAt,
+          expires_at: expiresAt,
+          used_at: null,
+        });
         return "deny";
       }
       if (!row) return "deny"; // row vanished externally — nothing left to poll for
@@ -146,7 +188,7 @@ export class ApprovalEngineImpl implements ApprovalEngine {
   }
 
   async resolve(id: string, decision: "allow" | "deny", decidedBy: string): Promise<ApprovalRecord> {
-    return this.db.transaction((): ApprovalRecord => {
+    const updated = this.db.transaction((): ApprovalRecord => {
       const row = this.getRow(id);
       if (!row) throw new CodedError("approval_denied", `approval ${id} not found`);
       if (row.decision !== "pending") {
@@ -166,6 +208,8 @@ export class ApprovalEngineImpl implements ApprovalEngine {
       if (!updated) throw new CodedError("approval_denied", `approval ${id} disappeared mid-transaction`);
       return toRecord(updated);
     })();
+    this.onResolved?.(updated);
+    return updated;
   }
 
   async consume(id: string, actionDigest: string): Promise<ApprovalRecord> {
