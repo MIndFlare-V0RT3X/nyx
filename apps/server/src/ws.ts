@@ -13,7 +13,7 @@
 
 import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
-import { WebSocketServer, type WebSocket } from "ws";
+import { WebSocket, WebSocketServer } from "ws";
 import { z } from "zod";
 import { toSerializedError, type ApprovalRecord, type Logger, type SessionStore } from "@nyx/protocol";
 import { authenticate, type ResolvedAuth } from "./auth.js";
@@ -172,7 +172,7 @@ export function injectWebSocketServer(server: Server, deps: WebSocketDeps): WebS
     let stopped = false;
     let resolveStop: () => void = () => undefined;
     const stopPromise = new Promise<"stop">((resolve) => {
-      resolveStop = resolve;
+      resolveStop = () => resolve("stop");
     });
     const subscription: Subscription = {
       stop: () => {
