@@ -12,7 +12,7 @@ import type { ToolExecContext, ToolRuntime } from "./runtime.js";
 import { registerBuiltinTools } from "./builtins.js";
 import { ToolRegistryImpl } from "./registry.js";
 import { ToolRouterImpl } from "./router.js";
-import type { PolicyRule, Sandbox, SessionEvent, ToolCall } from "@nyx/protocol";
+import type { PolicyRule, Sandbox, SessionEvent } from "@nyx/protocol";
 // @ts-expect-error better-sqlite3 is not a declared dependency of @nyx/tools; tests resolve it from the sibling @nyx/policy workspace (tests are exempt from package import boundaries per the package brief).
 import Database from "../../policy/node_modules/better-sqlite3";
 

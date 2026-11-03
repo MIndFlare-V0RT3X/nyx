@@ -21,13 +21,11 @@ import type {
   Logger,
   PolicyRule,
   Sandbox,
-  ScopeTargets,
   SessionEvent,
   ToolCall,
   ToolContext,
   ToolDefinition,
-  ToolHandler,
-  ToolOutput,
+    ToolOutput,
 } from "@nyx/protocol";
 
 type ToolErrorEvent = Extract<SessionEvent, { type: "tool.error" }>;
@@ -82,16 +80,6 @@ function captureLogger(): { logger: Logger; errors: Array<{ msg: string; ctx?: R
   return { logger, errors };
 }
 
-function engagementOf(targets: ScopeTargets): Engagement {
-  const now = Date.now();
-  return {
-    id: "ENG-TEST-1",
-    operator_id: "owner",
-    authorized_at: now - 1000,
-    expires_at: now + 3_600_000,
-    targets,
-  };
-}
 
 function fakeDef(name: string, extra?: Partial<ToolDefinition>): ToolDefinition {
   return {
@@ -129,10 +117,9 @@ async function makeHarness(opts: HarnessOpts = {}): Promise<Harness> {
   const db = new Database(":memory:");
   dbs.push(db);
   const auto = opts.approval ?? "manual";
-  let approvals: ApprovalEngineImpl;
   // The surface (server/CLI), not the runtime, owns approval.* events; the
   // harness mirrors that wiring and auto-resolves like an operator would.
-  approvals = new ApprovalEngineImpl(db, {
+  const approvals = new ApprovalEngineImpl(db, {
     poll_ms: 5,
     onCreated: (rec) => {
       events.push({

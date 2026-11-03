@@ -11,7 +11,7 @@
 import { spawn } from "node:child_process";
 import { promises as fsp } from "node:fs";
 import * as os from "node:os";
-import * as path from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import type { ExecResult, Sandbox, SandboxProvider, SandboxSpec } from "@nyx/protocol";
 import { assertRealpathContained, resolveContained } from "./paths.js";
 
@@ -146,6 +146,9 @@ class LocalSandbox implements Sandbox {
 
   async writeFile(p: string, data: Buffer | string): Promise<void> {
     const real = await assertRealpathContained(this.workdir, p);
+    // Parent directories are part of the sandbox's writable surface; a write
+    // to "notes/out.txt" creates "notes/" inside the workdir, never outside.
+    await fsp.mkdir(dirname(real), { recursive: true });
     return fsp.writeFile(real, data);
   }
 
@@ -158,7 +161,7 @@ class LocalSandbox implements Sandbox {
     for (const name of names) {
       try {
         // stat follows symlinks, matching the docker provider's [ -d ] test.
-        const st = await fsp.stat(path.join(real, name));
+        const st = await fsp.stat(join(real, name));
         if (st.isDirectory()) entries.push({ name, type: "dir", size: 0 });
         else entries.push({ name, type: "file", size: st.size });
       } catch (err) {
@@ -184,7 +187,7 @@ export class LocalSandboxProvider implements SandboxProvider {
   private readonly forceProd: boolean;
 
   constructor(opts: LocalSandboxOptions = {}) {
-    this.root = path.resolve(opts.root ?? path.join(os.homedir(), ".nyx", "sandboxes"));
+    this.root = resolve(opts.root ?? join(os.homedir(), ".nyx", "sandboxes"));
     this.forceProd = opts.force_prod === true;
   }
 
@@ -195,9 +198,9 @@ export class LocalSandboxProvider implements SandboxProvider {
       );
     }
     await fsp.mkdir(this.root, { recursive: true });
-    const workdir = await fsp.mkdtemp(path.join(this.root, "nyx-sbx-"));
+    const workdir = await fsp.mkdtemp(join(this.root, "nyx-sbx-"));
     return new LocalSandbox(
-      path.basename(workdir),
+      basename(workdir),
       workdir,
       this.root,
       spec.env ?? {},
