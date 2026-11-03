@@ -1,7 +1,7 @@
 {
   "name": "@nyx/kernel",
   "version": "0.1.0",
-  "description": "NYX — kernel package",
+  "description": "NYX \u2014 kernel package",
   "type": "module",
   "license": "AGPL-3.0-or-later",
   "main": "./dist/index.js",
@@ -21,7 +21,8 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@nyx/protocol": "workspace:*"
+    "@nyx/protocol": "workspace:*",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "vitest": "^2.1.8",
