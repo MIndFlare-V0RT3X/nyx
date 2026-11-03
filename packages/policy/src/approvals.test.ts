@@ -57,7 +57,7 @@ describe("ApprovalEngineImpl", () => {
 
   it("request → pending visible → resolve allow → promise resolves allow", async () => {
     const db = freshDb();
-    let t = 1000;
+    const t = 1000;
     const engine = new ApprovalEngineImpl(db, { now: () => t, ttl_ms: 60_000, poll_ms: 2 });
     const v = verdict();
 
@@ -138,7 +138,7 @@ describe("ApprovalEngineImpl", () => {
 
   it("consume marks the approval used; reuse and digest mismatch throw typed errors", async () => {
     const db = freshDb();
-    let t = 5000;
+    const t = 5000;
     const engine = new ApprovalEngineImpl(db, { now: () => t, ttl_ms: 60_000, poll_ms: 2 });
     const v = verdict();
     const p = engine.request(v, CTX);

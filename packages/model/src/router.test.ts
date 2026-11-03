@@ -47,6 +47,7 @@ async function* textStream(text: string): AsyncGenerator<ModelChunk, void, void>
 }
 
 function throwObject(err: Record<string, unknown>): () => AsyncGenerator<ModelChunk, void, void> {
+  // eslint-disable-next-line require-yield -- intentional immediate-throw generator
   return async function* () {
     throw err;
   };
