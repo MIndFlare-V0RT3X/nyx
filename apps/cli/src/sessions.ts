@@ -15,13 +15,26 @@ export interface SessionRow {
   title: string;
   turns: number;
   updated_at: number;
+  kind: "session" | "fork" | "subagent";
+  parent_id: string | null;
 }
 
-/** Load session rows (id, title, turns, updated) — turns counted from projections. */
-export async function listSessions(data_dir: string, limit = 50): Promise<SessionRow[]> {
+/**
+ * Load session rows (id, title, turns, updated). Subagent sessions are
+ * EXCLUDED unless `includeAll` — `nyx sessions list --all` shows them with a
+ * `↳` prefix and their parent session id (Phase 3 §2.8).
+ */
+export async function listSessions(
+  data_dir: string,
+  limit = 50,
+  includeAll = false,
+): Promise<SessionRow[]> {
   const store = openSessionStore(`${data_dir}/nyx.db`);
   try {
-    const metas = await store.list({ limit });
+    const metas = await store.list({
+      limit,
+      ...(includeAll ? {} : { kinds: ["session", "fork"] }),
+    });
     const rows: SessionRow[] = [];
     for (const meta of metas) {
       const projection = await store.projection(meta.session_id);
@@ -30,6 +43,8 @@ export async function listSessions(data_dir: string, limit = 50): Promise<Sessio
         title: meta.title,
         turns: projection.messages.filter((m) => m.role === "user").length,
         updated_at: meta.updated_at,
+        kind: meta.kind,
+        parent_id: meta.parent_id,
       });
     }
     return rows;
@@ -38,13 +53,15 @@ export async function listSessions(data_dir: string, limit = 50): Promise<Sessio
   }
 }
 
-/** Render `nyx sessions list` as a table. */
+/** Render `nyx sessions list` as a table (subagents get the `↳` prefix). */
 export function renderSessionList(rows: readonly SessionRow[]): string {
   return renderTable(
     ["session", "title", "turns", "updated"],
     rows.map((r) => [
-      r.session_id,
-      truncate(r.title, 40),
+      r.kind === "subagent" ? `↳ ${r.session_id}` : r.session_id,
+      r.kind === "subagent"
+        ? `${truncate(r.title, 20)} (of ${r.parent_id ?? "?"})`
+        : truncate(r.title, 40),
       String(r.turns),
       formatTimestamp(r.updated_at),
     ]),
@@ -89,7 +106,15 @@ export function renderSessionDetail(detail: SessionDetail): string {
   out.push(`session   ${meta.session_id}`);
   out.push(`persona   ${meta.persona_id}`);
   out.push(`owner     ${meta.owner_id}`);
-  if (meta.parent_id !== null) out.push(`forked-of ${meta.parent_id}`);
+  // Lineage hint (Phase 3 §3.2): forks and subagents both carry parent_id;
+  // subagents additionally name their spawning turn via the spawned event.
+  if (meta.kind === "subagent") {
+    const spawned = detail.events.find((e) => e.type === "subagent.spawned");
+    const turn = spawned !== undefined ? (spawned as { parent_turn_id: string }).parent_turn_id : "?";
+    out.push(`subagent  of ${meta.parent_id ?? "?"} (turn ${turn})`);
+  } else if (meta.parent_id !== null) {
+    out.push(`forked-of ${meta.parent_id}`);
+  }
   out.push(`title     ${meta.title}`);
   out.push(`created   ${formatTimestamp(meta.created_at)}`);
   out.push(`updated   ${formatTimestamp(meta.updated_at)}`);

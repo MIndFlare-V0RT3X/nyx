@@ -38,6 +38,12 @@ import {
 } from "@nyx/tools";
 import { createAgentLoop } from "@nyx/agent";
 import { COMPACTION_SERVICE, createCompactionPipeline } from "@nyx/agent";
+import {
+  createSubagentManager,
+  registerSubagentTool,
+  resolveSubagentsConfig,
+  type SubagentManager,
+} from "@nyx/subagents";
 import type {
   ApprovalEngine,
   ApprovalRecord,
@@ -116,6 +122,8 @@ export interface LocalRuntime {
   readonly approvals: ApprovalEngine;
   readonly toolRegistry: ToolRegistryImpl;
   readonly logger: Logger;
+  /** The subagent manager (Phase 3): spawn/list/abort. */
+  readonly subagents: SubagentManager;
   /** All text streamed this turn, concatenated (deltas are not stored). */
   createSession(opts: {
     persona_id?: string;
@@ -260,6 +268,23 @@ export function createLocalRuntime(deps: LocalRuntimeDeps): LocalRuntime {
     approvals,
   });
   kernel.services.set("tools.runtime", toolRuntime);
+
+  // ── subagents (Phase 3): same wiring as the server, one manager per
+  // process, spawn_subagent routed through the per-turn binding. Child
+  // approvals surface through the engine callbacks below (the TUI's modal /
+  // the one-shot runner's auto-deny) exactly like parent approvals. ──
+  const subagentsConfig = resolveSubagentsConfig(config.subagents);
+  if (subagentsConfig.sandbox_sharing === "fork") {
+    throw new Error(
+      'config subagents.sandbox_sharing "fork" is Phase 4+ — only "inherit" is supported',
+    );
+  }
+  const subagents = createSubagentManager({
+    store: sink.wrapped,
+    config: subagentsConfig,
+    db: unified.db,
+  });
+  registerSubagentTool(toolRegistry, { manager: subagents, config: subagentsConfig });
   // 2.2: the four-tier compaction pipeline, configured from
   // context.compaction; the loop looks it up as a kernel service.
   kernel.services.set(
@@ -338,6 +363,8 @@ export function createLocalRuntime(deps: LocalRuntimeDeps): LocalRuntime {
         signal: controller.signal,
         logger: log,
       };
+      // The spawn_subagent tool resolves its parent through this binding.
+      subagents.bindTurn(input.session_id, input.turn_id, ctx);
       for await (const event of loop.run(
         {
           session_id: input.session_id,
@@ -360,6 +387,7 @@ export function createLocalRuntime(deps: LocalRuntimeDeps): LocalRuntime {
       log.error("turn.threw", { error: toSerializedError(err) });
       error = toSerializedError(err);
     } finally {
+      subagents.unbindTurn(input.session_id);
       turnControllers.delete(input.session_id);
     }
     return { events, completed, failed, error };
@@ -372,6 +400,7 @@ export function createLocalRuntime(deps: LocalRuntimeDeps): LocalRuntime {
     approvals,
     toolRegistry,
     logger,
+    subagents,
     createSession: async (opts) => {
       const persona_id = opts.persona_id ?? config.persona.default_id;
       try {

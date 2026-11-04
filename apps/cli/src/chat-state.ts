@@ -109,10 +109,20 @@ export function applyEventToChat(state: ChatState, event: SessionEvent): ChatSta
     }
     case "tool.call": {
       const call_names = { ...state.call_names, [event.call_id]: event.name };
+      // Phase 3: the spawn card renders as a subagent node (↳ task) — the
+      // child session id arrives with the tool result and can be opened in
+      // another pane via `nyx sessions show <id> --events`.
+      const isSpawn = event.name === "spawn_subagent";
+      const task =
+        isSpawn && event.input !== null && typeof event.input === "object"
+          ? String((event.input as { task?: unknown }).task ?? "")
+          : "";
       return withEntry(
         { ...state, call_names },
         "tool",
-        `→ ${event.name} ${truncate(compactJson(event.input), 120)}`,
+        isSpawn
+          ? `↳ subagent ${truncate(task, 80)}`
+          : `→ ${event.name} ${truncate(compactJson(event.input), 120)}`,
       );
     }
     case "tool.result":

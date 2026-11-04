@@ -21,6 +21,7 @@ import {
   showSession,
 } from "./sessions.js";
 import { listApprovals, renderApprovalList, resolveApproval } from "./approvals.js";
+import { abortSubagent, listSubagents, renderSubagentList } from "./subagents.js";
 import { listDeclaredModels, renderModels } from "./models.js";
 import { validateConfigFile } from "./validate.js";
 import { doctorChecks, renderDoctorReport } from "./doctor.js";
@@ -160,13 +161,15 @@ async function main(): Promise<void> {
   const sessions = program.command("sessions").description("session projections");
   sessions
     .command("list")
-    .description("sessions: id, title, turns, updated")
+    .description("sessions: id, title, turns, updated (subagents hidden unless --all)")
     .option("--limit <n>", "maximum sessions to show", "50")
-    .action(async (opts: { limit: string }) => {
+    .option("--all", "include subagent sessions (shown with a ↳ prefix and parent)")
+    .action(async (opts: { limit: string; all?: boolean }) => {
       const limit = Number.parseInt(opts.limit, 10);
       const rows = await listSessions(
         resolveDataDir(),
         Number.isFinite(limit) && limit > 0 ? limit : 50,
+        opts.all === true,
       );
       process.stdout.write(`${renderSessionList(rows)}\n`);
     });
@@ -193,6 +196,26 @@ async function main(): Promise<void> {
     .action(async (id: string, at_seq: number) => {
       const child = await forkSession(resolveDataDir(), id, at_seq);
       process.stdout.write(`${child.session_id}\n`);
+    });
+
+  const subagents = program.command("subagents").description("subagent children of a session");
+  subagents
+    .command("list")
+    .description("a parent session's subagents: id, state, spawned, turn, task")
+    .argument("<parent_id>", "parent session id")
+    .action(async (parent_id: string) => {
+      const rows = await listSubagents(resolveDataDir(), parent_id);
+      process.stdout.write(`${renderSubagentList(rows)}\n`);
+    });
+  subagents
+    .command("abort")
+    .description("abort a running subagent (delivered to the owning process via nyx.db)")
+    .argument("<child_id>", "subagent session id")
+    .action(async (child_id: string) => {
+      const { config } = await resolveCliConfig();
+      const result = await abortSubagent(resolveDataDir(), child_id, `cli:${config.owner_id}`);
+      process.stdout.write(`${result.note}\n`);
+      if (!result.requested) process.exitCode = 1;
     });
 
   const approvals = program.command("approvals").description("pending approvals");
