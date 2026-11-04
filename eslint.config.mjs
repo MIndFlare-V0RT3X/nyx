@@ -23,12 +23,16 @@ const ALLOWED = {
   "packages/runtime": ["@nyx/protocol"],
   "packages/channels": ["@nyx/protocol", "@nyx/policy"],
   "packages/db": ["@nyx/protocol", "@nyx/policy", "@nyx/session", "@nyx/channels", "@nyx/runtime"],
-  "apps/server": ["@nyx/protocol", "@nyx/config", "@nyx/kernel", "@nyx/session", "@nyx/model", "@nyx/tools", "@nyx/policy", "@nyx/scope", "@nyx/sandbox", "@nyx/memory", "@nyx/persona", "@nyx/agent", "@nyx/runtime", "@nyx/channels", "@nyx/db"],
-  "apps/cli": ["@nyx/protocol", "@nyx/config", "@nyx/kernel", "@nyx/session", "@nyx/model", "@nyx/tools", "@nyx/policy", "@nyx/scope", "@nyx/sandbox", "@nyx/memory", "@nyx/persona", "@nyx/agent", "@nyx/db"],
+  "packages/skills": ["@nyx/protocol"],
+  "packages/subagents": ["@nyx/protocol", "@nyx/policy", "@nyx/sandbox", "@nyx/tools", "@nyx/agent"],
+  "packages/tasks": ["@nyx/protocol", "@nyx/policy", "@nyx/session", "@nyx/runtime"],
+  "packages/security": ["@nyx/protocol", "@nyx/scope"],
+  "apps/server": ["@nyx/protocol", "@nyx/config", "@nyx/kernel", "@nyx/session", "@nyx/model", "@nyx/tools", "@nyx/policy", "@nyx/scope", "@nyx/sandbox", "@nyx/memory", "@nyx/persona", "@nyx/agent", "@nyx/runtime", "@nyx/channels", "@nyx/db", "@nyx/skills", "@nyx/subagents", "@nyx/tasks"],
+  "apps/cli": ["@nyx/protocol", "@nyx/config", "@nyx/kernel", "@nyx/session", "@nyx/model", "@nyx/tools", "@nyx/policy", "@nyx/scope", "@nyx/sandbox", "@nyx/memory", "@nyx/persona", "@nyx/agent", "@nyx/db", "@nyx/skills", "@nyx/subagents", "@nyx/tasks"],
   "apps/web": [],
 };
 
-const ALL_PACKAGES = ["@nyx/protocol", "@nyx/config", "@nyx/kernel", "@nyx/session", "@nyx/model", "@nyx/scope", "@nyx/policy", "@nyx/sandbox", "@nyx/memory", "@nyx/persona", "@nyx/tools", "@nyx/agent", "@nyx/runtime", "@nyx/channels", "@nyx/db", "@nyx/server", "@nyx/cli", "@nyx/web"];
+const ALL_PACKAGES = ["@nyx/protocol", "@nyx/config", "@nyx/kernel", "@nyx/session", "@nyx/model", "@nyx/scope", "@nyx/policy", "@nyx/sandbox", "@nyx/memory", "@nyx/persona", "@nyx/tools", "@nyx/agent", "@nyx/runtime", "@nyx/channels", "@nyx/db", "@nyx/skills", "@nyx/subagents", "@nyx/tasks", "@nyx/security", "@nyx/server", "@nyx/cli", "@nyx/web"];
 
 const boundaryOverrides = Object.entries(ALLOWED).map(([dir, allowed]) => {
   const forbidden = ALL_PACKAGES.filter((p) => !allowed.includes(p));

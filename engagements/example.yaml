@@ -1,0 +1,65 @@
+# Example engagement — the operator's signed authorization (Phase 5 §1.2).
+#
+# Copy to engagements/<id>.yaml and edit. An engagement is loaded at session
+# creation, bound to the session's owner, and IMMUTABLE for the session's
+# lifetime — changing scope requires a new session. The file's sha256 is
+# recorded in the audit chain at load.
+#
+# Targets below use RFC 5737/2606 documentation ranges and names ONLY. Never
+# put a live target in an example file.
+#
+# Techniques: this file authorizes recon + scanning classes only. The
+# `exploitation` and `social_engineering` classes exist in the contract but
+# intentionally absent here — no Phase 5 tool maps to them.
+
+schema: 1
+id: acme-q4-2026
+client: "Acme Corp"
+operator_id: "owner"                 # must match the session owner (config owner_id)
+signed_at: 2026-11-01T00:00:00Z
+authorized_by: "Jane Smith, CISO"
+emergency_contact: "security@acme.example"
+
+# The authorization window. Actions before start are denied with
+# `engagement_not_yet_active`; actions after end are denied as expired.
+window:
+  start: 2026-11-01T00:00:00Z
+  end: 2026-12-01T00:00:00Z
+
+# In-scope targets. Domains are suffix-anchored on dot boundaries;
+# "*.domain" wildcards match strict subdomains only. CIDRs authorize raw IPs
+# and are required for resolved-address (DNS-rebinding) validation. URLs
+# authorize exactly their scheme+host+path-space ("/portal/*" = subtree).
+targets:
+  domains:
+    - example.com
+    - api.example.com
+  cidrs:
+    - 203.0.113.0/24
+    - 198.51.100.10/32
+  urls:
+    - "https://app.example.com/portal/*"
+
+# Explicitly out of scope — always wins over targets above.
+exclusions:
+  domains:
+    - mail.example.com
+    - "*.internal.example.com"
+  cidrs:
+    - 203.0.113.128/25
+
+# Rate limits, enforced per tool class AND per host (the `default` entry is
+# the fallback and the shared per-host ceiling for request-rate tools; a tool
+# exceeding its bucket BLOCKS until it refills — requests are never dropped).
+rate_limits:
+  default: { requests_per_second: 10 }
+  nmap: { packets_per_second: 100 }
+  ffuf: { requests_per_second: 20 }
+
+# Attack classes this engagement authorizes. Absent = none — a technique not
+# listed here means the matching tools are absent from the session's registry.
+allowed_techniques:
+  - reconnaissance
+  - port_scanning
+  - web_enumeration
+  - vulnerability_scanning

@@ -173,6 +173,7 @@ export const TaskRecordSchema = z.object({
 export const ScopeTargetsSchema = z.object({
   cidrs: z.array(z.string()),
   domains: z.array(z.string()),
+  urls: z.array(z.string()).optional(),
   ports: z
     .object({
       allow: z.array(z.number().int()).optional(),
@@ -184,13 +185,35 @@ export const ScopeTargetsSchema = z.object({
     .optional(),
 });
 
+export const EngagementTechniqueSchema = z.enum([
+  "reconnaissance",
+  "port_scanning",
+  "web_enumeration",
+  "vulnerability_scanning",
+  "exploitation",
+  "social_engineering",
+]);
+
+export const EngagementRateLimitSchema = z
+  .object({
+    requests_per_second: z.number().int().min(1).max(100_000).optional(),
+    packets_per_second: z.number().int().min(1).max(10_000_000).optional(),
+  })
+  .strict();
+
 export const EngagementSchema = z.object({
   id: z.string().min(1),
   title: z.string().optional(),
   operator_id: z.string().min(1),
   authorized_at: z.number().int().positive(),
+  starts_at: z.number().int().positive().optional(),
   expires_at: z.number().int().positive(),
   targets: ScopeTargetsSchema,
+  techniques: z.array(EngagementTechniqueSchema).optional(),
+  rate_limits: z.record(EngagementRateLimitSchema).optional(),
+  client: z.string().min(1).optional(),
+  authorized_by: z.string().min(1).optional(),
+  emergency_contact: z.string().min(3).optional(),
   rules: z.array(z.string()).optional(),
 });
 

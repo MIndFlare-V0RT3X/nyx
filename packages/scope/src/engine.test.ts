@@ -284,3 +284,259 @@ describe("validateTargets", () => {
     expect(problems).toContain("invalid port in deny list: 2.5");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 5 §1.4 / §1.7 — matching semantics: window start, wildcards, URL
+// targets, and the acceptance fixtures from the Phase 5 brief.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("checkTarget — engagement window start (Phase 5 §1.7)", () => {
+  const eng = engagement({
+    starts_at: NOW + 60_000,
+    expires_at: NOW + 3_600_000,
+    targets: { cidrs: [], domains: ["example.com"] },
+  });
+
+  it("denies an action one second before the window opens, with the exact reason token", () => {
+    const r = checkTarget(eng, { host: "example.com" }, eng.starts_at! - 1_000);
+    expect(r.allowed).toBe(false);
+    expect(r.reason).toContain("engagement_not_yet_active");
+    expect(r.reason).toContain(new Date(eng.starts_at!).toISOString());
+  });
+
+  it("allows at the boundary (now >= starts_at) — the window is inclusive", () => {
+    expect(checkTarget(eng, { host: "example.com" }, eng.starts_at!).allowed).toBe(true);
+  });
+
+  it("an engagement without starts_at behaves exactly as before", () => {
+    const noStart = engagement({ targets: { cidrs: [], domains: ["example.com"] } });
+    expect(checkTarget(noStart, { host: "example.com" }, NOW - 10_000_000).allowed).toBe(true);
+  });
+});
+
+describe("checkTarget — wildcard domain targets (Phase 5 §1.4)", () => {
+  const eng = engagement({
+    targets: { cidrs: [], domains: ["*.example.com"] },
+  });
+
+  it("matches strict subdomains only — never the apex", () => {
+    expect(checkTarget(eng, { host: "api.example.com" }, NOW)).toEqual({
+      allowed: true,
+      reason: "host in engagement scope",
+      matched: "*.example.com",
+    });
+    expect(checkTarget(eng, { host: "deep.api.example.com" }, NOW).allowed).toBe(true);
+    expect(checkTarget(eng, { host: "example.com" }, NOW).allowed).toBe(false);
+  });
+
+  it("never matches across label boundaries", () => {
+    expect(checkTarget(eng, { host: "notexample.com" }, NOW).allowed).toBe(false);
+    expect(checkTarget(eng, { host: "evil.example.com.malicious.net" }, NOW).allowed).toBe(false);
+  });
+
+  it("wildcard exclusions carve out strict subdomains and leave the apex alone", () => {
+    const eng2 = engagement({
+      targets: {
+        cidrs: [],
+        domains: ["example.com"],
+        exclude: { domains: ["*.internal.example.com"] },
+      },
+    });
+    expect(checkTarget(eng2, { host: "internal.example.com" }, NOW).allowed).toBe(true);
+    expect(checkTarget(eng2, { host: "a.internal.example.com" }, NOW)).toEqual({
+      allowed: false,
+      reason: "target excluded by engagement",
+    });
+  });
+});
+
+describe("checkTarget — URL targets (Phase 5 §1.4)", () => {
+  const eng = engagement({
+    targets: {
+      cidrs: [],
+      domains: [],
+      urls: ["https://app.example.com/portal/*"],
+    },
+  });
+
+  it("prefix-then-pattern: matches the subtree on segment boundaries", () => {
+    expect(
+      checkTarget(eng, { host: "app.example.com", url: "https://app.example.com/portal/login" }, NOW),
+    ).toEqual({
+      allowed: true,
+      reason: "url in engagement scope",
+      matched: "https://app.example.com/portal/*",
+    });
+    expect(
+      checkTarget(eng, { host: "app.example.com", url: "https://app.example.com/portal" }, NOW)
+        .allowed,
+    ).toBe(true);
+    expect(
+      checkTarget(eng, { host: "app.example.com", url: "https://app.example.com/portal/a/b" }, NOW)
+        .allowed,
+    ).toBe(true);
+  });
+
+  it("never matches a sibling path or a boundary-straddling one", () => {
+    expect(
+      checkTarget(eng, { host: "app.example.com", url: "https://app.example.com/admin/login" }, NOW)
+        .allowed,
+    ).toBe(false);
+    expect(
+      checkTarget(eng, { host: "app.example.com", url: "https://app.example.com/portalfoo" }, NOW)
+        .allowed,
+    ).toBe(false);
+  });
+
+  it("scheme and host are matched structurally — no full-string regex", () => {
+    expect(
+      checkTarget(eng, { host: "app.example.com", url: "http://app.example.com/portal/login" }, NOW)
+        .allowed,
+    ).toBe(false);
+    expect(
+      checkTarget(
+        eng,
+        { host: "app.example.com.evil.net", url: "https://app.example.com.evil.net/portal/login" },
+        NOW,
+      ).allowed,
+    ).toBe(false);
+    expect(
+      checkTarget(eng, { host: "evilapp.example.com", url: "https://evilapp.example.com/portal/login" }, NOW)
+        .allowed,
+    ).toBe(false);
+  });
+
+  it("URL entries never authorize a bare host query", () => {
+    const r = checkTarget(eng, { host: "app.example.com" }, NOW);
+    expect(r.allowed).toBe(false);
+    expect(r.reason).toContain("not in engagement scope");
+  });
+
+  it("a domain hit still authorizes a URL query (host-level authorization)", () => {
+    const eng2 = engagement({
+      targets: { cidrs: [], domains: ["example.com"], urls: ["https://app.example.com/portal/*"] },
+    });
+    expect(
+      checkTarget(eng2, { host: "api.example.com", url: "https://api.example.com/anything" }, NOW)
+        .allowed,
+    ).toBe(true);
+  });
+
+  it("exclusions override URL targets via the host", () => {
+    const eng2 = engagement({
+      targets: {
+        cidrs: [],
+        domains: [],
+        urls: ["https://app.example.com/portal/*"],
+        exclude: { domains: ["app.example.com"] },
+      },
+    });
+    expect(
+      checkTarget(eng2, { host: "app.example.com", url: "https://app.example.com/portal/login" }, NOW),
+    ).toEqual({ allowed: false, reason: "target excluded by engagement" });
+  });
+
+  it("the URL's port participates in port policy", () => {
+    const eng2 = engagement({
+      targets: {
+        cidrs: [],
+        domains: [],
+        urls: ["https://app.example.com/portal/*"],
+        ports: { allow: [443] },
+      },
+    });
+    expect(
+      checkTarget(eng2, { host: "app.example.com", url: "https://app.example.com:8443/portal/login" }, NOW)
+        .allowed,
+    ).toBe(false);
+    expect(
+      checkTarget(eng2, { host: "app.example.com", url: "https://app.example.com/portal/login" }, NOW)
+        .allowed,
+    ).toBe(true);
+  });
+});
+
+describe("checkTarget — the Phase 5 §1.7 CIDR acceptance fixture", () => {
+  const eng = engagement({
+    targets: {
+      cidrs: ["203.0.113.0/24", "198.51.100.10/32"],
+      domains: [],
+      exclude: { cidrs: ["203.0.113.128/25"] },
+    },
+  });
+
+  it("203.0.113.0/24 matches 203.0.113.42", () => {
+    expect(checkTarget(eng, { host: "203.0.113.42" }, NOW).allowed).toBe(true);
+  });
+
+  it("the excluded half of the range is denied even inside the authorized CIDR", () => {
+    expect(checkTarget(eng, { host: "203.0.113.128" }, NOW)).toEqual({
+      allowed: false,
+      reason: "target excluded by engagement",
+    });
+    expect(checkTarget(eng, { host: "203.0.113.200" }, NOW).allowed).toBe(false);
+    expect(checkTarget(eng, { host: "203.0.113.127" }, NOW).allowed).toBe(true);
+  });
+
+  it("a /32 authorizes exactly one address", () => {
+    expect(checkTarget(eng, { host: "198.51.100.10" }, NOW).allowed).toBe(true);
+    expect(checkTarget(eng, { host: "198.51.100.11" }, NOW).allowed).toBe(false);
+  });
+});
+
+describe("validateTargets — wildcards and URLs (Phase 5)", () => {
+  it("accepts wildcard domains in targets and exclusions", () => {
+    expect(
+      validateTargets({
+        cidrs: [],
+        domains: ["*.example.com"],
+        exclude: { domains: ["*.internal.example.com"] },
+      }),
+    ).toEqual([]);
+  });
+
+  it("rejects malformed wildcards", () => {
+    const problems = validateTargets({
+      cidrs: [],
+      domains: ["**.example.com", "*example.com", "*.bad..domain", "*."],
+    });
+    expect(problems).toContain('invalid domain: "**.example.com"');
+    expect(problems).toContain('invalid domain: "*example.com"');
+    expect(problems).toContain('invalid domain: "*.bad..domain"');
+    expect(problems).toContain('invalid domain: "*."');
+    expect(problems).toHaveLength(4);
+  });
+
+  it("accepts valid URL targets and rejects malformed ones", () => {
+    const problems = validateTargets({
+      cidrs: [],
+      domains: [],
+      urls: [
+        "https://app.example.com/portal/*",
+        "http://example.com",
+        "ftp://example.com/file",
+        "https://user:pass@example.com/",
+        "https://example.com/?q=1",
+        "https://example.com/#frag",
+        "not a url",
+        "https://",
+      ],
+    });
+    expect(problems).toContain('invalid url target: "ftp://example.com/file"');
+    expect(problems).toContain('invalid url target: "https://user:pass@example.com/"');
+    expect(problems).toContain('invalid url target: "https://example.com/?q=1"');
+    expect(problems).toContain('invalid url target: "https://example.com/#frag"');
+    expect(problems).toContain('invalid url target: "not a url"');
+    expect(problems).toContain('invalid url target: "https://"');
+    expect(problems).toHaveLength(6);
+  });
+
+  it("flags duplicate URL targets", () => {
+    const problems = validateTargets({
+      cidrs: [],
+      domains: [],
+      urls: ["https://app.example.com/portal/*", "https://app.example.com/portal/*"],
+    });
+    expect(problems).toContain('duplicate url target: "https://app.example.com/portal/*"');
+  });
+});

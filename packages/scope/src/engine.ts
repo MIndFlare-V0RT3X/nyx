@@ -24,8 +24,88 @@ function isValidDomain(domain: string): boolean {
   return labels.every((l) => l.length <= 63 && DOMAIN_LABEL.test(l));
 }
 
-function domainMatches(host: string, domain: string): boolean {
-  return host === domain || host.endsWith(`.${domain}`);
+/** `*.example.com` → `example.com` when the base is a valid domain, else null. */
+function parseWildcardDomain(entry: string): string | null {
+  if (!entry.startsWith("*.")) return null;
+  const base = entry.slice(2);
+  return isValidDomain(base) ? base : null;
+}
+
+/** A domain entry is either a registrable domain or a `*.domain` wildcard. */
+function isValidDomainEntry(entry: string): boolean {
+  return entry.startsWith("*.") ? parseWildcardDomain(entry) !== null : isValidDomain(entry);
+}
+
+/**
+ * Dot-boundary suffix match. Plain entries match the apex and every
+ * subdomain; wildcard entries (`*.example.com`) match STRICT subdomains
+ * only, never the apex (Phase 5 §1.4).
+ */
+function domainEntryMatches(host: string, entry: string): boolean {
+  const e = normalizeDomain(entry);
+  if (e.startsWith("*.")) {
+    const base = e.slice(2);
+    return host !== base && host.endsWith(`.${base}`);
+  }
+  return host === e || host.endsWith(`.${e}`);
+}
+
+/** A structurally parsed URL target entry (Phase 5 §1.4). */
+export interface UrlTargetPattern {
+  scheme: "http" | "https";
+  /** Lowercased host — matched EXACTLY, never by suffix. */
+  host: string;
+  /** The entry's path. */
+  path: string;
+  /** Path prefix base when the entry ends in `/*`, else null (exact path). */
+  prefix: string | null;
+}
+
+/**
+ * Parse a URL target entry. http/https only, no userinfo, no query/hash
+ * (path-space is the authorization surface), host must be a valid domain or
+ * IP literal. A trailing `/*` makes the entry a subtree pattern; a literal
+ * `*` anywhere else in the path is refused.
+ */
+export function parseUrlTarget(entry: string): UrlTargetPattern | null {
+  let u: URL;
+  try {
+    u = new URL(entry);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+  if (u.username !== "" || u.password !== "") return null;
+  if (u.search !== "" || u.hash !== "") return null;
+  const host = normalizeHost(u.hostname);
+  if (host === "") return null;
+  if (!isIPLiteral(host) && !isValidDomain(host)) return null;
+  const path = u.pathname;
+  if (!path.startsWith("/")) return null;
+  const scheme: "http" | "https" = u.protocol === "https:" ? "https" : "http";
+  if (path.endsWith("/*")) {
+    return { scheme, host, path, prefix: path.slice(0, -2) };
+  }
+  if (path.includes("*")) return null;
+  return { scheme, host, path, prefix: null };
+}
+
+/** Structural scheme+host+path match of a concrete URL against a pattern. */
+function urlEntryMatches(queryUrl: string, pattern: UrlTargetPattern): boolean {
+  let u: URL;
+  try {
+    u = new URL(queryUrl);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== `${pattern.scheme}:`) return false;
+  if (normalizeHost(u.hostname) !== pattern.host) return false;
+  const p = u.pathname;
+  if (pattern.prefix === null) return p === pattern.path;
+  // Segment-boundary subtree: "/portal/*" matches "/portal" and "/portal/...",
+  // never "/portalfoo". A bare "/*" covers the whole path space.
+  if (pattern.prefix === "") return p.startsWith("/");
+  return p === pattern.prefix || p.startsWith(`${pattern.prefix}/`);
 }
 
 function normalizeDomain(domain: string): string {
@@ -54,13 +134,25 @@ export function validateTargets(targets: ScopeTargets): string[] {
 
   const seenDomains = new Set<string>();
   for (const domain of targets.domains ?? []) {
-    if (!isValidDomain(domain)) {
+    if (!isValidDomainEntry(domain)) {
       problems.push(`invalid domain: ${JSON.stringify(domain)}`);
       continue;
     }
     const key = normalizeDomain(domain);
     if (seenDomains.has(key)) problems.push(`duplicate domain: ${JSON.stringify(domain)}`);
     seenDomains.add(key);
+  }
+
+  const seenUrls = new Set<string>();
+  for (const url of targets.urls ?? []) {
+    const pattern = parseUrlTarget(url);
+    if (pattern === null) {
+      problems.push(`invalid url target: ${JSON.stringify(url)}`);
+      continue;
+    }
+    const key = `${pattern.scheme}://${pattern.host}${pattern.path}`;
+    if (seenUrls.has(key)) problems.push(`duplicate url target: ${JSON.stringify(url)}`);
+    seenUrls.add(key);
   }
 
   const exclude = targets.exclude;
@@ -76,7 +168,7 @@ export function validateTargets(targets: ScopeTargets): string[] {
     }
     const seenExDomains = new Set<string>();
     for (const domain of exclude.domains ?? []) {
-      if (!isValidDomain(domain)) {
+      if (!isValidDomainEntry(domain)) {
         problems.push(`invalid domain in exclude: ${JSON.stringify(domain)}`);
         continue;
       }
@@ -115,15 +207,26 @@ export interface ResolvedAddress {
 
 /**
  * Check one egress query against an engagement. Order of evaluation:
- * expiry → inclusion (CIDRs for IP literals, dot-boundary domain suffix for
- * hostnames; domains never authorize raw IPs) → exclusions (override) →
- * port policy (deny list, then allow list) → allow.
+ * window start (engagement_not_yet_active) → expiry → inclusion (CIDRs for
+ * IP literals, dot-boundary domain suffix or wildcard for hostnames; URL
+ * entries when the query carries a URL; domains never authorize raw IPs)
+ * → exclusions (override) → port policy (deny list, then allow list) →
+ * allow.
  */
 export function checkTarget(
   engagement: Engagement,
   query: ScopeTargetQuery,
   now: number = Date.now(),
 ): ScopeCheckResult {
+  if (engagement.starts_at !== undefined && now < engagement.starts_at) {
+    return {
+      allowed: false,
+      reason:
+        `engagement_not_yet_active: window opens at ` +
+        `${new Date(engagement.starts_at).toISOString()}`,
+    };
+  }
+
   if (now >= engagement.expires_at) {
     return {
       allowed: false,
@@ -135,7 +238,21 @@ export function checkTarget(
   const targets = engagement.targets;
   const ip = isIPLiteral(host);
 
+  // The port the connection will actually use: explicit, or extracted from a
+  // URL query (a URL without an explicit port keeps the scheme default and
+  // is not port-restricted here).
+  let port = query.port;
+  if (port === undefined && query.url !== undefined) {
+    try {
+      const u = new URL(query.url);
+      if (u.port !== "") port = Number(u.port);
+    } catch {
+      // A malformed URL never reaches the port policy — inclusion denies it.
+    }
+  }
+
   let matched: string;
+  let viaUrl = false;
   if (ip) {
     const hit = (targets.cidrs ?? []).find((c) => cidrContains(c, host));
     if (hit === undefined) {
@@ -146,11 +263,27 @@ export function checkTarget(
     }
     matched = hit;
   } else {
-    const hit = (targets.domains ?? []).find((d) => domainMatches(host, normalizeDomain(d)));
-    if (hit === undefined) {
+    const domainHit = (targets.domains ?? []).find((d) => domainEntryMatches(host, d));
+    if (domainHit !== undefined) {
+      matched = domainHit;
+    } else if (query.url !== undefined) {
+      const urlHit = (targets.urls ?? []).find((entry) => {
+        const pattern = parseUrlTarget(entry);
+        return pattern !== null && urlEntryMatches(query.url!, pattern);
+      });
+      if (urlHit === undefined) {
+        return {
+          allowed: false,
+          reason:
+            `url ${query.url} not in engagement scope ` +
+            `(no domain or url target matched host ${host})`,
+        };
+      }
+      matched = urlHit;
+      viaUrl = true;
+    } else {
       return { allowed: false, reason: `host ${host} not in engagement scope` };
     }
-    matched = hit;
   }
 
   const exclude = targets.exclude;
@@ -159,22 +292,26 @@ export function checkTarget(
       if ((exclude.cidrs ?? []).some((c) => cidrContains(c, host))) {
         return { allowed: false, reason: "target excluded by engagement" };
       }
-    } else if ((exclude.domains ?? []).some((d) => domainMatches(host, normalizeDomain(d)))) {
+    } else if ((exclude.domains ?? []).some((d) => domainEntryMatches(host, d))) {
       return { allowed: false, reason: "target excluded by engagement" };
     }
   }
 
   const ports = targets.ports;
-  if (ports && query.port !== undefined) {
-    if ((ports.deny ?? []).includes(query.port)) {
-      return { allowed: false, reason: `port ${query.port} denied by engagement` };
+  if (ports && port !== undefined) {
+    if ((ports.deny ?? []).includes(port)) {
+      return { allowed: false, reason: `port ${port} denied by engagement` };
     }
-    if (ports.allow !== undefined && !ports.allow.includes(query.port)) {
-      return { allowed: false, reason: `port ${query.port} not in engagement allowed ports` };
+    if (ports.allow !== undefined && !ports.allow.includes(port)) {
+      return { allowed: false, reason: `port ${port} not in engagement allowed ports` };
     }
   }
 
-  return { allowed: true, reason: "host in engagement scope", matched };
+  return {
+    allowed: true,
+    reason: viaUrl ? "url in engagement scope" : "host in engagement scope",
+    matched,
+  };
 }
 
 /**
@@ -243,6 +380,12 @@ export function engagementSummary(engagement: Engagement): string {
     `expires ${new Date(engagement.expires_at).toISOString()}`,
     `cidrs: ${engagement.targets.cidrs.join(", ") || "(none)"}`,
     `domains: ${engagement.targets.domains.join(", ") || "(none)"}`,
+    engagement.targets.urls !== undefined && engagement.targets.urls.length > 0
+      ? `urls: ${engagement.targets.urls.join(", ")}`
+      : "",
+    engagement.techniques !== undefined && engagement.techniques.length > 0
+      ? `techniques: ${engagement.techniques.join(", ")}`
+      : "",
   ];
   return bits.filter((b) => b !== "").join(" | ");
 }

@@ -1,0 +1,4 @@
+# Operator engagement files stay local — only the example ships.
+/*
+!/example.yaml
+!/.gitignore
