@@ -13,6 +13,7 @@ import * as path from "node:path";
 import { nanoid } from "nanoid";
 import type { ExecResult, Sandbox, SandboxProvider, SandboxSpec } from "@nyx/protocol";
 import { resolveContained } from "./paths.js";
+import type { ForkableSandbox } from "./fork.js";
 
 /** Absolute mount point of the host bind inside every container. */
 const WORKSPACE = "/workspace";
@@ -179,7 +180,7 @@ interface ExecOpts {
   env?: Record<string, string>;
 }
 
-class DockerSandbox implements Sandbox {
+class DockerSandbox implements ForkableSandbox {
   /** The sandbox id IS the container name: nyx-sbx-<nanoid>. */
   readonly id: string;
   /** Container-internal workdir: the mount point of the host bind. */
@@ -196,6 +197,94 @@ class DockerSandbox implements Sandbox {
     private readonly live: Set<string>,
   ) {
     this.id = id;
+  }
+
+  /**
+   * Phase 4 §4: fork-per-child, the docker shape. `docker commit` the
+   * parent container to a TEMP IMAGE (captures everything in the
+   * container's own layers — installed packages, /tmp state, env baked at
+   * run), run the child from that image with a FRESH host bind (bind mounts
+   * are not part of a commit, so the workspace rides along with a plain
+   * host-side `cp -a`), then remove the temp image (the running child keeps
+   * its layers; the tag does not linger). No shared mounts or handles with
+   * the parent after this returns — isolation is the point.
+   */
+  async fork(): Promise<Sandbox> {
+    const tempImage = `nyx-fork-${nanoid()}`;
+    const childName = `nyx-sbx-${nanoid()}`;
+    const childHostDir = path.join(path.dirname(this.hostDir), childName);
+
+    const commit = await cliRun(this.dockerBin, ["commit", this.id, tempImage], {
+      timeout_ms: RUN_TIMEOUT_MS,
+    });
+    throwIfFailed("commit (fork)", commit);
+
+    try {
+      await fsp.mkdir(childHostDir, { recursive: true });
+      const run = await cliRun(
+        this.dockerBin,
+        [
+          "run",
+          "-d",
+          "--name",
+          childName,
+          "--network",
+          "none",
+          "-v",
+          `${childHostDir}:${WORKSPACE}`,
+          "-w",
+          WORKSPACE,
+          tempImage,
+          "sleep",
+          "infinity",
+        ],
+        { timeout_ms: RUN_TIMEOUT_MS },
+      );
+      throwIfFailed("run (fork)", run);
+    } catch (err) {
+      // Best-effort unwind: container may or may not exist; the temp image
+      // always does (commit succeeded to get here).
+      void cliRun(this.dockerBin, ["rm", "-f", childName]).catch(() => undefined);
+      void cliRun(this.dockerBin, ["rmi", "-f", tempImage]).catch(() => undefined);
+      throw err;
+    }
+
+    // The workspace is a bind on BOTH sides — copy the parent's content
+    // across on the host (permissions and symlinks preserved via -a).
+    const cpExit = await new Promise<number | null>((resolveP, rejectP) => {
+      const cp = spawn("cp", [
+        "-a",
+        `${this.hostDir}${path.sep}.`,
+        `${childHostDir}${path.sep}`,
+      ], { stdio: ["ignore", "ignore", "ignore"] });
+      cp.once("error", (e: Error) => rejectP(e));
+      cp.once("close", (code) => resolveP(code));
+    });
+    if (cpExit !== 0) {
+      void cliRun(this.dockerBin, ["rm", "-f", childName]).catch(() => undefined);
+      void cliRun(this.dockerBin, ["rmi", "-f", tempImage]).catch(() => undefined);
+      const err = new Error(
+        `cp -a ${this.hostDir}/. ${childHostDir}/ exited ${String(cpExit)} (fork of ${this.id})`,
+      ) as Error & { code: string };
+      err.code = "provider_error";
+      throw err;
+    }
+
+    // The temp image's job is done: the child runs on its layers. Untag it —
+    // best-effort, never fatal (a leftover tag is clutter, not a leak of
+    // the parent's state).
+    void cliRun(this.dockerBin, ["rmi", "-f", tempImage]).catch(() => undefined);
+
+    this.live.add(childName);
+    return new DockerSandbox(
+      childName,
+      childHostDir,
+      this.dockerBin,
+      true, // fork created the host bind dir; destroy() removes it again
+      this.baseEnv,
+      this.wallMs,
+      this.live,
+    );
   }
 
   async exec(cmd: string, opts: ExecOpts = {}): Promise<ExecResult> {

@@ -35,6 +35,7 @@ import type {
 import { ToolRouterImpl, createToolRuntime } from "@nyx/tools";
 import type { ToolRuntime } from "@nyx/tools";
 import type { SubagentsConfig } from "./config.js";
+import { ExtraToolsRegistry } from "./artifacts.js";
 import { SubagentMemory } from "./memory-view.js";
 
 /**
@@ -126,14 +127,20 @@ export class ChildKernelView implements Kernel {
   }
 }
 
-/** Builds the filtered registry + kernel view + child runtime for one spawn. */
+/** Builds the filtered registry + kernel view + child runtime for one spawn.
+ * `extra` (fork mode: subagent_artifact) rides on TOP of the filtered view —
+ * INSIDE both the registry the model sees and the runtime that executes, so
+ * the extras are harness-granted, allowlist-exempt by construction. */
 export function buildChildTooling(
   parent_ctx: RunContext,
   requestedTools: readonly string[],
   config: SubagentsConfig,
-): { tools: FilteredToolRegistry; kernel: Kernel } {
+  extra: Array<{ def: ToolDefinition; handler: ToolHandler }> = [],
+): { tools: ToolRegistry; kernel: Kernel } {
   const allowed = childToolAllowlist(requestedTools, config, parent_ctx.tools);
-  const tools = new FilteredToolRegistry(parent_ctx.tools, allowed);
+  const filtered = new FilteredToolRegistry(parent_ctx.tools, allowed);
+  const tools: ToolRegistry =
+    extra.length > 0 ? new ExtraToolsRegistry(filtered, extra) : filtered;
   const runtime = createToolRuntime({
     registry: tools,
     router: new ToolRouterImpl(),

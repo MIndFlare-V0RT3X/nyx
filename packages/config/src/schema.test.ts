@@ -395,7 +395,7 @@ describe("subagents section (Phase 3)", () => {
       max_budget_tokens: 65_536,
       default_allowed_tools: ["fs.read", "fs.write", "fs.list", "shell.exec", "web.fetch"],
       forbidden_tools: ["spawn_subagent", "spawn_subagent_v2"],
-      sandbox_sharing: "inherit",
+      sandbox_sharing: "fork",
       retention_enabled: false,
       retention_days: 7,
       retention_scope: "subagent",

@@ -797,7 +797,10 @@ describe("rejection paths surface as typed SubagentErrors", () => {
     ).rejects.toBeInstanceOf(SubagentError);
   });
 
-  it("sandbox_sharing fork is Phase 4+", async () => {
+  it("fork mode on a non-forkable sandbox is a LOUD not_supported (never silent sharing)", async () => {
+    // TmpSandbox has no fork(): the harness default is inherit, so an
+    // explicit fork config against it must refuse — a silent fallback to
+    // sharing would reintroduce exactly what Phase 4 §4 removes.
     const h = await makeSubagentHarness({ config: { sandbox_sharing: "fork" } });
     await expect(
       h.manager.spawn({ task: "x" }, h.parentCtx, {

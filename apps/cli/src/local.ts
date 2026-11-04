@@ -40,6 +40,7 @@ import { createAgentLoop } from "@nyx/agent";
 import { COMPACTION_SERVICE, createCompactionPipeline } from "@nyx/agent";
 import {
   createSubagentManager,
+  registerSubagentArtifactTools,
   registerSubagentTool,
   resolveSubagentsConfig,
   type SubagentManager,
@@ -274,17 +275,16 @@ export function createLocalRuntime(deps: LocalRuntimeDeps): LocalRuntime {
   // approvals surface through the engine callbacks below (the TUI's modal /
   // the one-shot runner's auto-deny) exactly like parent approvals. ──
   const subagentsConfig = resolveSubagentsConfig(config.subagents);
-  if (subagentsConfig.sandbox_sharing === "fork") {
-    throw new Error(
-      'config subagents.sandbox_sharing "fork" is Phase 4+ — only "inherit" is supported',
-    );
-  }
   const subagents = createSubagentManager({
     store: sink.wrapped,
     config: subagentsConfig,
     db: unified.db,
   });
   registerSubagentTool(toolRegistry, { manager: subagents, config: subagentsConfig });
+  // Phase 4 §4: fork mode adds the parent-side artifact read tool.
+  if (subagentsConfig.sandbox_sharing === "fork") {
+    registerSubagentArtifactTools(toolRegistry, { manager: subagents });
+  }
   // 2.2: the four-tier compaction pipeline, configured from
   // context.compaction; the loop looks it up as a kernel service.
   kernel.services.set(

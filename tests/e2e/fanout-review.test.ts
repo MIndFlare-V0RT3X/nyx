@@ -260,8 +260,17 @@ describe("fan-out validation (Phase 3 §5.1): three parallel reviewers", () => {
     const memory = new MemoryStoreImpl(memoryRoot);
     cleanup.push(() => Promise.resolve(memory.close()));
 
-    const config = resolveSubagentsConfig({ default_budget_tokens: 8_192 });
-    manager = createSubagentManager({ store, config: { default_budget_tokens: 8_192 } });
+    // sandbox_sharing pinned to "inherit": this rig's parent sandbox is a
+    // hand-rolled read-only view over the REAL repo files (not a forkable
+    // provider sandbox) — Phase 4's fork default would refuse it loudly.
+    const config = resolveSubagentsConfig({
+      default_budget_tokens: 8_192,
+      sandbox_sharing: "inherit",
+    });
+    manager = createSubagentManager({
+      store,
+      config: { default_budget_tokens: 8_192, sandbox_sharing: "inherit" },
+    });
     registerSubagentTool(toolRegistry, { manager, config });
 
     const quiet = {

@@ -526,9 +526,15 @@ importers:
       '@nyx/model':
         specifier: workspace:*
         version: link:../model
+      '@nyx/policy':
+        specifier: workspace:*
+        version: link:../policy
       '@nyx/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@nyx/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
       '@nyx/session':
         specifier: workspace:*
         version: link:../session
@@ -548,12 +554,6 @@ importers:
       '@nyx/persona':
         specifier: workspace:*
         version: link:../persona
-      '@nyx/policy':
-        specifier: workspace:*
-        version: link:../policy
-      '@nyx/sandbox':
-        specifier: workspace:*
-        version: link:../sandbox
       '@types/better-sqlite3':
         specifier: ^7.6.12
         version: 7.6.13

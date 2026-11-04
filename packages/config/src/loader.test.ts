@@ -172,7 +172,7 @@ describe("loadConfig — golden files", () => {
         max_budget_tokens: 40_000,
         default_allowed_tools: ["fs.read", "fs.list", "web.fetch"],
         forbidden_tools: ["spawn_subagent", "spawn_subagent_v2", "shell.exec"],
-        sandbox_sharing: "inherit",
+        sandbox_sharing: "fork",
         retention_enabled: true,
         retention_days: 14,
         retention_scope: "subagent+failed",

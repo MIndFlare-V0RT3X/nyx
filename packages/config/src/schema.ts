@@ -346,7 +346,9 @@ export const configSchema = z
         forbidden_tools: z
           .array(z.string().min(1))
           .default(["spawn_subagent", "spawn_subagent_v2"]),
-        sandbox_sharing: z.enum(["inherit", "fork"]).default("inherit"),
+        // Phase 4 §4: fork is the DEFAULT — no implicit filesystem sharing between
+        // parent and child; artifacts are the explicit, hash-audited handoff.
+        sandbox_sharing: z.enum(["inherit", "fork"]).default("fork"),
         // Phase 4 GC knobs (retention durable task); see docs/RETENTION.md.
         // The task itself SHIPS DISABLED: retention_enabled must be set true
         // before the surface creates `nyx:retention-gc` — moving user data

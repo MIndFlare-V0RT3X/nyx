@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
 import type { SandboxSpec } from "@nyx/protocol";
 import { DockerSandboxProvider, checkDocker } from "./docker.js";
+import { isForkable } from "./fork.js";
 
 const execFileP = promisify(execFile);
 
@@ -200,6 +201,50 @@ describe("DockerSandboxProvider (docker daemon)", () => {
       await expect(sb.writeFile("/etc/nyx-escape-test", "x")).rejects.toThrowError();
     } finally {
       await sb.destroy();
+    }
+  });
+});
+
+describe("DockerSandboxProvider fork (docker daemon)", () => {
+  dIt("fork commits the parent to a temp image, runs an isolated child, cleans the tag", async () => {
+    const parentDir = await freshHostDir();
+    const parent = await provider.provision(spec(parentDir));
+    try {
+      await parent.writeFile("seed.txt", "parent state");
+      const before = await execFileP("docker", ["images", "--format", "{{.Repository}}", "nyx-fork-*"]).then(
+        (r) => r.stdout.split("\n").filter((l) => l !== ""),
+        () => [] as string[],
+      );
+
+      if (!isForkable(parent)) throw new Error("provisioned sandbox is not forkable");
+      const child = await parent.fork();
+      try {
+        // The fork carries the parent's workspace (bind content, host-copied)…
+        expect((await child.readFile("seed.txt")).toString("utf8")).toBe("parent state");
+        // …and shares nothing after: child writes stay in the child.
+        await child.writeFile("child-only.txt", "c");
+        await expect(parent.readFile("child-only.txt")).rejects.toThrow();
+        await parent.writeFile("parent-only.txt", "p");
+        await expect(child.readFile("parent-only.txt")).rejects.toThrow();
+        // The child is a live container of its own.
+        const res = await child.exec("echo forked");
+        expect(res.exit_code).toBe(0);
+        expect(res.stdout).toBe("forked\n");
+      } finally {
+        await child.destroy();
+        // The temp image tag is cleaned up (best-effort rmi fired at fork
+        // time; give the daemon a beat, then check).
+        await new Promise((r) => setTimeout(r, 1500));
+        const after = await execFileP("docker", ["images", "--format", "{{.Repository}}", "nyx-fork-*"]).then(
+          (r) => r.stdout.split("\n").filter((l) => l !== ""),
+          () => [] as string[],
+        );
+        expect(after.filter((t) => !before.includes(t))).toEqual([]);
+      }
+      // The parent survived the child's destruction.
+      expect((await parent.readFile("seed.txt")).toString("utf8")).toBe("parent state");
+    } finally {
+      await parent.destroy();
     }
   });
 });

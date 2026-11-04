@@ -41,6 +41,7 @@ import { createAgentLoop } from "@nyx/agent";
 import { COMPACTION_SERVICE, createCompactionPipeline } from "@nyx/agent";
 import {
   createSubagentManager,
+  registerSubagentArtifactTools,
   registerSubagentTool,
   resolveSubagentsConfig,
   type SubagentManager,
@@ -271,11 +272,6 @@ export function createServer(deps: ServerDeps): NyxServer {
   // presenter is copied onto its children so an "ask" inside a child turn
   // still reaches the originating channel instead of dying on the TTL.
   const subagentsConfig = resolveSubagentsConfig(config.subagents);
-  if (subagentsConfig.sandbox_sharing === "fork") {
-    throw new Error(
-      'config subagents.sandbox_sharing "fork" is Phase 4+ — only "inherit" is supported',
-    );
-  }
   // Late-bound: the tasks manager (created below, after the sandbox/persona
   // wiring) installs the reporter so a spawn's child session lands on the
   // task row the moment it exists — pause/cancel from another process can
@@ -301,6 +297,11 @@ export function createServer(deps: ServerDeps): NyxServer {
     },
   });
   registerSubagentTool(toolRegistry, { manager: subagents, config: subagentsConfig });
+  // Phase 4 §4: in fork mode the parent also gets the artifact-handoff read
+  // tool (absent in inherit mode — there is no child sandbox to read from).
+  if (subagentsConfig.sandbox_sharing === "fork") {
+    registerSubagentArtifactTools(toolRegistry, { manager: subagents });
+  }
   // 2.2: the four-tier compaction pipeline, configured from
   // context.compaction; the loop looks it up as a kernel service.
   kernel.services.set(

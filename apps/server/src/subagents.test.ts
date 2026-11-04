@@ -35,12 +35,17 @@ class DispatchProvider implements ModelProvider {
   readonly id = "mock";
   private readonly byMarker = new Map<string, MockTurn[]>();
   private readonly fallback: MockTurn[] = [];
+  private readonly holds = new Map<string, number>();
   private readonly models: ModelInfo[] = [
     { id: "mock-1", context_window: 128000, max_output: 8192, supports: ["tools"] },
   ];
 
-  script(marker: string, turns: MockTurn[]): this {
+  /** `holdMs` sleeps before a marker's turn yields — gives scripted children
+   * a real duration so parallel-window assertions survive Phase 4's per-child
+   * fork overhead (cp -a + mkdir are a few ms each). */
+  script(marker: string, turns: MockTurn[], holdMs = 0): this {
     this.byMarker.set(marker, [...turns]);
+    if (holdMs > 0) this.holds.set(marker, holdMs);
     return this;
   }
 
@@ -54,19 +59,22 @@ class DispatchProvider implements ModelProvider {
   }
 
   async *complete(req: CompletionRequest): AsyncGenerator<ModelChunk, void, void> {
-    const turn = this.next(req);
+    const { turn, hold } = this.next(req);
     if (turn === undefined) throw new Error("dispatch provider: script exhausted");
     if (!Array.isArray(turn)) throw new Error(turn.fail.message);
+    if (hold > 0) await new Promise((r) => setTimeout(r, hold));
     for (const chunk of turn) yield chunk;
   }
 
-  private next(req: CompletionRequest): MockTurn | undefined {
+  private next(req: CompletionRequest): { turn: MockTurn | undefined; hold: number } {
     const lastUser = [...req.messages].reverse().find((m) => m.role === "user");
     const text = lastUser?.content.map((b) => (b.type === "text" ? b.text : "")).join("") ?? "";
     for (const marker of this.byMarker.keys()) {
-      if (text.includes(marker)) return this.byMarker.get(marker)!.shift();
+      if (text.includes(marker)) {
+        return { turn: this.byMarker.get(marker)!.shift(), hold: this.holds.get(marker) ?? 0 };
+      }
     }
-    return this.fallback.shift();
+    return { turn: this.fallback.shift(), hold: 0 };
   }
 }
 
@@ -186,8 +194,8 @@ async function readEvents(rig: Rig, id: string): Promise<SessionEvent[]> {
 describe("subagents over the server API (Phase 3)", () => {
   it("spawns through a real turn: child completes, summary returns, parent synthesizes", async () => {
     const provider = new DispatchProvider();
-    provider.script("topic-alpha", [textTurn("apples are fruit")]);
-    provider.script("topic-beta", [textTurn("bears are mammals")]);
+    provider.script("topic-alpha", [textTurn("apples are fruit")], 120);
+    provider.script("topic-beta", [textTurn("bears are mammals")], 120);
     provider.scriptParent([
       toolCallTurn([
         { id: "c1", name: "spawn_subagent", args: '{"task":"study topic-alpha"}' },

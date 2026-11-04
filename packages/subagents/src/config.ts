@@ -17,7 +17,11 @@ export interface SubagentsConfig {
   default_allowed_tools: string[];
   /** Always blocked, cannot be overridden by any allowlist. */
   forbidden_tools: string[];
-  /** "inherit" (shared with parent — Phase 3) | "fork" (Phase 4+). */
+  /**
+   * "fork" (Phase 4 default: a filesystem COPY of the parent sandbox, no
+   * implicit sharing — artifacts are the only handoff) | "inherit" (Phase 3
+   * semantics: the child shares the parent sandbox).
+   */
   sandbox_sharing: "inherit" | "fork";
   /**
    * Phase 4 GC knob: the retention durable task (`nyx:retention-gc`) is
@@ -62,7 +66,7 @@ export const DEFAULT_SUBAGENTS_CONFIG: SubagentsConfig = {
   max_budget_tokens: 65_536,
   default_allowed_tools: [...DEFAULT_ALLOWED_TOOLS],
   forbidden_tools: [...DEFAULT_FORBIDDEN_TOOLS],
-  sandbox_sharing: "inherit",
+  sandbox_sharing: "fork",
   retention_enabled: false,
   retention_days: 7,
   retention_scope: "subagent",

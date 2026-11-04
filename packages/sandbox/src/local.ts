@@ -12,8 +12,10 @@ import { spawn } from "node:child_process";
 import { promises as fsp } from "node:fs";
 import * as os from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import { nanoid } from "nanoid";
 import type { ExecResult, Sandbox, SandboxProvider, SandboxSpec } from "@nyx/protocol";
 import { assertRealpathContained, resolveContained } from "./paths.js";
+import type { ForkableSandbox } from "./fork.js";
 
 const DEFAULT_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 const MAX_CAPTURE_BYTES = 1024 * 1024;
@@ -49,7 +51,7 @@ interface ExecOpts {
   env?: Record<string, string>;
 }
 
-class LocalSandbox implements Sandbox {
+class LocalSandbox implements ForkableSandbox {
   readonly workdir: string;
 
   constructor(
@@ -60,6 +62,30 @@ class LocalSandbox implements Sandbox {
     private readonly wallMs: number | undefined,
   ) {
     this.workdir = workdir;
+  }
+
+  /**
+   * Phase 4 §4: fork-per-child. `cp -a` the whole workdir to a fresh
+   * sibling under the same provider root — permissions, symlinks and
+   * mtimes preserved — then never touch the parent again: no shared
+   * mounts, no live handles. The copy includes artifacts/; the caller
+   * (subagents manager) resets it via ensureArtifactsDir.
+   */
+  async fork(): Promise<Sandbox> {
+    const childDir = join(this.root, `nyx-sbx-${nanoid()}`);
+    const exitCode = await new Promise<number | null>((resolveP, rejectP) => {
+      const cp = spawn("cp", ["-a", this.workdir, childDir], { stdio: ["ignore", "ignore", "ignore"] });
+      cp.once("error", (err: Error) => rejectP(err));
+      cp.once("close", (code) => resolveP(code));
+    });
+    if (exitCode !== 0) {
+      const err = new Error(
+        `cp -a ${this.workdir} ${childDir} exited ${String(exitCode)}`,
+      ) as Error & { code: string };
+      err.code = "provider_error";
+      throw err;
+    }
+    return new LocalSandbox(basename(childDir), childDir, this.root, this.baseEnv, this.wallMs);
   }
 
   async exec(cmd: string, opts: ExecOpts = {}): Promise<ExecResult> {

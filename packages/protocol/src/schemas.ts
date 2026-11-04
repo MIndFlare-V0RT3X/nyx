@@ -102,6 +102,11 @@ export const SubagentSpecSchema = z
   })
   .strict();
 
+export const SubagentArtifactRefSchema = z.object({
+  path: z.string().min(1),
+  bytes: z.number().int().nonnegative(),
+});
+
 export const SubagentResultSchema = z.object({
   session_id: z.string(),
   summary: z.string(),
@@ -109,6 +114,9 @@ export const SubagentResultSchema = z.object({
   tokens_used: z.number().int().nonnegative(),
   duration_ms: z.number().int().nonnegative(),
   error: SerializedErrorSchema.optional(),
+  // Phase 4 §4: the artifact handoff (fork mode). Optional — pre-Phase-4
+  // serialized results carry no artifacts field.
+  artifacts: z.array(SubagentArtifactRefSchema).optional(),
 });
 
 export const SubagentInfoSchema = z.object({

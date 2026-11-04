@@ -207,6 +207,8 @@ export interface SubagentHarnessOptions {
   provider?: TaskDispatchProvider;
   /** Extra SubagentManagerDeps merged over the defaults (db, poll_ms, hooks). */
   managerDeps?: Record<string, unknown>;
+  /** Phase 4 §4: use this sandbox as the PARENT's (fork tests: a real provider). */
+  parentSandbox?: Sandbox;
 }
 
 export interface SubagentHarness {
@@ -281,10 +283,15 @@ export async function makeSubagentHarness(
   await fsp.writeFile(path.join(workdir, "hello.txt"), "shared sandbox file", "utf8");
   const sandbox = new TmpSandbox("sbx-parent", workdir);
 
-  const config = resolveSubagentsConfig(opts.config);
+  // Phase 4 §4: the config default flipped to "fork", but this harness's
+  // TmpSandbox fake is not forkable — the inherit-semantics suites pin
+  // "inherit" explicitly. Fork behavior has its own suite (fork.test.ts)
+  // against the REAL local provider.
+  const harnessConfig = { sandbox_sharing: "inherit" as const, ...opts.config };
+  const config = resolveSubagentsConfig(harnessConfig);
   const manager = createSubagentManager({
     store,
-    config: opts.config,
+    config: harnessConfig,
     ...(opts.managerDeps as object | undefined),
   });
   if (opts.registerSpawnTool !== false) {
@@ -299,6 +306,7 @@ export async function makeSubagentHarness(
 
   const logger = new QuietLogger();
   const parentController = new AbortController();
+  const parentSandbox = opts.parentSandbox ?? sandbox;
   const makeParentCtx = (signal?: AbortSignal): RunContext => ({
     kernel,
     session: store,
@@ -307,7 +315,7 @@ export async function makeSubagentHarness(
     tool_router: new ToolRouterImpl(),
     policy,
     approvals,
-    sandbox,
+    sandbox: parentSandbox,
     memory,
     persona: fakePersona(),
     signal: signal ?? parentController.signal,

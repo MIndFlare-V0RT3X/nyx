@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // @nyx/subagents — the Phase 3 subagent system: context-isolated child
-// sessions with a narrowed tool registry, an isolated memory view, a shared
-// sandbox, and only the final summary crossing back to the parent.
+// sessions with a narrowed tool registry, an isolated memory view, a
+// sandbox that is FORKED per child by default (Phase 4: no implicit
+// filesystem sharing — artifacts are the only handoff), and only the final
+// summary + published artifacts crossing back to the parent.
 
 export {
   SubagentError,
@@ -44,3 +46,16 @@ export {
   type SpawnSubagentInput,
   type SubagentToolDeps,
 } from "./tool.js";
+// Phase 4 §4: the artifact handoff (fork mode).
+export {
+  ArtifactToolRegistry,
+  SUBAGENT_ARTIFACT_TOOL,
+  SUBAGENT_READ_ARTIFACT_TOOL,
+  artifactNameOf,
+  auditArtifactRead,
+  auditArtifactWritten,
+  lastWrittenHash,
+  registerSubagentArtifactTools,
+  subagentArtifactTool,
+  type ArtifactWriteRecord,
+} from "./artifacts.js";

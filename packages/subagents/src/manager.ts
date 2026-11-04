@@ -19,16 +19,19 @@
 // subagent_abort_requests table this manager polls).
 
 import { nanoid } from "nanoid";
+import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
 import type {
   AgentLoop,
   ApprovalEngine,
   ContentBlock,
   RunContext,
+  Sandbox,
   SerializedError,
   SessionEvent,
   SessionStore,
   StoredEvent,
+  SubagentArtifactRef,
   SubagentInfo,
   SubagentResult,
   SubagentSpec,
@@ -36,6 +39,13 @@ import type {
 } from "@nyx/protocol";
 import { toSerializedError } from "@nyx/protocol";
 import { createAgentLoop } from "@nyx/agent";
+import { ARTIFACTS_DIR, ensureArtifactsDir, forkSandbox } from "@nyx/sandbox";
+import {
+  artifactNameOf,
+  auditArtifactRead,
+  lastWrittenHash,
+  subagentArtifactTool,
+} from "./artifacts.js";
 import {
   BudgetTrackingRouter,
   buildChildTooling,
@@ -73,6 +83,16 @@ export interface SubagentManager {
   unbindTurn(session_id: string): void;
   /** The bound RunContext for a session+turn — the spawn_subagent tool's parent. */
   boundTurn(session_id: string, turn_id: string): BoundTurn | undefined;
+  /**
+   * Phase 4 §4: the verified artifact handoff — copy a child's published
+   * artifact into the parent's sandbox after matching the audited sha256.
+   */
+  readChildArtifact(
+    subagent_session_id: string,
+    path: string,
+    dest: string | undefined,
+    parent_ctx: RunContext,
+  ): Promise<{ dest: string; bytes: number; sha256: string }>;
 }
 
 export interface SubagentManagerDeps {
@@ -106,6 +126,14 @@ interface RunningChild {
 
 const ABORT_POLL_MS = 150;
 const TASK_TRUNCATE = 120;
+/**
+ * Phase 4 §4: how many settled children's sandboxes stay readable for the
+ * artifact handoff (LRU). Beyond the cap the oldest is destroyed — its
+ * artifacts are gone and a late read fails not_found. Documented in
+ * SUBAGENTS.md; a per-child sandbox is a directory on disk, so the cap is
+ * the leak bound.
+ */
+const MAX_RETAINED_CHILD_SANDBOXES = 8;
 
 export class SubagentManagerImpl implements SubagentManager {
   private readonly cfg: SubagentsConfig;
@@ -118,6 +146,8 @@ export class SubagentManagerImpl implements SubagentManager {
   private readonly turnSpend = new Map<string, number>();
   /** child session id → controller of a running subagent. */
   private readonly running = new Map<string, RunningChild>();
+  /** Phase 4 §4: settled child session id → its (forked) sandbox, for reads. */
+  private readonly childSandboxes = new Map<string, { sandbox: Sandbox; at: number }>();
 
   constructor(private readonly deps: SubagentManagerDeps) {
     this.cfg = resolveSubagentsConfig(deps.config);
@@ -147,12 +177,6 @@ export class SubagentManagerImpl implements SubagentManager {
       throw new SubagentError(
         "validation_failed",
         `spawn: spec.budget_tokens must be a positive integer (got ${String(spec.budget_tokens)})`,
-      );
-    }
-    if (this.cfg.sandbox_sharing === "fork") {
-      throw new SubagentError(
-        "not_supported",
-        'spawn: subagents.sandbox_sharing "fork" is Phase 4+; only "inherit" is available',
       );
     }
     const parentMeta = await parent_ctx.session.meta(parent.session_id);
@@ -196,6 +220,17 @@ export class SubagentManagerImpl implements SubagentManager {
     }
     this.turnSpend.set(spendKey, spent + budget);
 
+    // ── Phase 4 §4: the fork — BEFORE the child session exists. A sandbox
+    //    that cannot fork is a CONFIGURATION error, not a child failure:
+    //    spawn() rejects with not_supported before anything is created, and
+    //    there is never a half-built child for it. forkSandbox never falls
+    //    back to sharing — the refusal is the point.
+    let childSandbox: Sandbox | undefined;
+    if (this.cfg.sandbox_sharing === "fork") {
+      childSandbox = await forkSandbox(parent_ctx.sandbox);
+      await ensureArtifactsDir(childSandbox);
+    }
+
     // ── child session (§2.4c): kind subagent, parent lineage, persona +
     //    engagement inherited. A failed create rolls the allocation back so
     //    the turn's budget doesn't count a subagent that never existed.
@@ -211,7 +246,14 @@ export class SubagentManagerImpl implements SubagentManager {
       });
     } catch (err) {
       this.turnSpend.set(spendKey, spent);
+      if (childSandbox !== undefined) {
+        void childSandbox.destroy().catch(() => undefined); // the fork is now orphaned
+      }
       throw err;
+    }
+    if (childSandbox !== undefined) {
+      this.childSandboxes.set(child.session_id, { sandbox: childSandbox, at: this.now() });
+      this.reapChildSandboxes();
     }
 
     const childTurnId = `sub-${nanoid(10)}`;
@@ -266,12 +308,28 @@ export class SubagentManagerImpl implements SubagentManager {
       });
 
       // ── child RunContext (§2.4e): filtered tools (structural), isolated
-      //    memory, budget-guarded model, shared sandbox, inherited policy +
-      //    approvals + persona.
-      const { tools, kernel } = buildChildTooling(
+      //    memory, budget-guarded model, inherited policy + approvals +
+      //    persona. In fork mode the child's toolset additionally carries
+      //    subagent_artifact — the ONLY way files leave its sandbox — wired
+      //    through buildChildTooling so BOTH the registry the model sees and
+      //    the runtime that executes carry it; the sandbox itself was forked
+      //    above, before the child existed.
+      const artifactExtra =
+        this.cfg.sandbox_sharing === "fork"
+          ? [
+              subagentArtifactTool({
+                sandbox: childSandbox!,
+                child_session_id: child.session_id,
+                db: this.deps.db,
+                now: () => this.now(),
+              }),
+            ]
+          : [];
+      const { tools: childTools, kernel } = buildChildTooling(
         parent_ctx,
         spec.tools ?? this.cfg.default_allowed_tools,
         this.cfg,
+        artifactExtra,
       );
       budgetRouter = new BudgetTrackingRouter(parent_ctx.model, budget, () => {
         budgetExceeded = true;
@@ -286,13 +344,13 @@ export class SubagentManagerImpl implements SubagentManager {
         kernel,
         session: parent_ctx.session,
         model: budgetRouter,
-        tools,
+        tools: childTools,
         tool_router: {
           select: (call, available) => available.find((d) => d.name === call.name) ?? null,
         },
         policy: parent_ctx.policy,
         approvals: parent_ctx.approvals,
-        sandbox: parent_ctx.sandbox,
+        sandbox: childSandbox ?? parent_ctx.sandbox,
         memory: childMemory(parent_ctx.memory, child.session_id),
         persona: parent_ctx.persona,
         signal: controller.signal,
@@ -424,6 +482,24 @@ export class SubagentManagerImpl implements SubagentManager {
     }
 
     this.deps.onSettled?.(child.session_id, state);
+    // Phase 4 §4: what the child published — the artifact listing rides on
+    // the result (path + bytes; the sha256s live on the audit chain and are
+    // re-verified on every read). In inherit mode there is no artifacts/
+    // channel: the field is present and empty, so callers never branch on
+    // undefined vs missing.
+    let artifacts: SubagentArtifactRef[] = [];
+    const retained = this.childSandboxes.get(child.session_id);
+    if (retained !== undefined) {
+      try {
+        const entries = await retained.sandbox.list(ARTIFACTS_DIR);
+        artifacts = entries
+          .filter((e) => e.type === "file")
+          .map((e) => ({ path: `${ARTIFACTS_DIR}/${e.name}`, bytes: e.size }));
+      } catch {
+        // Listing is best-effort: a sandbox that cannot be listed reports
+        // no artifacts, and reads fail loudly on their own if attempted.
+      }
+    }
     return {
       session_id: child.session_id,
       summary,
@@ -431,6 +507,7 @@ export class SubagentManagerImpl implements SubagentManager {
       tokens_used: tokensUsed,
       duration_ms: durationMs,
       ...(error !== undefined ? { error } : {}),
+      artifacts,
     };
   }
 
@@ -511,6 +588,84 @@ export class SubagentManagerImpl implements SubagentManager {
   /** Tokens allocated to subagents in a parent turn so far (tests/report). */
   turnSpendOf(session_id: string, turn_id: string): number {
     return this.turnSpend.get(`${session_id}:${turn_id}`) ?? 0;
+  }
+
+  /**
+   * Phase 4 §4 — the verified artifact handoff. Copies a child's published
+   * artifact into the PARENT's sandbox, but only after recomputing the
+   * content hash and matching it against the one recorded at the write
+   * source on the audit chain. Tampered, corrupted, evicted or unverifiable
+   * artifacts are refused — never silently passed through.
+   */
+  async readChildArtifact(
+    subagent_session_id: string,
+    path: string,
+    dest: string | undefined,
+    parent_ctx: RunContext,
+  ): Promise<{ dest: string; bytes: number; sha256: string }> {
+    const name = artifactNameOf(path);
+    const retained = this.childSandboxes.get(subagent_session_id);
+    if (retained === undefined) {
+      throw new SubagentError(
+        "not_found",
+        `no readable sandbox for subagent ${subagent_session_id} (unknown session or its sandbox was reaped past the retention cap)`,
+      );
+    }
+    const written = lastWrittenHash(this.deps.db, subagent_session_id, name);
+    if (written === undefined) {
+      throw new SubagentError(
+        "not_found",
+        `no audited artifact "${name}" for subagent ${subagent_session_id} (unaudited handoffs are refused)`,
+      );
+    }
+    const content = await retained.sandbox.readFile(`${ARTIFACTS_DIR}/${name}`);
+    const sha256 = createHash("sha256").update(content).digest("hex");
+    if (sha256 !== written.sha256) {
+      throw new SubagentError(
+        "artifact_integrity",
+        `artifact "${name}" of subagent ${subagent_session_id} failed hash verification ` +
+          `(audited ${written.sha256.slice(0, 12)}…, read ${sha256.slice(0, 12)}…): refusing the handoff`,
+      );
+    }
+    const target =
+      dest !== undefined && dest.length > 0
+        ? dest
+        : `${ARTIFACTS_DIR}/${subagent_session_id.slice(0, 8)}/${name}`;
+    await parent_ctx.sandbox.writeFile(target, content);
+    if (this.deps.db !== undefined) {
+      auditArtifactRead(
+        this.deps.db,
+        {
+          child_session_id: subagent_session_id,
+          path: name,
+          dest: target,
+          sha256,
+          bytes: content.length,
+        },
+        () => this.now(),
+      );
+    }
+    return { dest: target, bytes: content.length, sha256 };
+  }
+
+  /** Leak bound: destroy the oldest retained child sandboxes past the cap. */
+  private reapChildSandboxes(): void {
+    while (this.childSandboxes.size > MAX_RETAINED_CHILD_SANDBOXES) {
+      let oldestKey: string | undefined;
+      let oldestAt = Infinity;
+      for (const [key, entry] of this.childSandboxes) {
+        if (entry.at < oldestAt) {
+          oldestAt = entry.at;
+          oldestKey = key;
+        }
+      }
+      if (oldestKey === undefined) break;
+      const evicted = this.childSandboxes.get(oldestKey)!;
+      this.childSandboxes.delete(oldestKey);
+      void evicted.sandbox.destroy().catch(() => {
+        // Best-effort: the sandbox's own TTL/host cleanup is the backstop.
+      });
+    }
   }
 
   // ---- internals ---------------------------------------------------------

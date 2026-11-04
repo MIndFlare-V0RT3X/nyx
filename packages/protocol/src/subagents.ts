@@ -28,6 +28,13 @@ export interface SubagentSpec {
 
 export type SubagentState = "running" | "completed" | "failed" | "aborted" | "budget_exceeded";
 
+export interface SubagentArtifactRef {
+  /** Path inside the subagent's sandbox (under artifacts/). */
+  path: string;
+  /** Size in bytes. */
+  bytes: number;
+}
+
 export interface SubagentResult {
   /** The subagent's session (persisted, auditable, replayable). */
   session_id: string;
@@ -38,6 +45,14 @@ export interface SubagentResult {
   duration_ms: number;
   /** Set if state !== "completed". */
   error?: SerializedError;
+  /**
+   * Phase 4 §4 (recorded deviation from the protocol freeze — the Phase 4
+   * brief mandates this field): artifacts the child published through the
+   * subagent_artifact tool, in fork mode the ONLY handoff between a child
+   * sandbox and its parent. Optional for backward compatibility with
+   * pre-Phase-4 serialized results.
+   */
+  artifacts?: SubagentArtifactRef[];
 }
 
 export interface SubagentInfo {

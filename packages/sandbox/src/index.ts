@@ -11,3 +11,11 @@ export type { LocalSandboxOptions } from "./local.js";
 export { DockerSandboxProvider, checkDocker } from "./docker.js";
 export type { DockerSandboxOptions } from "./docker.js";
 export { SandboxProviders, createDefaultSandboxRegistry } from "./registry.js";
+// Phase 4 §4: the fork capability + the artifact handoff directory.
+export {
+  ARTIFACTS_DIR,
+  ensureArtifactsDir,
+  forkSandbox,
+  isForkable,
+  type ForkableSandbox,
+} from "./fork.js";

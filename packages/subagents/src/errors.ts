@@ -10,7 +10,11 @@ export type SubagentErrorCode =
   | "no_parent_context"
   | "not_supported"
   | "spawn_failed"
-  | "aborted";
+  | "aborted"
+  /** Phase 4 §4: the child sandbox is gone (unknown or reaped). */
+  | "not_found"
+  /** Phase 4 §4: an artifact failed its audited-hash verification. */
+  | "artifact_integrity";
 
 export class SubagentError extends Error {
   readonly code: SubagentErrorCode;
