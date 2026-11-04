@@ -98,3 +98,13 @@ export {
   type Cvss3Metrics,
 } from "./findings/cvss3.js";
 export { scoreCvss4, Cvss4Vector, Cvss4Error } from "./findings/cvss4.js";
+
+// ── reports (Phase 5 §2.3) ──────────────────────────────────────────────────
+export {
+  generateReport,
+  assertFindingsInScope,
+  OutOfScopeFindingError,
+  type ReportInput,
+  type RenderedReport,
+} from "./reports/generator.js";
+export { verifyEvidence, EvidenceError, type VerifiedEvidence } from "./reports/evidence.js";
