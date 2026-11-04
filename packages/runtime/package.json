@@ -1,7 +1,7 @@
 {
   "name": "@nyx/runtime",
   "version": "0.1.0",
-  "description": "NYX — runtime orchestration: per-session lane queue and heartbeat scheduler",
+  "description": "NYX — runtime orchestration: lane queue, cron parser, heartbeat scheduler",
   "type": "module",
   "license": "AGPL-3.0-or-later",
   "main": "./dist/index.js",
@@ -21,10 +21,12 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@nyx/protocol": "workspace:*"
+    "@nyx/protocol": "workspace:*",
+    "better-sqlite3": "^11.8.1"
   },
   "devDependencies": {
     "vitest": "^2.1.8",
-    "@types/node": "^22.10.2"
+    "@types/node": "^22.10.2",
+    "@types/better-sqlite3": "^7.6.12"
   }
 }

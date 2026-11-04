@@ -12,7 +12,6 @@ import { configSchema } from "@nyx/config";
 import type { NyxConfig } from "@nyx/config";
 import { MockProvider, mockTextTurn } from "@nyx/model";
 import { createServer as createNyxServer } from "./server.js";
-// @ts-expect-error better-sqlite3 is resolved from the workspace root for tests.
 import Database from "better-sqlite3";
 
 const OWNER_TOKEN = "owner-token-channels";
@@ -41,6 +40,14 @@ function freePort(): Promise<number> {
       srv.close(() => resolvePort(port));
     });
   });
+}
+
+interface WebhookJson {
+  session_id?: string;
+  turn_id?: string;
+  reply?: string;
+  note?: string;
+  error?: string;
 }
 
 describe("channels (webhook, full stack)", () => {
@@ -85,12 +92,12 @@ describe("channels (webhook, full stack)", () => {
     });
 
     const url = `http://127.0.0.1:${port}/webhook`;
-    const post = (body: unknown): Promise<{ status: number; json: any }> =>
+    const post = (body: unknown): Promise<{ status: number; json: WebhookJson }> =>
       fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
-      }).then(async (res) => ({ status: res.status, json: await res.json().catch(() => null) }));
+      }).then(async (res) => ({ status: res.status, json: (await res.json()) as WebhookJson }));
 
     // Valid: session created, turn runs, reply delivered exactly once (in the
     // HTTP response — the webhook channel is non-streaming by design).

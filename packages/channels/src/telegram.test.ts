@@ -9,7 +9,8 @@ import type { SessionEvent } from "@nyx/protocol";
 import { ChannelManager } from "./manager.js";
 import { ChannelSessionStore } from "./sessions-store.js";
 import { TelegramChannel } from "./telegram.js";
-import type { ChannelTurnRunner, TelegramClient, TelegramUpdate } from "./types.js";
+import type { TelegramClient, TelegramUpdate } from "./telegram.js";
+import type { ChannelTurnRunner } from "./types.js";
 
 type DB = Database.Database;
 const dbs: DB[] = [];

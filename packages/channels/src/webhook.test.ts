@@ -5,7 +5,7 @@
 // reply is sent exactly once, in the response.
 import { afterAll, describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
-import type { ContentBlock, SessionEvent } from "@nyx/protocol";
+import type { SessionEvent } from "@nyx/protocol";
 import { ChannelManager } from "./manager.js";
 import { ChannelSessionStore } from "./sessions-store.js";
 import { WebhookChannel } from "./webhook.js";
@@ -74,12 +74,20 @@ async function startWebhook(opts: { replyTimeoutMs?: number; delayMs?: number } 
   return { adapter, port, created, turns, auditEntries, url: `http://127.0.0.1:${port}/webhook` };
 }
 
-function post(url: string, body: unknown): Promise<{ status: number; json: any }> {
+interface WebhookJson {
+  session_id?: string;
+  turn_id?: string;
+  reply?: string;
+  note?: string;
+  error?: string;
+}
+
+function post(url: string, body: unknown): Promise<{ status: number; json: WebhookJson }> {
   return fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
-  }).then(async (res) => ({ status: res.status, json: await res.json().catch(() => null) }));
+  }).then(async (res) => ({ status: res.status, json: (await res.json()) as WebhookJson }));
 }
 
 describe("WebhookChannel", () => {

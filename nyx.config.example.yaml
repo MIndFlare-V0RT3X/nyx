@@ -243,3 +243,22 @@ owner_id: owner
 #     allowed_user_ids: [123456789]       # numeric Telegram user ids
 #     poll_timeout_s: 25
 #     edit_interval_ms: 1500
+
+# ─── heartbeat (optional, disabled by default) ──────────────────────────────
+# Scheduled system-generated turns, enqueued at heartbeat priority into the
+# session's lane. Cron is 5-field (minute hour dom month dow, UTC); missed
+# fires (process down) are logged as heartbeat.missed, never re-fired. The
+# two shipped specs are recommendations — review before enabling.
+# heartbeat:
+#   enabled: false
+#   specs:
+#     - id: memory-review
+#       schedule: "0 3 * * *"              # daily at 03:00 UTC
+#       prompt: "Review the last 24 hours of memory and consolidate duplicates, expire stale episodes, surface anything that should have been escalated."
+#       priority: heartbeat
+#       enabled: false
+#     - id: session-summary
+#       schedule: "0 * * * *"              # hourly
+#       prompt: "If any session has been inactive for over 24 hours with uncommitted memory, summarize it into the persona memory store and close the session."
+#       priority: heartbeat
+#       enabled: false

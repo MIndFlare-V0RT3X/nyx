@@ -16,7 +16,7 @@ import type {
   TelegramChannelConfig,
   WebhookChannelConfig,
 } from "./types.js";
-import { ChannelSessionStore } from "./sessions-store.js";
+import type { ChannelSessionStore } from "./sessions-store.js";
 
 export type HandleResult =
   | { status: "rejected"; reason: string }

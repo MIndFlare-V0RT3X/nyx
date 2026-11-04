@@ -288,6 +288,29 @@ export const configSchema = z
       })
       .strict()
       .optional(),
+    // Optional (Phase 1): heartbeat / cron — scheduled system turns. Disabled
+    // unless opted in; specs default to none.
+    heartbeat: z
+      .object({
+        enabled: z.boolean(),
+        specs: z
+          .array(
+            z
+              .object({
+                id: z.string().min(1),
+                schedule: z.string().min(1),
+                persona_id: z.string().min(1).optional(),
+                session_id: z.string().min(1).optional(),
+                prompt: z.string().min(1),
+                priority: z.literal("heartbeat"),
+                enabled: z.boolean(),
+              })
+              .strict(),
+          )
+          .default([]),
+      })
+      .strict()
+      .optional(),
     owner_id: z.string().min(1).default("owner"),
   })
   .strict();
@@ -302,6 +325,7 @@ export type NyxRouterConfig = z.infer<typeof routerSchema>;
 export type NyxPolicyRuleConfig = z.infer<typeof policyRuleSchema>;
 export type NyxLanesConfig = z.infer<typeof configSchema>["lanes"];
 export type NyxChannelsConfig = z.infer<typeof configSchema>["channels"];
+export type NyxHeartbeatConfig = z.infer<typeof configSchema>["heartbeat"];
 
 // ---------------------------------------------------------------------------
 // Compile-time drift probes. If either of these errors, the Zod mirror above

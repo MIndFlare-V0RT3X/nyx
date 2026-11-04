@@ -35,8 +35,8 @@ import {
   ToolRouterImpl,
 } from "@nyx/tools";
 import { createAgentLoop } from "@nyx/agent";
-import { createLaneQueue } from "@nyx/runtime";
-import type { LaneQueue } from "@nyx/runtime";
+import { createLaneQueue, createHeartbeatScheduler, HeartbeatStore } from "@nyx/runtime";
+import type { LaneQueue, Scheduler } from "@nyx/runtime";
 import {
   ChannelManager,
   ChannelSessionStore,
@@ -88,6 +88,8 @@ export interface NyxServer {
   auth: ResolvedAuth;
   /** The approval engine (pending/resolve) — surface-level admin and tests. */
   readonly approvals: ApprovalEngine;
+  /** The heartbeat scheduler — registered specs, manual trigger, tests. */
+  readonly heartbeats: Scheduler;
 }
 
 const HEARTBEAT_MS = 15_000;
@@ -375,6 +377,42 @@ export function createServer(deps: ServerDeps): NyxServer {
     logger,
   });
   const channelAdapters: ChannelAdapter[] = [];
+
+  // ── heartbeat / cron (Phase 1 §1.3) ──
+  // Scheduled system turns, enqueued at heartbeat priority into the session
+  // lane (the same serialization point as API turns and channel turns).
+  // State persists in data_dir/heartbeat.db; missed fires are logged, never
+  // re-fired. Disabled unless the operator opts in via config.heartbeat.
+  const heartbeatStore = new HeartbeatStore(new Database(join(deps.data_dir, "heartbeat.db")));
+  const heartbeatScheduler = createHeartbeatScheduler({
+    store: heartbeatStore,
+    specs: config.heartbeat?.specs ?? [],
+    logger,
+    pollIntervalMs: 30_000,
+    sink: {
+      fire: async (spec, scheduledFor) => {
+        let session_id = spec.session_id ?? null;
+        if (session_id === null) {
+          // New session per fire (§5.1 default).
+          const persona_id = spec.persona_id ?? config.persona.default_id;
+          await personaFor(persona_id);
+          const meta = await store.create({
+            owner_id: config.owner_id,
+            persona_id,
+            title: `heartbeat ${spec.id}`,
+          });
+          session_id = meta.session_id;
+        }
+        const turn_id = `hb-${spec.id}-${scheduledFor}`;
+        await lanes.enqueue({
+          session_id,
+          priority: "heartbeat",
+          run: () =>
+            runTurn(session_id!, turn_id, [{ type: "text", text: spec.prompt }], new AbortController()),
+        });
+      },
+    },
+  });
   const startChannels = async (): Promise<void> => {
     if (config.channels?.webhook?.enabled === true) {
       const adapter = new WebhookChannel({
@@ -641,6 +679,9 @@ export function createServer(deps: ServerDeps): NyxServer {
     get approvals() {
       return approvals;
     },
+    get heartbeats() {
+      return heartbeatScheduler;
+    },
     async start(opts = {}) {
       const port = opts.port ?? config.server?.port ?? 8787;
       const host = opts.host ?? config.server?.host ?? "127.0.0.1";
@@ -663,6 +704,12 @@ export function createServer(deps: ServerDeps): NyxServer {
         logger,
       });
       await startChannels();
+      if (config.heartbeat?.enabled === true) {
+        await heartbeatScheduler.start();
+        logger.info("heartbeat.started", {
+          specs: heartbeatScheduler.list().filter((s) => s.enabled).map((s) => s.id),
+        });
+      }
       return {
         port: actualPort,
         close: () =>
@@ -679,6 +726,8 @@ export function createServer(deps: ServerDeps): NyxServer {
           logger.warn("channel.stop_failed", { error: toSerializedError(err), channel: adapter.id });
         });
       }
+      await heartbeatScheduler.stop();
+      heartbeatStore.close();
       for (const controller of turnControllers.values()) controller.abort();
       turnControllers.clear();
       await wsHub?.close();

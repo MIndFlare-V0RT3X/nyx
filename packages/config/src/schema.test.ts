@@ -267,3 +267,81 @@ describe("tilde expansion", () => {
     expect(result.data.memory.root).toBe("/var/lib/nyx/memory");
   });
 });
+
+describe("Phase 1 sections: lanes, channels, heartbeat (optional)", () => {
+  it("parses all three when present", () => {
+    const result = configSchema.safeParse({
+      ...MINIMAL,
+      lanes: {
+        max_concurrent_global: 8,
+        max_concurrent_per_session: 1,
+        heartbeat_serialized_with_interactive: true,
+      },
+      channels: {
+        webhook: {
+          enabled: true,
+          path: "/webhook",
+          bind: "127.0.0.1",
+          port: 8089,
+          allowed_owners: ["owner:primary"],
+          reply_timeout_ms: 60000,
+        },
+        telegram: {
+          enabled: false,
+          bot_token_env: "NYX_TELEGRAM_BOT_TOKEN",
+          allowed_user_ids: [123456789],
+          poll_timeout_s: 25,
+          edit_interval_ms: 1500,
+        },
+      },
+      heartbeat: {
+        enabled: false,
+        specs: [
+          {
+            id: "memory-review",
+            schedule: "0 3 * * *",
+            prompt: "Review the last 24 hours of memory.",
+            priority: "heartbeat",
+            enabled: false,
+          },
+        ],
+      },
+    });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.lanes?.max_concurrent_global).toBe(8);
+    expect(result.data.channels?.webhook?.allowed_owners).toEqual(["owner:primary"]);
+    expect(result.data.heartbeat?.specs).toHaveLength(1);
+    // Absent → undefined (code defaults apply).
+    const bare = configSchema.safeParse(MINIMAL);
+    expect(bare.success).toBe(true);
+    if (!bare.success) return;
+    expect(bare.data.lanes).toBeUndefined();
+    expect(bare.data.channels).toBeUndefined();
+    expect(bare.data.heartbeat).toBeUndefined();
+  });
+
+  it("rejects malformed sections (unknown keys, bad types, wrong path shape)", () => {
+    expect(
+      configSchema.safeParse({ ...MINIMAL, lanes: { max_concurrent_global: 0 } }).success,
+    ).toBe(false);
+    expect(
+      configSchema.safeParse({
+        ...MINIMAL,
+        channels: { webhook: { enabled: true, path: "no-slash", bind: "127.0.0.1", port: 1, allowed_owners: [], reply_timeout_ms: 1 } },
+      }).success,
+    ).toBe(false);
+    // Note: cron SYNTAX is validated by @nyx/runtime's parseCron when the
+    // scheduler is constructed (server startup fails loudly on a bad spec);
+    // the config schema checks structure only.
+    expect(
+      configSchema.safeParse({
+        ...MINIMAL,
+        heartbeat: { enabled: true, specs: [{ id: "x", schedule: "0 3 * * *", priority: "heartbeat", enabled: true }] },
+      }).success,
+    ).toBe(false); // missing prompt
+    expect(
+      configSchema.safeParse({ ...MINIMAL, unknown_section: {} }).success,
+    ).toBe(false);
+  });
+});
