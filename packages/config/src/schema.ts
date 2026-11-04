@@ -260,6 +260,34 @@ export const configSchema = z
       })
       .strict()
       .optional(),
+    // Optional (Phase 1): channel ingress. Disabled by default — an operator
+    // must opt in per adapter.
+    channels: z
+      .object({
+        webhook: z
+          .object({
+            enabled: z.boolean(),
+            path: z.string().min(1).startsWith("/"),
+            bind: z.string().min(1),
+            port: z.number().int().min(0).max(65535),
+            allowed_owners: z.array(z.string().min(1)),
+            reply_timeout_ms: z.number().int().min(1),
+          })
+          .strict()
+          .optional(),
+        telegram: z
+          .object({
+            enabled: z.boolean(),
+            bot_token_env: z.string().min(1),
+            allowed_user_ids: z.array(z.number().int()),
+            poll_timeout_s: z.number().int().min(1).max(120),
+            edit_interval_ms: z.number().int().min(500),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .optional(),
     owner_id: z.string().min(1).default("owner"),
   })
   .strict();
@@ -273,6 +301,7 @@ export type NyxRouteRule = z.infer<typeof routeRuleSchema>;
 export type NyxRouterConfig = z.infer<typeof routerSchema>;
 export type NyxPolicyRuleConfig = z.infer<typeof policyRuleSchema>;
 export type NyxLanesConfig = z.infer<typeof configSchema>["lanes"];
+export type NyxChannelsConfig = z.infer<typeof configSchema>["channels"];
 
 // ---------------------------------------------------------------------------
 // Compile-time drift probes. If either of these errors, the Zod mirror above

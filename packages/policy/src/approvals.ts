@@ -317,6 +317,8 @@ export interface OpenedApprovalEngine {
   close(): void;
   /** Hash-chain audit row for one stored session event (no-op for non-audited types). */
   auditEvent(event: SessionEvent, seq: number): void;
+  /** General hash-chain audit row (channel identity decisions, surface events). */
+  audit(entry: { actor: string; action: string; payload: unknown }): void;
 }
 
 export function openApprovalEngine(
@@ -339,6 +341,7 @@ export function openApprovalEngine(
       engine,
       close: () => db.close(),
       auditEvent: (event, seq) => appendEventAudit(db, event, seq),
+      audit: (entry) => appendAudit(db, entry),
     };
   } catch (err) {
     db.close();

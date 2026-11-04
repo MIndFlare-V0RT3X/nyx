@@ -214,3 +214,32 @@ logging:
 # ─── identity ───────────────────────────────────────────────────────────────
 # The owner identity bound at startup (used by R4 approval routing).
 owner_id: owner
+
+# ─── lanes (optional) ───────────────────────────────────────────────────────
+# Per-session lane queue: one session = one lane = serial execution. Turns
+# POSTed while one is in flight queue up (FIFO) instead of being rejected.
+# Defaults when omitted: 4 global, 1 per session, heartbeats serialized.
+# lanes:
+#   max_concurrent_global: 4
+#   max_concurrent_per_session: 1
+#   heartbeat_serialized_with_interactive: true
+
+# ─── channels (optional, disabled by default) ───────────────────────────────
+# External ingress surfaces. An operator must opt in per adapter; every
+# adapter routes through the same lane queue, agent loop, policy engine, and
+# approval flow as the HTTP API — channels add no parallel policy path.
+# Unrecognized channel users are rejected (403 / ignored) and audited.
+# channels:
+#   webhook:
+#     enabled: true
+#     path: /webhook
+#     bind: 127.0.0.1
+#     port: 8089
+#     allowed_owners: ["owner:primary"]   # POST bodies must carry one of these
+#     reply_timeout_ms: 60000             # then the POST answers 202 with ids
+#   telegram:
+#     enabled: false
+#     bot_token_env: NYX_TELEGRAM_BOT_TOKEN
+#     allowed_user_ids: [123456789]       # numeric Telegram user ids
+#     poll_timeout_s: 25
+#     edit_interval_ms: 1500

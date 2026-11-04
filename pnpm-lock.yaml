@@ -102,6 +102,9 @@ importers:
       '@nyx/agent':
         specifier: workspace:*
         version: link:../../packages/agent
+      '@nyx/channels':
+        specifier: workspace:*
+        version: link:../../packages/channels
       '@nyx/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -138,6 +141,9 @@ importers:
       '@nyx/tools':
         specifier: workspace:*
         version: link:../../packages/tools
+      better-sqlite3:
+        specifier: ^11.8.1
+        version: 11.10.0
       hono:
         specifier: ^4.6.14
         version: 4.13.16
@@ -154,6 +160,9 @@ importers:
         specifier: ^3.24.1
         version: 3.25.76
     devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^7.6.12
+        version: 7.6.13
       '@types/node':
         specifier: ^22.10.2
         version: 22.20.5
@@ -216,6 +225,25 @@ importers:
       '@nyx/session':
         specifier: workspace:*
         version: link:../session
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.20.5
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.5)
+
+  packages/channels:
+    dependencies:
+      '@nyx/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      better-sqlite3:
+        specifier: ^11.8.1
+        version: 11.10.0
+    devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^7.6.12
+        version: 7.6.13
       '@types/node':
         specifier: ^22.10.2
         version: 22.20.5

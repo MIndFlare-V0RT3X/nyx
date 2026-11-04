@@ -38,6 +38,20 @@ import { createAgentLoop } from "@nyx/agent";
 import { createLaneQueue } from "@nyx/runtime";
 import type { LaneQueue } from "@nyx/runtime";
 import {
+  ChannelManager,
+  ChannelSessionStore,
+  TelegramChannel,
+  WebhookChannel,
+  createHttpTelegramClient,
+  replyTextFromEvents,
+} from "@nyx/channels";
+import type {
+  ChannelAdapter,
+  ChannelTurnHandle,
+  ChannelTurnRunner,
+} from "@nyx/channels";
+import Database from "better-sqlite3";
+import {
   ContentBlockSchema,
   EngagementSchema,
   toSerializedError,
@@ -252,6 +266,7 @@ export function createServer(deps: ServerDeps): NyxServer {
     turn_id: string,
     content: ContentBlock[],
     controller: AbortController,
+    onEvent?: (event: SessionEvent) => void,
   ): Promise<void> => {
     turnControllers.set(session_id, controller);
     const log = logger.child({ session_id, turn_id, component: "turn" });
@@ -275,13 +290,14 @@ export function createServer(deps: ServerDeps): NyxServer {
         signal: controller.signal,
         logger: log,
       };
-      for await (const _event of loop.run(
+      for await (const event of loop.run(
         { session_id, turn_id, user_message: { role: "user", content } },
         ctx,
       )) {
         // The loop appended every event to the store through the sink before
-        // yielding it; consuming keeps the generator alive and nothing else.
-        void _event;
+        // yielding it; consuming keeps the generator alive. Channels tap this
+        // stream for live rendering (Telegram edits).
+        onEvent?.(event);
       }
     } catch (err) {
       // The loop emits turn.failed for in-turn errors; a throw here is a
@@ -289,6 +305,101 @@ export function createServer(deps: ServerDeps): NyxServer {
       log.error("turn.threw", { error: toSerializedError(err) });
     } finally {
       turnControllers.delete(session_id);
+    }
+  };
+
+  // ── channel ingress (Phase 1 §1.2) ──
+  // Channels drive the SAME machinery the HTTP API does — lane queue, agent
+  // loop, policy, approvals — through the runner below; there is no separate
+  // policy path for channel traffic. Identity, session mapping, and command
+  // handling live in @nyx/channels' manager.
+  const startChannelTurn = (input: {
+    session_id: string;
+    owner_id: string;
+    content: ContentBlock[];
+  }): ChannelTurnHandle => {
+    const turn_id = nanoid(12);
+    const controller = new AbortController();
+    const handlers = new Set<(event: SessionEvent) => void>();
+    const events: SessionEvent[] = [];
+    const completion = lanes
+      .enqueue({
+        session_id: input.session_id,
+        priority: "interactive",
+        signal: controller.signal,
+        run: () =>
+          runTurn(input.session_id, turn_id, input.content, controller, (event) => {
+            events.push(event);
+            for (const h of handlers) h(event);
+          }),
+      })
+      .then(
+        () => ({ ok: true, text: replyTextFromEvents(events) }),
+        () => ({ ok: false, text: "" }),
+      );
+    return {
+      turn_id,
+      completion,
+      onEvent: (cb) => {
+        handlers.add(cb);
+        return () => handlers.delete(cb);
+      },
+    };
+  };
+
+  const channelRunner: ChannelTurnRunner = {
+    createSession: async (input) => {
+      const persona_id = input.persona_id ?? config.persona.default_id;
+      await personaFor(persona_id);
+      return store.create({
+        owner_id: input.owner_id,
+        persona_id,
+        ...(input.title !== undefined ? { title: input.title } : {}),
+      });
+    },
+    forkSession: async (session_id) => {
+      const projection = await store.projection(session_id);
+      return store.fork(session_id, projection.last_seq);
+    },
+    startTurn: startChannelTurn,
+  };
+
+  const channelManager = new ChannelManager({
+    config: {
+      ...(config.channels?.webhook !== undefined ? { webhook: config.channels.webhook } : {}),
+      ...(config.channels?.telegram !== undefined ? { telegram: config.channels.telegram } : {}),
+    },
+    runner: channelRunner,
+    sessions: new ChannelSessionStore(new Database(join(deps.data_dir, "channels.db"))),
+    audit: (entry) => approvalEngineHandle.audit(entry),
+    logger,
+  });
+  const channelAdapters: ChannelAdapter[] = [];
+  const startChannels = async (): Promise<void> => {
+    if (config.channels?.webhook?.enabled === true) {
+      const adapter = new WebhookChannel({
+        config: config.channels.webhook,
+        manager: channelManager,
+        logger,
+      });
+      channelAdapters.push(adapter);
+      await adapter.start();
+    }
+    if (config.channels?.telegram?.enabled === true) {
+      const token = process.env[config.channels.telegram.bot_token_env] ?? "";
+      if (token === "") {
+        throw new Error(
+          `channels.telegram is enabled but ${config.channels.telegram.bot_token_env} is not set`,
+        );
+      }
+      const adapter = new TelegramChannel({
+        config: config.channels.telegram,
+        manager: channelManager,
+        client: createHttpTelegramClient(token),
+        logger,
+      });
+      channelAdapters.push(adapter);
+      await adapter.start();
     }
   };
 
@@ -551,6 +662,7 @@ export function createServer(deps: ServerDeps): NyxServer {
         pendingApprovals: (session_id) => approvals.pending(session_id),
         logger,
       });
+      await startChannels();
       return {
         port: actualPort,
         close: () =>
@@ -562,6 +674,11 @@ export function createServer(deps: ServerDeps): NyxServer {
     async close() {
       if (closing) return;
       closing = true;
+      for (const adapter of channelAdapters.splice(0)) {
+        await adapter.stop().catch((err: unknown) => {
+          logger.warn("channel.stop_failed", { error: toSerializedError(err), channel: adapter.id });
+        });
+      }
       for (const controller of turnControllers.values()) controller.abort();
       turnControllers.clear();
       await wsHub?.close();
