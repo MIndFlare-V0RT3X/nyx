@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 import { mockTextTurn } from "@nyx/model";
-import type { SessionEvent, StoredEvent } from "@nyx/protocol";
+import type { SessionEvent, StoredEvent, ToolHandler } from "@nyx/protocol";
 import type Database from "better-sqlite3";
 import { SubagentMemory } from "./memory-view.js";
 import { SubagentError } from "./errors.js";
@@ -445,7 +445,7 @@ describe("3.4 — tool allowlist (structural)", () => {
 
 describe("3.5 — abort propagation", () => {
   it("parent signal aborts the child; subagent.aborted lands on both logs", async () => {
-    const slow: import("@nyx/protocol").ToolHandler = {
+    const slow: ToolHandler = {
       execute: () => new Promise(() => undefined), // never resolves; abort kills it
     };
     const h2 = await makeSubagentHarness({

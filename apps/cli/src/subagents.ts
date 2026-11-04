@@ -53,7 +53,6 @@ export async function abortSubagent(
   actor: string,
 ): Promise<{ requested: boolean; note: string }> {
   const store = openSessionStore(`${data_dir}/nyx.db`);
-  let db: import("better-sqlite3").Database | undefined;
   try {
     const meta = await store.meta(child_id);
     if (meta === null) throw new CliError("not_found", `session ${child_id} not found`);
@@ -77,16 +76,19 @@ export async function abortSubagent(
     // Running: leave the control row on the shared nyx.db handle. Opening a
     // second handle to the same file is safe (WAL + busy_timeout).
     const Database = (await import("better-sqlite3")).default;
-    db = new Database(`${data_dir}/nyx.db`);
-    db.pragma("busy_timeout = 5000");
-    const { requestSubagentAbort } = await import("@nyx/subagents");
-    requestSubagentAbort(db, child_id, actor);
+    const db = new Database(`${data_dir}/nyx.db`);
+    try {
+      db.pragma("busy_timeout = 5000");
+      const { requestSubagentAbort } = await import("@nyx/subagents");
+      requestSubagentAbort(db, child_id, actor);
+    } finally {
+      db.close();
+    }
     return {
       requested: true,
       note: `abort requested for subagent ${child_id} (the owning process applies it within its poll interval)`,
     };
   } finally {
-    db?.close();
     store.close();
   }
 }
