@@ -398,6 +398,8 @@ export function createLocalRuntime(deps: LocalRuntimeDeps): LocalRuntime {
     abortSession: (session_id) => {
       const controller = turnControllers.get(session_id);
       if (controller !== undefined) controller.abort();
+      // 2.0.2: no orphaned pending approvals behind an aborted turn.
+      approvalHandle.engine.withdrawSession(session_id, "turn aborted");
     },
     async close() {
       if (closing) return;

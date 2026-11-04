@@ -419,6 +419,148 @@ describe("turns (mock provider, full loop)", () => {
     }
   });
 
+  it("DELETE /v1/sessions/:id/turns aborts the running turn, clears that session's queue only (2.0.2)", async () => {
+    const http = await loopbackServer("loopback body");
+    try {
+      const provider = new MockProvider("mock", [
+        mockToolTurn({ call_id: "c1", name: "web.fetch", input: { url: http.url } }),
+        mockTextTurn("session B ok"), // session B's turn (runs in its own lane)
+        mockTextTurn("after abort"), // session A's post-abort turn
+      ]);
+      const rig = await makeRig([provider]);
+      const created = await rig.server.app.request("/v1/sessions", {
+        method: "POST",
+        headers: ownerHeaders(),
+        body: JSON.stringify({
+          engagement: {
+            id: "ENG-abort",
+            operator_id: "owner",
+            authorized_at: Date.now(),
+            expires_at: Date.now() + 3_600_000,
+            targets: { cidrs: ["127.0.0.0/8"], domains: [] },
+          },
+        }),
+      });
+      const sessionA = ((await created.json()) as { session_id: string }).session_id;
+      // Session B exists but its turn is POSTed only after A's turn is
+      // approval-blocked (the mock script is consumed in call order).
+      const createdB = await rig.server.app.request("/v1/sessions", {
+        method: "POST",
+        headers: ownerHeaders(),
+        body: JSON.stringify({ title: "B" }),
+      });
+      const sessionB = ((await createdB.json()) as { session_id: string }).session_id;
+
+      // Session A: turn 1 blocks on the R2 ask verdict (web.fetch).
+      const first = await rig.server.app.request(`/v1/sessions/${sessionA}/turns`, {
+        method: "POST",
+        headers: ownerHeaders(),
+        body: JSON.stringify({ content: { text: "fetch it" } }),
+      });
+      expect(first.status).toBe(202);
+      await until(async () => {
+        const pending = await rig.server.app.request(
+          `/v1/approvals?session_id=${sessionA}`,
+          { headers: ownerHeaders() },
+        );
+        const records = (await pending.json()) as Array<{ id: string }>;
+        return records.length > 0;
+      });
+
+      // Session B runs a normal turn in parallel (its own lane).
+      const turnB = await rig.server.app.request(`/v1/sessions/${sessionB}/turns`, {
+        method: "POST",
+        headers: ownerHeaders(),
+        body: JSON.stringify({ content: { text: "hello B" } }),
+      });
+      expect(turnB.status).toBe(202);
+
+      // Two more turns queue behind the approval-blocked one.
+      const queuedIds: string[] = [];
+      for (let i = 0; i < 2; i++) {
+        const res = await rig.server.app.request(`/v1/sessions/${sessionA}/turns`, {
+          method: "POST",
+          headers: ownerHeaders(),
+          body: JSON.stringify({ content: { text: `queued ${i}` } }),
+        });
+        expect(res.status).toBe(202);
+        queuedIds.push(((await res.json()) as { turn_id: string }).turn_id);
+      }
+
+      // DELETE aborts the running (approval-blocked) turn and clears the two
+      // queued ones — for THIS session only.
+      const abortRes = await rig.server.app.request(`/v1/sessions/${sessionA}/turns`, {
+        method: "DELETE",
+        headers: ownerHeaders(),
+      });
+      expect(abortRes.status).toBe(200);
+      expect(await abortRes.json()).toEqual({ aborted_running: true, cleared_queued: 2 });
+
+      // The aborted turn's events end with turn.failed reason "aborted".
+      await until(async () => {
+        const events = await readEvents(rig, sessionA);
+        return events.some((e) => e.type === "turn.failed");
+      });
+      const eventsA = await readEvents(rig, sessionA);
+      const last = eventsA[eventsA.length - 1]!;
+      expect(last.type).toBe("turn.failed");
+      expect((last as { error: { code?: string } }).error.code).toBe("aborted");
+
+      // The queued turns never started (no turn.started for them).
+      for (const qid of queuedIds) {
+        expect(eventsA.some((e) => e.type === "turn.started" && e.turn_id === qid)).toBe(false);
+      }
+
+      // The pending approval was withdrawn (no orphan): resolved deny by
+      // system:withdrawn, and the pending list is empty afterwards.
+      const pendingAfter = await rig.server.app.request(`/v1/approvals?session_id=${sessionA}`, {
+        headers: ownerHeaders(),
+      });
+      expect(((await pendingAfter.json()) as Array<unknown>).length).toBe(0);
+
+      // Session B was unaffected: its turn completed normally.
+      await until(async () => {
+        const eventsB = await readEvents(rig, sessionB);
+        return eventsB.some((e) => e.type === "turn.completed");
+      });
+
+      // The aborted session's lane is reusable: a fresh turn runs to completion.
+      const after = await rig.server.app.request(`/v1/sessions/${sessionA}/turns`, {
+        method: "POST",
+        headers: ownerHeaders(),
+        body: JSON.stringify({ content: { text: "still alive?" } }),
+      });
+      expect(after.status).toBe(202);
+      await until(async () => {
+        const events = await readEvents(rig, sessionA);
+        return events.some((e) => e.type === "turn.completed");
+      });
+    } finally {
+      await http.close();
+    }
+  });
+
+  it("DELETE on an idle session is a no-op reporting zeros", async () => {
+    const rig = await makeRig([new MockProvider("mock", [mockTextTurn("x")])]);
+    const created = await rig.server.app.request("/v1/sessions", {
+      method: "POST",
+      headers: ownerHeaders(),
+      body: JSON.stringify({ title: "idle" }),
+    });
+    const sid = ((await created.json()) as { session_id: string }).session_id;
+    const res = await rig.server.app.request(`/v1/sessions/${sid}/turns`, {
+      method: "DELETE",
+      headers: ownerHeaders(),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ aborted_running: false, cleared_queued: 0 });
+    const unknown = await rig.server.app.request("/v1/sessions/does-not-exist/turns", {
+      method: "DELETE",
+      headers: ownerHeaders(),
+    });
+    expect(unknown.status).toBe(404);
+  });
+
   it("100 turns POSTed to one session execute in FIFO order (event seq monotonicity)", async () => {
     const provider = new MockProvider(
       "mock",

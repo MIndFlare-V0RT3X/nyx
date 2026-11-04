@@ -319,6 +319,49 @@ export class ApprovalEngineImpl implements ApprovalEngine {
     return rows.map(toRecord);
   }
 
+  /**
+   * 2.0.2: withdraw every pending approval of a session — used by the
+   * per-session abort route (DELETE /v1/sessions/:id/turns) and by session
+   * teardown. Each withdrawn approval is resolved deny (decided_by
+   * "system:withdrawn") with its audit row in the same transaction, so an
+   * aborted turn never leaves an orphaned pending request behind (and a
+   * blocked request() returns instead of waiting out its TTL).
+   */
+  withdrawSession(sessionId: string, reason: string): number {
+    const pendings = this.db
+      .prepare(
+        `SELECT * FROM policy_approvals
+          WHERE session_id = ? AND decision = 'pending' AND expires_at > ?`,
+      )
+      .all(sessionId, this.now()) as ApprovalRow[];
+    let withdrawn = 0;
+    for (const row of pendings) {
+      const updated = this.db.transaction((): ApprovalRecord => {
+        this.db
+          .prepare(
+            "UPDATE policy_approvals SET decision = 'deny', decided_by = 'system:withdrawn' WHERE id = ? AND decision = 'pending'",
+          )
+          .run(row.id);
+        appendAudit(this.db, {
+          actor: "system:withdrawn",
+          action: "approval.withdrawn",
+          payload: {
+            approval_id: row.id,
+            session_id: row.session_id,
+            action_digest: row.action_digest,
+            reason,
+          },
+        });
+        const after = this.getRow(row.id);
+        if (!after) throw new CodedError("approval_denied", `approval ${row.id} disappeared mid-transaction`);
+        return toRecord(after);
+      })();
+      withdrawn += 1;
+      this.onResolved?.(updated);
+    }
+    return withdrawn;
+  }
+
   private getRow(id: string): ApprovalRow | undefined {
     return this.db.prepare("SELECT * FROM policy_approvals WHERE id = ?").get(id) as
       ApprovalRow | undefined;

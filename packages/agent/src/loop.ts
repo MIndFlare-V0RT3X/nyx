@@ -323,6 +323,19 @@ export class AgentLoopImpl implements AgentLoop {
       };
 
       for (;;) {
+        // 2.0.2: an abort that lands between rounds (e.g. DELETE
+        // /v1/sessions/:id/turns while the turn waits on an approval or a
+        // tool) must still end the turn on the record — the next model call
+        // must never fire for an aborted turn.
+        if (ctx.signal.aborted) {
+          emitFailed({
+            name: "AbortError",
+            message: `turn ${input.turn_id} aborted`,
+            code: "aborted",
+          });
+          yield* flush();
+          return;
+        }
         const request: CompletionRequest = {
           model: "auto", // the router substitutes the routed model from its chain
           messages,

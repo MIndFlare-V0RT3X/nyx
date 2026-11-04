@@ -623,6 +623,25 @@ export function createServer(deps: ServerDeps): NyxServer {
     return c.json({ turn_id, session_id: id, lane: status }, 202);
   });
 
+  // 2.0.2: per-session abort. Aborts the RUNNING turn, clears that session's
+  // queued turns (other sessions untouched), and withdraws any pending
+  // approvals so the aborted turn cannot linger on a blocking request().
+  // Auth: same as turn creation (an authenticated actor; sessions are
+  // owner-scoped). The aborted turn's events end with turn.failed
+  // reason "aborted".
+  app.delete("/v1/sessions/:id/turns", async (c) => {
+    const id = c.req.param("id");
+    const meta = await store.meta(id);
+    if (meta === null) return c.json(errorBody("not_found", `session ${id} not found`), 404);
+    const status = lanes.status(id);
+    const abortedRunning = status.running || turnControllers.has(id);
+    const clearedQueued = status.depth;
+    turnControllers.get(id)?.abort(); // cancels the running turn (if any)
+    approvalEngineHandle.engine.withdrawSession(id, "turn aborted");
+    lanes.clear(id); // rejects every queued turn of THIS session only
+    return c.json({ aborted_running: abortedRunning, cleared_queued: clearedQueued });
+  });
+
   app.post("/v1/sessions/:id/fork", async (c) => {
     const id = c.req.param("id");
     const meta = await store.meta(id);
