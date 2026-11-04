@@ -397,7 +397,66 @@ describe("subagents section (Phase 3)", () => {
       forbidden_tools: ["spawn_subagent", "spawn_subagent_v2"],
       sandbox_sharing: "inherit",
       retention_days: 7,
+      retention_scope: "subagent",
+      delete_after_days: 0,
+      retention_schedule: "30 3 * * *",
     });
+  });
+
+  it("fills the Phase 4 tasks defaults when the section is absent", () => {
+    const cfg = configSchema.parse(MINIMAL);
+    expect(cfg.tasks).toEqual({
+      enabled: true,
+      workers: 2,
+      poll_interval_ms: 500,
+      lease_ttl_ms: 300_000,
+      renew_interval_ms: 30_000,
+    });
+  });
+
+  it("rejects an unknown key inside tasks", () => {
+    const result = configSchema.safeParse({
+      ...MINIMAL,
+      tasks: { workers: 4, prioritized: true },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects renew_interval_ms >= lease_ttl_ms (fan-out R1-5: live double-execution window)", () => {
+    // Beyond the TTL: the lease lapses while the owner is mid-attempt.
+    expect(
+      configSchema.safeParse({
+        ...MINIMAL,
+        tasks: { lease_ttl_ms: 30_000, renew_interval_ms: 30_000 },
+      }).success,
+    ).toBe(false);
+    // Far beyond.
+    expect(
+      configSchema.safeParse({
+        ...MINIMAL,
+        tasks: { lease_ttl_ms: 50, renew_interval_ms: 500 },
+      }).success,
+    ).toBe(false);
+    // Strictly less: legal.
+    expect(
+      configSchema.safeParse({
+        ...MINIMAL,
+        tasks: { lease_ttl_ms: 120_000, renew_interval_ms: 15_000 },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects retention_days < 0 and an unknown retention_scope", () => {
+    expect(
+      configSchema.safeParse({ ...MINIMAL, subagents: { retention_days: -1 } }).success,
+    ).toBe(false);
+    expect(
+      configSchema.safeParse({ ...MINIMAL, subagents: { retention_scope: "some" } }).success,
+    ).toBe(false);
+    // 0 is legal: retention disabled entirely.
+    expect(
+      configSchema.safeParse({ ...MINIMAL, subagents: { retention_days: 0 } }).success,
+    ).toBe(true);
   });
 
   it("accepts max_depth 0 (spawning disabled) and rejects 11", () => {

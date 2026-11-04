@@ -174,6 +174,16 @@ describe("loadConfig — golden files", () => {
         forbidden_tools: ["spawn_subagent", "spawn_subagent_v2", "shell.exec"],
         sandbox_sharing: "inherit",
         retention_days: 14,
+        retention_scope: "subagent+failed",
+        delete_after_days: 90,
+        retention_schedule: "15 4 * * *",
+      },
+      tasks: {
+        enabled: true,
+        workers: 3,
+        poll_interval_ms: 250,
+        lease_ttl_ms: 120_000,
+        renew_interval_ms: 15_000,
       },
       owner_id: "owner",
     });

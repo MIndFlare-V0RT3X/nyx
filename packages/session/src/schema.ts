@@ -82,15 +82,23 @@ export const memories = sqliteTable("memories", {
 
 export const tasks = sqliteTable("tasks", {
   id: text("id").primaryKey(),
+  /** The parent session the task is bound to (null when unbound). */
   sessionId: text("session_id"),
+  /** The task's OWN session — its metadata log (0002). */
+  taskSessionId: text("task_session_id").notNull(),
   state: text("state").notNull(),
   specJson: text("spec_json").notNull(),
   leaseOwner: text("lease_owner"),
   leaseExpiresAt: integer("lease_expires_at"),
   attempts: integer("attempts").notNull().default(0),
+  /** The current attempt's child session (0002). */
+  subagentSessionId: text("subagent_session_id"),
+  lastErrorJson: text("last_error_json"),
   resultJson: text("result_json"),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
+  /** Earliest time the next attempt may run (0002: backoff / cron reset). */
+  nextAttemptAt: integer("next_attempt_at"),
 });
 
 export const audit = sqliteTable("audit", {

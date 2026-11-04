@@ -37,6 +37,7 @@
     "@nyx/scope": "workspace:*",
     "@nyx/session": "workspace:*",
     "@nyx/subagents": "workspace:*",
+    "@nyx/tasks": "workspace:*",
     "@nyx/tools": "workspace:*",
     "better-sqlite3": "^11.8.1",
     "hono": "^4.6.14",

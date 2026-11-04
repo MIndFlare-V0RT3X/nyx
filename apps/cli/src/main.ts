@@ -22,6 +22,13 @@ import {
 } from "./sessions.js";
 import { listApprovals, renderApprovalList, resolveApproval } from "./approvals.js";
 import { abortSubagent, listSubagents, renderSubagentList } from "./subagents.js";
+import {
+  listTasks,
+  mutateTask,
+  renderTaskDetail,
+  renderTaskList,
+  showTask,
+} from "./tasks.js";
 import { listDeclaredModels, renderModels } from "./models.js";
 import { validateConfigFile } from "./validate.js";
 import { doctorChecks, renderDoctorReport } from "./doctor.js";
@@ -216,6 +223,66 @@ async function main(): Promise<void> {
       const result = await abortSubagent(resolveDataDir(), child_id, `cli:${config.owner_id}`);
       process.stdout.write(`${result.note}\n`);
       if (!result.requested) process.exitCode = 1;
+    });
+
+  const tasksCmd = program
+    .command("tasks")
+    .description("durable tasks: long-running work that survives restart");
+  tasksCmd
+    .command("list")
+    .description("tasks: id, state, attempts, next attempt, title")
+    .option("--state <s>", "filter by comma-separated states (pending,running,paused,completed,failed,cancelled)")
+    .option("--parent <id>", "filter by the parent session the task is bound to")
+    .option("--limit <n>", "maximum tasks to show", "50")
+    .action(async (opts: { state?: string; parent?: string; limit: string }) => {
+      const limit = Number.parseInt(opts.limit, 10);
+      const rows = await listTasks(resolveDataDir(), {
+        ...(opts.state !== undefined ? { state: opts.state } : {}),
+        ...(opts.parent !== undefined ? { parent_session_id: opts.parent } : {}),
+        limit: Number.isFinite(limit) && limit > 0 ? limit : 50,
+      });
+      process.stdout.write(`${renderTaskList(rows)}\n`);
+    });
+  tasksCmd
+    .command("show")
+    .description("one task: state, lineage, lease, last error, result")
+    .argument("<id>", "task id")
+    .action(async (id: string) => {
+      process.stdout.write(`${renderTaskDetail(await showTask(resolveDataDir(), id))}\n`);
+    });
+  tasksCmd
+    .command("pause")
+    .description("pause a pending/running task (a running attempt aborts)")
+    .argument("<id>", "task id")
+    .action(async (id: string) => {
+      const { config } = await resolveCliConfig();
+      const { note } = await mutateTask(resolveDataDir(), id, "pause", `cli:${config.owner_id}`);
+      process.stdout.write(`${note}\n`);
+    });
+  tasksCmd
+    .command("resume")
+    .description("resume a paused task (returns it to pending)")
+    .argument("<id>", "task id")
+    .action(async (id: string) => {
+      const { note } = await mutateTask(resolveDataDir(), id, "resume", "cli");
+      process.stdout.write(`${note}\n`);
+    });
+  tasksCmd
+    .command("retry")
+    .description("reset a failed/cancelled task to pending with attempts zeroed")
+    .argument("<id>", "task id")
+    .action(async (id: string) => {
+      const { note } = await mutateTask(resolveDataDir(), id, "retry", "cli");
+      process.stdout.write(`${note}\n`);
+    });
+  tasksCmd
+    .command("cancel")
+    .description("hard-stop a task from any state (a running attempt aborts)")
+    .argument("<id>", "task id")
+    .action(async (id: string) => {
+      const { config } = await resolveCliConfig();
+      const { note } = await mutateTask(resolveDataDir(), id, "cancel", `cli:${config.owner_id}`);
+      process.stdout.write(`${note}\n`);
     });
 
   const approvals = program.command("approvals").description("pending approvals");

@@ -347,10 +347,43 @@ export const configSchema = z
           .array(z.string().min(1))
           .default(["spawn_subagent", "spawn_subagent_v2"]),
         sandbox_sharing: z.enum(["inherit", "fork"]).default("inherit"),
-        // Phase 4 GC knob (heartbeat task); documented, not yet consumed.
-        retention_days: z.number().int().positive().default(7),
+        // Phase 4 GC knobs (retention durable task); see docs/RETENTION.md.
+        retention_days: z.number().int().min(0).default(7),
+        retention_scope: z
+          .enum(["subagent", "subagent+failed", "all", "none"])
+          .default("subagent"),
+        delete_after_days: z.number().int().min(0).default(0),
+        retention_schedule: z.string().min(1).default("30 3 * * *"),
       })
       .strict()
+      .default({}),
+    // Optional (Phase 4 §2.1): the durable-task worker pool. Absent → code
+    // defaults (documented in docs/TASKS.md).
+    tasks: z
+      .object({
+        enabled: z.boolean().default(true),
+        workers: z.number().int().min(1).max(16).default(2),
+        poll_interval_ms: z.number().int().min(50).default(500),
+        lease_ttl_ms: z.number().int().min(1_000).default(300_000),
+        renew_interval_ms: z.number().int().min(500).default(30_000),
+      })
+      .strict()
+      // Fan-out review R1-5, load-time mirror of the worker-pool guard: a
+      // renewal cadence at or beyond the lease TTL opens a recurring window
+      // where the lease is expired-but-unreclaimed while the owner is
+      // mid-attempt — any competitor reclaims and the task double-executes
+      // live. Reject at config load, not at first pool start.
+      .superRefine((tasks, ctx) => {
+        if (tasks.renew_interval_ms >= tasks.lease_ttl_ms) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["renew_interval_ms"],
+            message:
+              `tasks.renew_interval_ms (${tasks.renew_interval_ms}) must be strictly less than ` +
+              `tasks.lease_ttl_ms (${tasks.lease_ttl_ms})`,
+          });
+        }
+      })
       .default({}),
     // Optional (Phase 2 §2.2): the four-tier compaction pipeline. Absent →
     // code defaults (documented in docs/COMPACTION.md).

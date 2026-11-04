@@ -6,6 +6,8 @@ import type { ContentBlock } from "./content.js";
 import type { Engagement } from "./scope.js";
 import type { CompactionStrategy, SerializedError, Usage } from "./util.js";
 import type { RiskTier, ToolOutput } from "./tools.js";
+import type { SubagentResult } from "./subagents.js";
+import type { TaskSpec } from "./tasks.js";
 
 export type SessionEvent =
   | {
@@ -153,6 +155,69 @@ export type SessionEvent =
       subagent_session_id: string;
       parent_session_id: string;
       reason: string;
+      ts: number;
+    }
+  // ── Phase 4: durable task lifecycle ──
+  // Every task.* event is appended to the task's own session log AND (when
+  // the task is bound) mirrored onto the parent session's log with
+  // session_id = parent. `task_id` identifies the task on both copies.
+  | {
+      type: "task.created";
+      session_id: string;
+      task_id: string;
+      title: string;
+      spec: TaskSpec;
+      ts: number;
+    }
+  | {
+      type: "task.started";
+      session_id: string;
+      task_id: string;
+      attempt: number;
+      subagent_session_id: string | null;
+      ts: number;
+    }
+  | {
+      type: "task.completed";
+      session_id: string;
+      task_id: string;
+      result: SubagentResult | null;
+      attempts: number;
+      ts: number;
+    }
+  | {
+      type: "task.failed";
+      session_id: string;
+      task_id: string;
+      error: SerializedError;
+      attempts: number;
+      ts: number;
+    }
+  | {
+      type: "task.paused";
+      session_id: string;
+      task_id: string;
+      ts: number;
+    }
+  | {
+      type: "task.resumed";
+      session_id: string;
+      task_id: string;
+      ts: number;
+    }
+  | {
+      type: "task.cancelled";
+      session_id: string;
+      task_id: string;
+      ts: number;
+    }
+  | {
+      type: "task.retrying";
+      session_id: string;
+      task_id: string;
+      attempt: number;
+      next_attempt_at: number;
+      error: SerializedError;
       ts: number;
     };
 

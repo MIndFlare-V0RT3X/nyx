@@ -48,6 +48,13 @@ import {
 import { createLaneQueue, createHeartbeatScheduler, HeartbeatStore } from "@nyx/runtime";
 import type { LaneQueue, Scheduler } from "@nyx/runtime";
 import {
+  createTaskManager,
+  TaskWorkerPool,
+  RETENTION_TASK_ID,
+  type TaskManager,
+  type TaskRunner,
+} from "@nyx/tasks";
+import {
   ChannelManager,
   ChannelSessionStore,
   TelegramApprovalBridge,
@@ -66,6 +73,7 @@ import type {
 import {
   ContentBlockSchema,
   EngagementSchema,
+  TaskSpecSchema,
   toSerializedError,
   type ContentBlock,
   type ModelProvider,
@@ -76,6 +84,8 @@ import {
   type SandboxProvider,
   type SessionEvent,
   type StoredEvent,
+  type TaskRecord,
+  type TaskState,
 } from "@nyx/protocol";
 import { validateTargets } from "@nyx/scope";
 import { authenticate, resolveAuth, type Actor, type ResolvedAuth } from "./auth.js";
@@ -112,6 +122,10 @@ export interface NyxServer {
   readonly heartbeats: Scheduler;
   /** The subagent manager — spawn/list/abort, and tests. */
   readonly subagents: SubagentManager;
+  /** The durable-task manager — create/get/list/pause/resume/cancel/retry. */
+  readonly tasks: TaskManager;
+  /** The task worker pool — start/stop, and tests. */
+  readonly taskPool: TaskWorkerPool;
 }
 
 const HEARTBEAT_MS = 15_000;
@@ -257,11 +271,17 @@ export function createServer(deps: ServerDeps): NyxServer {
       'config subagents.sandbox_sharing "fork" is Phase 4+ — only "inherit" is supported',
     );
   }
+  // Late-bound: the tasks manager (created below, after the sandbox/persona
+  // wiring) installs the reporter so a spawn's child session lands on the
+  // task row the moment it exists — pause/cancel from another process can
+  // then target the RUNNING child, not just the last settled one.
+  const taskSpawnReport: { report?: (child: string, parent: string) => void } = {};
   const subagents = createSubagentManager({
     store: sink.wrapped,
     config: subagentsConfig,
     db: unified.db,
     onSpawned: ({ session_id, parent_session_id }) => {
+      taskSpawnReport.report?.(session_id, parent_session_id);
       const inherited = approvalEngineHandle.engine.presenterFor(parent_session_id);
       if (inherited !== undefined) {
         approvalEngineHandle.engine.registerPresenter(session_id, inherited.presenter, {
@@ -319,6 +339,81 @@ export function createServer(deps: ServerDeps): NyxServer {
 
   const auth = resolveAuth(config.server, process.env);
   const loop = createAgentLoop();
+
+  // ── durable tasks (Phase 4 §2.1) ──
+  // One manager + one worker pool per process. Attempts execute as
+  // subagents of the TASK's own session (its metadata log); the spawn's
+  // parent signal is the attempt's abort signal, so pause/cancel/shutdown
+  // propagate through the existing Phase 3 abort machinery. Workers
+  // coordinate with any other NYX process on the same nyx.db through SQL
+  // leases — no other coordination exists or is needed.
+  const tasks: TaskManager = createTaskManager({
+    db: unified.db,
+    store: sink.wrapped,
+  });
+  const taskContextFor = async (
+    task: TaskRecord,
+    signal: AbortSignal,
+  ): Promise<RunContext> => {
+    const meta = await store.meta(task.task_session_id);
+    const log = logger.child({
+      session_id: task.task_session_id,
+      task_id: task.id,
+      component: "task",
+    });
+    return {
+      kernel,
+      session: sink.wrapped,
+      model: router,
+      tools: toolRegistry,
+      tool_router: toolRouter,
+      policy,
+      approvals,
+      sandbox: await sandboxFor(task.task_session_id),
+      memory,
+      persona: await personaFor(meta?.persona_id ?? config.persona.default_id),
+      signal,
+      logger: log,
+    };
+  };
+  const taskRunner: TaskRunner = {
+    run: async (task, handle) => {
+      const turn_id = `task-${task.id}-${task.attempts + 1}`;
+      const ctx = await taskContextFor(task, handle.signal);
+      // subagents.bindTurn is unnecessary here: the spawn_subagent tool is
+      // not reachable from the runner path (this is not a model turn).
+      const result = await subagents.spawn(
+        { ...task.spec.subagent_spec, task: task.spec.description },
+        ctx,
+        { session_id: task.task_session_id, turn_id },
+      );
+      // Mid-flight reporting came through onSpawned (taskSpawnReport); this
+      // is the settle-time confirmation for the record.
+      handle.setSubagentSession(result.session_id);
+      return result;
+    },
+    abort: async (task) => {
+      const row = await tasks.get(task.id);
+      if (row?.subagent_session_id != null) {
+        await subagents.abort(row.subagent_session_id);
+      }
+    },
+  };
+  taskSpawnReport.report = (child, parent) => {
+    tasks.sql.noteSubagentSessionByTaskSession(parent, child);
+  };
+  const taskPool = new TaskWorkerPool({
+    manager: tasks,
+    runner: taskRunner,
+    store: sink.wrapped,
+    logger,
+    config: {
+      workers: config.tasks?.workers ?? 2,
+      poll_ms: config.tasks?.poll_interval_ms ?? 500,
+      lease_ttl_ms: config.tasks?.lease_ttl_ms ?? 300_000,
+      renew_interval_ms: config.tasks?.renew_interval_ms ?? 30_000,
+    },
+  });
 
   // ── per-session turn execution (lane queue) ──
   // One session = one lane = serial execution; turns POSTed while one is in
@@ -895,6 +990,107 @@ export function createServer(deps: ServerDeps): NyxServer {
     return c.json(await router.listModels());
   });
 
+  // ── Phase 4 §2.1.6: durable task routes ──
+
+  // Create: the spec (Zod-validated, defaults filled) + the calling actor as
+  // owner. A bound task's owner is forced to the parent session's owner (the
+  // manager enforces cross-owner refusal — hard rule #6).
+  app.post("/v1/tasks", async (c) => {
+    const actor = c.get("actor");
+    const parsed = TaskSpecSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return badRequest(
+        "validation_failed",
+        parsed.error.issues
+          .map((i) => `${i.path.join(".") || "(root)"} ${i.message}`)
+          .join("; "),
+      );
+    }
+    try {
+      const record = await tasks.create(
+        parsed.data,
+        {
+          owner_id: actor.is_owner ? config.owner_id : actor.id,
+          persona_id: config.persona.default_id,
+        },
+      );
+      return c.json(record, 201);
+    } catch (err) {
+      const code =
+        err instanceof Error && "code" in err ? String((err as { code: unknown }).code) : "validation_failed";
+      const status = code === "not_found" ? 404 : code === "illegal_transition" ? 409 : 400;
+      return c.json(errorBody(code, err instanceof Error ? err.message : String(err)), status);
+    }
+  });
+
+  app.get("/v1/tasks", async (c) => {
+    const stateParam = c.req.query("state");
+    let state: TaskState[] | undefined;
+    if (stateParam !== undefined && stateParam.length > 0) {
+      const raw = stateParam.split(",").map((s) => s.trim()) as TaskState[];
+      const valid = ["pending", "running", "paused", "completed", "failed", "cancelled"];
+      if (raw.some((s) => !valid.includes(s))) {
+        return badRequest("validation_failed", `unknown task state in "${stateParam}"`);
+      }
+      state = raw;
+    }
+    const parent = c.req.query("parent_session_id");
+    const limit = Number(c.req.query("limit") ?? "100");
+    return c.json(
+      await tasks.list({
+        ...(state !== undefined ? { state } : {}),
+        ...(parent !== undefined && parent.length > 0 ? { parent_session_id: parent } : {}),
+        ...(Number.isFinite(limit) && limit > 0 ? { limit } : {}),
+      }),
+    );
+  });
+
+  app.get("/v1/tasks/:id", async (c) => {
+    const record = await tasks.get(c.req.param("id"));
+    if (record === null) return c.json(errorBody("not_found", "task not found"), 404);
+    return c.json(record);
+  });
+
+  const taskAction = (action: "pause" | "resume" | "retry") => async (c: Context): Promise<Response> => {
+    const id = c.req.param("id") ?? "";
+    try {
+      await tasks[action](id);
+      const record = await tasks.get(id);
+      if (record === null) return c.json(errorBody("not_found", "task not found"), 404);
+      return c.json(record);
+    } catch (err) {
+      const code =
+        err instanceof Error && "code" in err ? String((err as { code: unknown }).code) : "illegal_transition";
+      const status = code === "not_found" ? 404 : 409;
+      return c.json(errorBody(code, err instanceof Error ? err.message : String(err)), status);
+    }
+  };
+  app.post("/v1/tasks/:id/pause", taskAction("pause"));
+  app.post("/v1/tasks/:id/resume", taskAction("resume"));
+  app.post("/v1/tasks/:id/retry", taskAction("retry"));
+
+  // Cancel (DELETE): hard stop — a running attempt is aborted; the row goes
+  // to cancelled (legal from any state).
+  app.delete("/v1/tasks/:id", async (c) => {
+    const id = c.req.param("id");
+    const before = await tasks.get(id);
+    if (before === null) return c.json(errorBody("not_found", "task not found"), 404);
+    try {
+      await tasks.cancel(id);
+    } catch (err) {
+      const code =
+        err instanceof Error && "code" in err ? String((err as { code: unknown }).code) : "illegal_transition";
+      return c.json(errorBody(code, err instanceof Error ? err.message : String(err)), 409);
+    }
+    // Cross-process abort insurance: if this process isn't running the
+    // attempt, the owning process's subagent manager drains the request.
+    const after = await tasks.get(id);
+    if (after?.subagent_session_id != null && !taskPool.runningIds.has(id)) {
+      await subagents.abort(after.subagent_session_id).catch(() => undefined);
+    }
+    return c.json({ cancelled: id });
+  });
+
   // ── lifecycle ──
   let httpServer: HttpServer | undefined;
   let closing = false;
@@ -910,6 +1106,12 @@ export function createServer(deps: ServerDeps): NyxServer {
     },
     get subagents() {
       return subagents;
+    },
+    get tasks() {
+      return tasks;
+    },
+    get taskPool() {
+      return taskPool;
     },
     async start(opts = {}) {
       const port = opts.port ?? config.server?.port ?? 8787;
@@ -939,6 +1141,15 @@ export function createServer(deps: ServerDeps): NyxServer {
           specs: heartbeatScheduler.list().filter((s) => s.enabled).map((s) => s.id),
         });
       }
+      // Phase 4 §2.1.6: the worker pool starts with the process. Graceful
+      // shutdown (close below) aborts running attempts and releases their
+      // leases so another NYX process on the same nyx.db reclaims them.
+      if (config.tasks?.enabled !== false) {
+        taskPool.start();
+        logger.info("tasks.workers_started", {
+          workers: config.tasks?.workers ?? 2,
+        });
+      }
       return {
         port: actualPort,
         close: () =>
@@ -957,6 +1168,10 @@ export function createServer(deps: ServerDeps): NyxServer {
       }
       await heartbeatScheduler.stop();
       heartbeatStore.close();
+      // Phase 4: abort running task attempts and RELEASE their leases
+      // (owner kept, expiry moved into the past) before anything else winds
+      // down — another process may reclaim mid-shutdown.
+      await taskPool.stop();
       for (const controller of turnControllers.values()) controller.abort();
       turnControllers.clear();
       // 2.1: session close with a pending approval — withdraw + auto-deny,

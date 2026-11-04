@@ -120,6 +120,48 @@ export const SubagentInfoSchema = z.object({
   task: z.string(),
 });
 
+// ── Phase 4: durable task boundary schemas ──
+
+export const TaskStateSchema = z.enum([
+  "pending",
+  "running",
+  "paused",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+
+export const TaskSpecSchema = z
+  .object({
+    id: z.string().min(1).optional(),
+    title: z.string().min(1),
+    description: z.string().min(1),
+    parent_session_id: z.string().min(1).optional(),
+    subagent_spec: SubagentSpecSchema.omit({ task: true }),
+    max_attempts: z.number().int().min(1).max(100).default(3),
+    retry_backoff_ms: z.number().int().min(0).default(1000),
+    timeout_ms: z.number().int().positive().optional(),
+    priority: z.enum(["interactive", "background"]).default("background"),
+    schedule: z.string().min(1).optional(),
+  })
+  .strict();
+
+export const TaskRecordSchema = z.object({
+  id: z.string(),
+  task_session_id: z.string(),
+  spec: TaskSpecSchema,
+  state: TaskStateSchema,
+  attempts: z.number().int().nonnegative(),
+  lease_owner: z.string().nullable(),
+  lease_expires_at: z.number().int().nonnegative().nullable(),
+  subagent_session_id: z.string().nullable(),
+  last_error: SerializedErrorSchema.nullable(),
+  result: SubagentResultSchema.nullable(),
+  created_at: z.number().int().nonnegative(),
+  updated_at: z.number().int().nonnegative(),
+  next_attempt_at: z.number().int().nonnegative().nullable(),
+});
+
 export const ScopeTargetsSchema = z.object({
   cidrs: z.array(z.string()),
   domains: z.array(z.string()),
@@ -270,6 +312,65 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
     subagent_session_id: z.string(),
     parent_session_id: z.string(),
     reason: z.string(),
+    ts: z.number().int().nonnegative(),
+  }),
+  z.object({
+    type: z.literal("task.created"),
+    session_id: z.string(),
+    task_id: z.string(),
+    title: z.string(),
+    spec: TaskSpecSchema,
+    ts: z.number().int().nonnegative(),
+  }),
+  z.object({
+    type: z.literal("task.started"),
+    session_id: z.string(),
+    task_id: z.string(),
+    attempt: z.number().int().positive(),
+    subagent_session_id: z.string().nullable(),
+    ts: z.number().int().nonnegative(),
+  }),
+  z.object({
+    type: z.literal("task.completed"),
+    session_id: z.string(),
+    task_id: z.string(),
+    result: SubagentResultSchema.nullable(),
+    attempts: z.number().int().positive(),
+    ts: z.number().int().nonnegative(),
+  }),
+  z.object({
+    type: z.literal("task.failed"),
+    session_id: z.string(),
+    task_id: z.string(),
+    error: SerializedErrorSchema,
+    attempts: z.number().int().positive(),
+    ts: z.number().int().nonnegative(),
+  }),
+  z.object({
+    type: z.literal("task.paused"),
+    session_id: z.string(),
+    task_id: z.string(),
+    ts: z.number().int().nonnegative(),
+  }),
+  z.object({
+    type: z.literal("task.resumed"),
+    session_id: z.string(),
+    task_id: z.string(),
+    ts: z.number().int().nonnegative(),
+  }),
+  z.object({
+    type: z.literal("task.cancelled"),
+    session_id: z.string(),
+    task_id: z.string(),
+    ts: z.number().int().nonnegative(),
+  }),
+  z.object({
+    type: z.literal("task.retrying"),
+    session_id: z.string(),
+    task_id: z.string(),
+    attempt: z.number().int().positive(),
+    next_attempt_at: z.number().int().nonnegative(),
+    error: SerializedErrorSchema,
     ts: z.number().int().nonnegative(),
   }),
 ]);

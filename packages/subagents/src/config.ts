@@ -19,8 +19,14 @@ export interface SubagentsConfig {
   forbidden_tools: string[];
   /** "inherit" (shared with parent — Phase 3) | "fork" (Phase 4+). */
   sandbox_sharing: "inherit" | "fork";
-  /** Phase 4 GC knob: subagent sessions older than this are collected. Default 7. */
+  /** Phase 4 GC knob: subagent sessions older than this are collected. 0 = never. Default 7. */
   retention_days: number;
+  /** Phase 4 GC knob: which session states retention may archive. Default "subagent". */
+  retention_scope: "subagent" | "subagent+failed" | "all" | "none";
+  /** Phase 4 GC knob: hard-delete archived sessions older than this. 0 = off. */
+  delete_after_days: number;
+  /** Phase 4 GC knob: the retention task's cron schedule (5-field). Default daily 03:30 UTC. */
+  retention_schedule: string;
 }
 
 /**
@@ -52,6 +58,9 @@ export const DEFAULT_SUBAGENTS_CONFIG: SubagentsConfig = {
   forbidden_tools: [...DEFAULT_FORBIDDEN_TOOLS],
   sandbox_sharing: "inherit",
   retention_days: 7,
+  retention_scope: "subagent",
+  delete_after_days: 0,
+  retention_schedule: "30 3 * * *",
 };
 
 /** Merge a partial config section over the defaults. */
