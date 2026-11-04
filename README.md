@@ -99,11 +99,12 @@ Full details: `docs/ARCHITECTURE.md`, `docs/SECURITY-MODEL.md`,
 | `packages/agent`    | the single DI agent loop                                                  |
 | `packages/runtime`  | lane queue (per-session serial turns), cron, heartbeat scheduler          |
 | `packages/channels` | webhook + Telegram ingress, identity/session mapping, `/new` `/fork`      |
+| `packages/subagents`| the subagent system: spawn, isolate, review (`docs/SUBAGENTS.md`)        |
 | `apps/server`       | Hono: REST + SSE + WS, bearer auth, owner-bound R4, channels, heartbeats  |
 | `apps/cli`          | the `nyx` binary: run/chat/sessions/approvals/doctor                      |
 | `apps/web`          | minimal React client (64 KB gzipped)                                      |
 | `personas/default`  | Nyx — honest operator contract, scope discipline                          |
-| `tests/e2e`         | smoke · approval (allow/deny) · scope enforcement · replay                |
+| `tests/e2e`         | smoke · approval · scope · replay · compaction · subagents · fan-out      |
 
 ## Config reference
 
@@ -112,7 +113,8 @@ Full details: `docs/ARCHITECTURE.md`, `docs/SECURITY-MODEL.md`,
 are first-class), `router` (fallback chains, task rules, budgets), `policy`
 (rules — the invariants cannot be weakened from config), `sandbox` (docker
 default; local is dev-only and refuses to run in production), `memory`,
-`persona`, `logging` (redaction list). Secrets live in env vars named by
+`persona`, `logging` (redaction list), `subagents` (depth, budgets, tool
+allowlists — see `docs/SUBAGENTS.md`). Secrets live in env vars named by
 `api_key_env` — never in files.
 
 ## Persona
@@ -135,10 +137,10 @@ Vulnerability reports: GitHub security advisories, please.
 
 | Phase | Scope                                                            |
 | ----- | ---------------------------------------------------------------- |
-| 0     | foundation (this)                                                |
-| 1     | channels: Telegram, Discord, Slack, email, webhooks; lane queues |
-| 2     | subagents: isolated context, summary-only return                 |
-| 3     | compaction pipeline beyond rule-elision                          |
+| 0     | foundation (shipped)                                             |
+| 1     | channels: webhook + Telegram, lane queues, heartbeat (shipped)   |
+| 2     | unified DB, channel approvals, four-tier compaction (shipped)    |
+| 3     | subagents: isolated context, summary-only return (shipped)       |
 | 4     | durable tasks: leases, pause/resume, approval receipts           |
 | 5     | skills system (the `SKILLS_CATALOG` section is reserved)         |
 | 6     | authorized-engagement security tooling on the scope engine       |

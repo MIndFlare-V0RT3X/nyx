@@ -15,7 +15,7 @@ no analytics, no phone-home.
 
 ## The package graph
 
-Fifteen library packages, three applications, and an end-to-end test workspace.
+Sixteen library packages, three applications, and an end-to-end test workspace.
 `@nyx/protocol` is the frozen contract: every type that crosses a package or
 process boundary lives there, and it imports nothing. Dependency direction is
 machine-enforced by ESLint `no-restricted-imports` in `eslint.config.mjs`.
@@ -43,6 +43,7 @@ flowchart TD
     AGENT["@nyx/agent"]
     RUNTIME["@nyx/runtime<br/>lane queue · cron · heartbeat"]
     CHANNELS["@nyx/channels<br/>webhook · Telegram · manager<br/>approval presenters"]
+    SUBAGENTS["@nyx/subagents<br/>spawn · isolate · review"]
     DB["@nyx/db<br/>unified nyx.db · split-DB migration"]
   end
 
@@ -63,6 +64,12 @@ flowchart TD
   TOOLS --> SCOPE
   TOOLS --> SANDBOX
   RUNTIME --> PROTOCOL
+  SUBAGENTS --> PROTOCOL
+  SUBAGENTS --> AGENT
+  SUBAGENTS --> TOOLS
+  SUBAGENTS --> MEMORY
+  SUBAGENTS --> MODEL
+  SUBAGENTS --> SESSION
   CHANNELS --> PROTOCOL
   CHANNELS --> POLICY
   DB --> PROTOCOL
@@ -106,6 +113,16 @@ What the arrows encode:
   handle and migrates the Phase 0/1 split layout (policy.db, channels.db,
   heartbeat.db) in a single chain-verified transaction, renaming the legacy
   files (never deleting them).
+- **subagents → protocol, agent, tools, memory, model, session.** The Phase 3
+  subagent system: `SubagentManager.spawn` creates a child session
+  (`kind="subagent"`), builds the child `RunContext` — a `FilteredToolRegistry`
+  view (spawn_subagent structurally absent, spec allowlist minus forbidden
+  tools), a tool runtime over that filtered registry, an isolated
+  `SubagentMemory` view, a budget-tracking model router, the parent's sandbox /
+  policy / approvals / persona — and runs `AgentLoop.run` with the task. Only
+  the final summary crosses back, as the `spawn_subagent` tool result
+  (`docs/SUBAGENTS.md`). Nothing depends on it except `@nyx/server` and
+  `@nyx/cli`, which wire it.
 - **agent → protocol only, via DI.** The loop imports types; every collaborator
   — kernel, session store, model router, tool registry and router, policy and
   approval engines, sandbox, memory, persona runtime — arrives through the
@@ -191,6 +208,13 @@ denied`), `approvals` (upsert on `approval.requested`, resolved on
   `approval.resolved`), `usage` (summed from `turn.completed` at read time),
   and `projection_version` (the per-session applied horizon). Projection rows
   are pure functions of `(event payload, seq)` — no clocks, no randomness.
+- **Subagent sessions (Phase 3).** `SubagentManager.spawn` creates a child
+  session with `kind="subagent"` and `parent_id` lineage; the four
+  `subagent.*` lifecycle events are mirrored on BOTH logs (the parent's copy
+  carries `subagent_session_id`, the child's denormalizes
+  `parent_session_id`). Child turn events never enter the parent's log — only
+  the summary crosses, as the `spawn_subagent` tool result. Archiving
+  (`DELETE /v1/sessions/:id`) marks `archived_at` and deletes nothing.
 - **Fork.** `fork(session_id, at_seq)` copies the parent's events with
   `seq <= at_seq` into a new session under fresh global seqs (only the
   payload's `session_id` is rewritten), copies owner/persona/engagement, and
@@ -212,7 +236,10 @@ the message list from the session projection under the compaction budget →
 stream from the model router, appending deltas → for each tool call, run the
 enforcement pipeline → append results and continue until no tool calls remain
 or the round cap is hit → `turn.completed` (or, after one recovery attempt,
-`turn.failed`).
+`turn.failed`). A round whose calls are ALL `concurrency: "parallel"`
+(currently only `spawn_subagent`) dispatches concurrently, with results
+reassembled in call order (Phase 3); any serial-classified call keeps the
+round sequential.
 
 Every surface — server, CLI, SDK, e2e tests — constructs a `RunContext` and
 drives the same loop. Only rendering differs. Adding a channel (Phase 1) means
@@ -264,3 +291,4 @@ see `BUILD-CONVENTIONS.md`.
 | Isolation over coordination       | Tool execution happens inside a sandbox; path containment is enforced centrally in the tool runtime and re-enforced by providers                                                 | `@nyx/sandbox`, `@nyx/tools`                 |
 | Progressive disclosure            | Catalogs up front, bodies on demand: memory titles, skill one-liners, tool one-liners in the prompt                                                                              | `@nyx/persona`, `@nyx/protocol` `persona.ts` |
 | One loop, many surfaces           | A single `AgentLoop`; every surface drives it via `RunContext` DI                                                                                                                | `@nyx/agent`, `@nyx/protocol` `agent.ts`     |
+| Subagent isolation is structural  | A subagent's registry lacks `spawn_subagent` by construction (enforced on the execution path, not the catalog); its memory is an isolated view; only its summary crosses back; depth/budget are checked before the child exists | `@nyx/subagents`                             |

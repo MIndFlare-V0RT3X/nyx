@@ -284,3 +284,33 @@ owner_id: owner
 #       prompt: "If any session has been inactive for over 24 hours with uncommitted memory, summarize it into the persona memory store and close the session."
 #       priority: heartbeat
 #       enabled: false
+
+# ── Subagents (Phase 3) ─────────────────────────────────────────────────────
+# A subagent is a child session with its own context window, a narrowed tool
+# registry, and an isolated memory view; only its final summary returns to the
+# parent (as the spawn_subagent tool result). See docs/SUBAGENTS.md.
+# subagents:
+#   max_depth: 3                    # 0 = no spawning at all (the tool is
+#                                   # never registered — structural, not a
+#                                   # runtime check)
+#   max_total_per_turn: 200000      # tokens across ALL subagents of one turn
+#   default_budget_tokens: 32768    # per subagent when a spec names none
+#   max_budget_tokens: 65536        # per-subagent ceiling: a spec's
+#                                   # budget_tokens can request less, never
+#                                   # more (hard rule)
+#   default_allowed_tools:          # when a spec names no tools
+#     - fs.read
+#     - fs.write
+#     - fs.list
+#     - shell.exec
+#     - web.fetch
+#   forbidden_tools:                # always blocked, cannot be overridden;
+#                                   # spawn_subagent is additionally rejected
+#                                   # STRUCTURALLY (a subagent's registry
+#                                   # simply lacks it)
+#     - spawn_subagent
+#     - spawn_subagent_v2
+#   sandbox_sharing: "inherit"      # children share the parent's sandbox.
+#                                   # "fork" is Phase 4+ and errors at startup.
+#   retention_days: 7               # Phase 4 GC knob (heartbeat task); no
+#                                   # subagent-session cleanup in Phase 3.

@@ -133,7 +133,7 @@ export class SubagentManagerImpl implements SubagentManager {
     if (this.cfg.sandbox_sharing === "fork") {
       throw new SubagentError(
         "not_supported",
-        "spawn: subagents.sandbox_sharing \"fork\" is Phase 4+; only \"inherit\" is available",
+        'spawn: subagents.sandbox_sharing "fork" is Phase 4+; only "inherit" is available',
       );
     }
     const parentMeta = await parent_ctx.session.meta(parent.session_id);
@@ -206,81 +206,88 @@ export class SubagentManagerImpl implements SubagentManager {
     };
     this.running.set(child.session_id, runningChild);
 
-    // ── mirrored spawned events (§2.4d): child's copy first, then parent's.
-    const spawnedBase = {
-      subagent_session_id: child.session_id,
-      turn_id: childTurnId,
-      parent_session_id: parent.session_id,
-      parent_turn_id: parent.turn_id,
-      task: spec.task,
-      depth: childDepth,
-      ts: this.now(),
-    };
-    await parent_ctx.session.append(child.session_id, [
-      { type: "subagent.spawned", session_id: child.session_id, ...spawnedBase },
-    ]);
-    await parent_ctx.session.append(parent.session_id, [
-      { type: "subagent.spawned", session_id: parent.session_id, ...spawnedBase },
-    ]);
-    this.deps.onSpawned?.({
-      session_id: child.session_id,
-      parent_session_id: parent.session_id,
-    });
-
-    // ── child RunContext (§2.4e): filtered tools (structural), isolated
-    //    memory, budget-guarded model, shared sandbox, inherited policy +
-    //    approvals + persona.
-    const { tools, kernel } = buildChildTooling(
-      parent_ctx,
-      spec.tools ?? this.cfg.default_allowed_tools,
-      this.cfg,
-    );
+    // From here to settle, the child is tracked as running; any throw on the
+    // way (a failed append, a broken child-context build) must not leave a
+    // dead entry behind — list() would report it "running" forever. The
+    // harvest + abort state is hoisted so the finally and the terminal-state
+    // section below can see it.
     let budgetExceeded = false;
     let parentAborted = false;
-    const budgetRouter = new BudgetTrackingRouter(parent_ctx.model, budget, () => {
-      budgetExceeded = true;
-      controller.abort(new SubagentError("budget_exceeded", "subagent budget exceeded"));
-    });
     const onParentAbort = (): void => {
       parentAborted = true;
       runningChild.abortReason = "parent turn aborted";
       controller.abort(new SubagentError("aborted", "parent turn aborted"));
     };
-    if (parent_ctx.signal.aborted) onParentAbort();
-    else parent_ctx.signal.addEventListener("abort", onParentAbort, { once: true });
-
-    const childCtx: RunContext = {
-      kernel,
-      session: parent_ctx.session,
-      model: budgetRouter,
-      tools,
-      tool_router: {
-        select: (call, available) => available.find((d) => d.name === call.name) ?? null,
-      },
-      policy: parent_ctx.policy,
-      approvals: parent_ctx.approvals,
-      sandbox: parent_ctx.sandbox,
-      memory: childMemory(parent_ctx.memory, child.session_id),
-      persona: parent_ctx.persona,
-      signal: controller.signal,
-      logger: parent_ctx.logger.child({ session_id: child.session_id, turn_id: childTurnId }),
-      options: parent_ctx.options,
-    };
-
-    // ── run the child turn, harvesting summary/usage/failure from its own
-    //    events while racing the cross-process abort poll (§2.4f–h).
     let summary = "";
     let tokensUsed = 0;
     let turnFailure: SerializedError | undefined;
+    let budgetRouter: BudgetTrackingRouter | undefined;
     try {
-      const iterator = this.loop.run(
+      // ── mirrored spawned events (§2.4d): child's copy first, then parent's.
+      const spawnedBase = {
+        subagent_session_id: child.session_id,
+        turn_id: childTurnId,
+        parent_session_id: parent.session_id,
+        parent_turn_id: parent.turn_id,
+        task: spec.task,
+        depth: childDepth,
+        ts: this.now(),
+      };
+      await parent_ctx.session.append(child.session_id, [
+        { type: "subagent.spawned", session_id: child.session_id, ...spawnedBase },
+      ]);
+      await parent_ctx.session.append(parent.session_id, [
+        { type: "subagent.spawned", session_id: parent.session_id, ...spawnedBase },
+      ]);
+      this.deps.onSpawned?.({
+        session_id: child.session_id,
+        parent_session_id: parent.session_id,
+      });
+
+      // ── child RunContext (§2.4e): filtered tools (structural), isolated
+      //    memory, budget-guarded model, shared sandbox, inherited policy +
+      //    approvals + persona.
+      const { tools, kernel } = buildChildTooling(
+        parent_ctx,
+        spec.tools ?? this.cfg.default_allowed_tools,
+        this.cfg,
+      );
+      budgetRouter = new BudgetTrackingRouter(parent_ctx.model, budget, () => {
+        budgetExceeded = true;
+        controller.abort(new SubagentError("budget_exceeded", "subagent budget exceeded"));
+      });
+      if (parent_ctx.signal.aborted) onParentAbort();
+      else parent_ctx.signal.addEventListener("abort", onParentAbort, { once: true });
+
+      const childCtx: RunContext = {
+        kernel,
+        session: parent_ctx.session,
+        model: budgetRouter,
+        tools,
+        tool_router: {
+          select: (call, available) => available.find((d) => d.name === call.name) ?? null,
+        },
+        policy: parent_ctx.policy,
+        approvals: parent_ctx.approvals,
+        sandbox: parent_ctx.sandbox,
+        memory: childMemory(parent_ctx.memory, child.session_id),
+        persona: parent_ctx.persona,
+        signal: controller.signal,
+        logger: parent_ctx.logger.child({ session_id: child.session_id, turn_id: childTurnId }),
+        options: parent_ctx.options,
+      };
+
+      // ── run the child turn, harvesting summary/usage/failure from its own
+      //    events while racing the cross-process abort poll (§2.4f–h).
+      const runner = this.loop.run(
         {
           session_id: child.session_id,
           turn_id: childTurnId,
           user_message: childUserMessage(spec.task),
         },
         childCtx,
-      )[Symbol.asyncIterator]();
+      );
+      const iterator = runner[Symbol.asyncIterator]();
       let pending = iterator.next();
       for (;;) {
         let result: IteratorResult<SessionEvent>;
@@ -295,9 +302,7 @@ export class SubagentManagerImpl implements SubagentManager {
               if (entry !== undefined) {
                 entry.externalAbort = true;
                 entry.abortReason = "abort requested (external)";
-                entry.controller.abort(
-                  new SubagentError("aborted", "abort requested (external)"),
-                );
+                entry.controller.abort(new SubagentError("aborted", "abort requested (external)"));
               }
               // Requests for children this process doesn't run are drained
               // as stale — their owners already finished or live elsewhere.
@@ -353,7 +358,7 @@ export class SubagentManagerImpl implements SubagentManager {
       state = "budget_exceeded";
       error = {
         name: "BudgetExceededError",
-        message: `subagent budget of ${budget} tokens exceeded (${budgetRouter.tokensCounted} counted)`,
+        message: `subagent budget of ${budget} tokens exceeded (${budgetRouter?.tokensCounted ?? 0} counted)`,
         code: "budget_exceeded",
       };
       await this.mirror(parent_ctx, parent.session_id, child.session_id, {

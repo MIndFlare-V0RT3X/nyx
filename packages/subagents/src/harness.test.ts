@@ -34,7 +34,6 @@ import {
   type CompletionRequest,
   type ExecResult,
   type Logger,
-  type MemoryStore,
   type ModelChunk,
   type ModelInfo,
   type ModelProvider,

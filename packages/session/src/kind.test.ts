@@ -113,7 +113,9 @@ describe("sessions.kind migration (0001)", () => {
     expect(all.map((m) => m.kind).sort()).toEqual(["fork", "session", "subagent"]);
 
     const noSubagents = await store.list({ limit: 10, kinds: ["session", "fork"] });
-    expect(noSubagents.map((m) => m.kind)).toEqual(["fork", "session"]);
+    // Same-millisecond updated_at ties break on the random session id —
+    // compare as a set.
+    expect(noSubagents.map((m) => m.kind).sort()).toEqual(["fork", "session"]);
 
     const onlySubagents = await store.list({ limit: 10, kinds: ["subagent"] });
     expect(onlySubagents.map((m) => m.kind)).toEqual(["subagent"]);

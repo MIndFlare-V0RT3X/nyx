@@ -98,7 +98,7 @@ function textTurn(text: string): ModelChunk[] {
 async function runSpawnTurn(
   rig: Awaited<ReturnType<typeof makeRig>>,
   provider: DispatchProvider,
-): Promise<{ runtime: Awaited<ReturnType<ReturnType<typeof makeRig>["runtime"]>>; session_id: string }> {
+): Promise<{ runtime: ReturnType<Awaited<ReturnType<typeof makeRig>>["runtime"]>; session_id: string }> {
   const runtime = await rig.runtime([provider]);
   const session = await runtime.createSession({ title: "cli subagent test" });
   const result = await runtime.runTurn({

@@ -445,12 +445,9 @@ describe("3.4 — tool allowlist (structural)", () => {
 
 describe("3.5 — abort propagation", () => {
   it("parent signal aborts the child; subagent.aborted lands on both logs", async () => {
-    const h = await makeSubagentHarness();
     const slow: import("@nyx/protocol").ToolHandler = {
       execute: () => new Promise(() => undefined), // never resolves; abort kills it
     };
-    // register on a fresh harness with the slow tool… (tool registration must
-    // happen on the same registry, so re-create via extraTools)
     const h2 = await makeSubagentHarness({
       extraTools: [{ name: "test.slow", handler: slow }],
     });
@@ -819,5 +816,66 @@ describe("rejection paths surface as typed SubagentErrors", () => {
         turn_id: "t1",
       }),
     ).rejects.toMatchObject({ code: "not_supported" });
+  });
+});
+
+describe("concurrent spawn allocation (Reviewer-1 hardening)", () => {
+  it("two same-turn spawns racing on the budget: exactly one wins", async () => {
+    const h = await makeSubagentHarness({
+      config: { max_total_per_turn: 100_000, default_budget_tokens: 60_000 },
+    });
+    h.provider.script("race-one", [mockTextTurn("one")]);
+    h.provider.script("race-two", [mockTextTurn("two")]);
+
+    // Both spawns start in the same tick — the check-then-set allocation is
+    // synchronous between awaits, so exactly one may reserve the budget.
+    const settled = await Promise.allSettled([
+      h.manager.spawn({ task: "race-one" }, h.parentCtx, {
+        session_id: h.parent.session_id,
+        turn_id: "t1",
+      }),
+      h.manager.spawn({ task: "race-two" }, h.parentCtx, {
+        session_id: h.parent.session_id,
+        turn_id: "t1",
+      }),
+    ]);
+    const won = settled.filter((r) => r.status === "fulfilled");
+    const rejected = settled.filter((r) => r.status === "rejected");
+    expect(won).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({
+      code: "budget_exceeded",
+    });
+    expect(turnSpendOf(h.manager as never)(h.parent.session_id, "t1")).toBe(60_000);
+  });
+
+  it("an allowlist naming tools the parent doesn't have grants nothing", async () => {
+    const h = await makeSubagentHarness();
+    h.provider.script("phantom tools", [
+      [
+        {
+          type: "tool_call.delta",
+          index: 0,
+          id: "c1",
+          name: "fs.read",
+          arguments_delta: '{"path":"hello.txt"}',
+        },
+        { type: "usage", usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } },
+        { type: "done", finish_reason: "tool_calls" },
+      ],
+      mockTextTurn("no tools at all"),
+    ]);
+    // "grep" is not registered on the parent registry → the child's allowlist
+    // is EMPTY (fs.read exists but is not in the spec either).
+    const result = await h.manager.spawn(
+      { task: "phantom tools", tools: ["grep"] },
+      h.parentCtx,
+      { session_id: h.parent.session_id, turn_id: "t1" },
+    );
+    expect(result.state).toBe("completed");
+    const childEvents = await readAll(h, result.session_id);
+    expect(byType(childEvents, "tool.error")[0]).toMatchObject({
+      error: { code: "tool_unknown" },
+    });
   });
 });

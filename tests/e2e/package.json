@@ -22,10 +22,13 @@
     "@nyx/scope": "workspace:*",
     "@nyx/server": "workspace:*",
     "@nyx/session": "workspace:*",
+    "@nyx/subagents": "workspace:*",
     "@nyx/tools": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^2.1.8",
-    "@types/node": "^22.10.2"
+    "@types/node": "^22.10.2",
+    "better-sqlite3": "^11.8.1",
+    "@types/better-sqlite3": "^7.6.12"
   }
 }

@@ -71,19 +71,19 @@ class DispatchProvider implements ModelProvider {
 }
 
 function toolCallTurn(calls: Array<{ id: string; name: string; args: string }>): ModelChunk[] {
-  return [
-    ...calls.flatMap((c, i) => [
-      {
-        type: "tool_call.delta",
-        index: i,
-        id: c.id,
-        name: c.name,
-        arguments_delta: c.args,
-      },
-    ]),
-    { type: "usage", usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } },
-    { type: "done", finish_reason: "tool_calls" },
-  ];
+  const chunks: ModelChunk[] = [];
+  calls.forEach((c, i) => {
+    chunks.push({
+      type: "tool_call.delta",
+      index: i,
+      id: c.id,
+      name: c.name,
+      arguments_delta: c.args,
+    });
+  });
+  chunks.push({ type: "usage", usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } });
+  chunks.push({ type: "done", finish_reason: "tool_calls" });
+  return chunks;
 }
 
 function textTurn(text: string): ModelChunk[] {

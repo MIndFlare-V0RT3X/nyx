@@ -6,6 +6,91 @@ SemVer once 0.1.0 ships.
 
 ## [Unreleased]
 
+### Added — Phase 3 (subagents)
+
+- **`@nyx/subagents` (new package).** The subagent system: a child session
+  (`kind="subagent"`, `parent_id` lineage) with its own context window, a
+  narrowed tool registry, an isolated memory view, and the parent's sandbox.
+  `SubagentManager.spawn` checks depth (`max_depth`, default 3; 0 = no
+  spawning at all; a spec's `max_depth_override` may only tighten) and the
+  per-turn budget (allocation-based: `min(spec ?? default, max_budget)` per
+  child, summed per parent turn against `max_total_per_turn`) BEFORE the
+  child exists, then runs `AgentLoop.run` with the task framed as the initial
+  user message. Only the final summary crosses back — as the `spawn_subagent`
+  tool result JSON. `list()` reconstructs children from the event log
+  (restart-safe); `abort()` covers in-process (direct controller) and
+  cross-process (`subagent_abort_requests` rows on nyx.db, drained on a
+  150 ms poll — the approval engine's pattern) paths.
+- **Structural isolation (hard rules).** A subagent's tool registry is a
+  `FilteredToolRegistry` view: `spawn_subagent` is absent BY CONSTRUCTION
+  (independent of config; an attempted call is a clean `tool_unknown`), config
+  `forbidden_tools` never pass, and the spec's allowlist is intersected with
+  the parent registry (naming tools the parent lacks grants nothing). The
+  child's TOOL RUNTIME is built over the filtered registry — enforcement sits
+  on the execution path, not just the model-facing catalog. The child's
+  memory is a `SubagentMemory` view: `session`-scope writes map onto the
+  `subagent` scope keyed by the child's id; reads see only its own entries
+  plus `global`; `get()` ownership-filters; `compact()` is a no-op. Child
+  events never enter the parent's log — the four `subagent.*` lifecycle
+  events are mirrored on BOTH logs (the parent's copy carries
+  `subagent_session_id`). Budget crossing aborts the child
+  (`state="budget_exceeded"`); the parent's signal aborts children
+  (`subagent.aborted` on both logs) — abort propagation is not optional and
+  is tested on all three paths.
+- **`spawn_subagent` tool (risk R1, `concurrency: "parallel"`).** Registered
+  on the registry at kernel setup — structurally absent when `max_depth` is
+  0. The handler resolves its parent through the manager's per-turn
+  `RunContext` binding (`bindTurn`/`unbindTurn` bracket every turn on every
+  surface; the lane queue guarantees one live turn per session). Model-facing
+  input: `{task, tools?, budget_tokens?}`.
+- **Parallel rounds in the agent loop.** A model round whose calls are ALL
+  `concurrency: "parallel"` dispatches concurrently with incremental event
+  flushing; tool results reassemble in call order. Any serial-classified
+  call keeps the round sequential (two `shell.exec` never overlap).
+  Regression-tested (overlap proven by timing; order by index).
+- **Schema migration `0001_sessions_kind`.** `sessions.kind TEXT NOT NULL
+  DEFAULT 'session' CHECK (kind IN ('session','fork','subagent'))` +
+  `archived_at`: existing rows become `'session'`, new forks are `'fork'`,
+  subagent children are `'subagent'`. `list()` filters by kinds and hides
+  archived sessions; `archiveSession()` marks (never deletes) — the id stays
+  resolvable, the log replayable (hard rule #6).
+- **Server.** Manager wired on kernel setup; a parent session's approval
+  presenter is copied onto its children (`ApprovalEngine.presenterFor`, new)
+  so an `ask` inside a child turn stays interactive. Routes:
+  `GET /v1/sessions` excludes subagents unless `?include_subagents=true`;
+  `GET /v1/sessions/:id/subagents`; `DELETE /v1/subagents/:id` (owner-only
+  abort); `DELETE /v1/sessions/:id` (abort + archive, subagent sessions
+  only). A child's SSE stream is the same `/v1/sessions/:id/events` handler.
+- **CLI.** `nyx subagents list <parent>` / `nyx subagents abort <child>`
+  (cross-process via nyx.db); `nyx sessions list --all` shows subagents with
+  a `↳` prefix and parent; `nyx sessions show` prints the subagent lineage
+  hint; the chat TUI renders the spawn card as `↳ subagent <task>`.
+- **Compaction interaction.** A subagent summary counts against the parent's
+  context budget like any tool output (Tier-1 elision applies); the child's
+  full session is never in the parent's context. Inside the child, the
+  four-tier pipeline runs over the isolated memory view — Tier-2 session
+  memory lands in the `subagent` scope.
+- **Fan-out validation (§5.1).** `tests/e2e/fanout-review.test.ts`: three
+  reviewer subagents spawned in ONE round over the real Phase 3 sources
+  (copied into their sandbox), restricted to `fs.read` + `grep` (no writes),
+  running in parallel (proven by overlapping event windows) and returning
+  findings. The reviewer models are scripted (NYX has no bundled LLM): the
+  reads/greps are real, the findings are Fizz-authored from reviewing the
+  same files — provenance documented in `docs/SUBAGENTS.md`. 14 findings:
+  4 fixed this phase (running-entry leak on early throw; abort-reason
+  tracking; allocation-race regression test; provider-signal contract
+  documented), 10 verified-by-test or accepted-with-reason.
+- **e2e.** Two subagents in one round run in parallel (the quick child
+  starts and finishes inside the slow child's window — impossible under
+  sequential dispatch), both summaries return as tool results, the parent
+  synthesizes both, children hidden from the session list.
+- **Docs.** `docs/SUBAGENTS.md` (contract, config, aborts, API, known
+  simplifications); ARCHITECTURE (16-package graph, subagent isolation
+  invariant), README, PROTOCOL (event catalogue + routes), example config.
+- **Tests.** 824 total across 19 packages, 0 failures (49 new: 29
+  `@nyx/subagents`, 4 server routes, 2 CLI, 2 e2e incl. fan-out, 2 agent
+  parallel-round, 4 session kind/migration, 3 protocol schemas, 3 config).
+
 ### Added — Phase 2 (unified DB, channel approvals, compaction)
 
 **2.0 Carryover gate** (the four items the Phase 1 review flagged):

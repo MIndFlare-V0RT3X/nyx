@@ -21,11 +21,14 @@ wire truth for every shape is the Zod schemas in
 | Method | Path                               | Request                                              | Response                                         |
 | ------ | ---------------------------------- | ---------------------------------------------------- | ------------------------------------------------ |
 | POST   | `/v1/sessions`                     | `{persona_id?, title?, engagement?}`                 | `201 SessionMeta`                                |
-| GET    | `/v1/sessions?limit=&owner_id=`    | —                                                    | `SessionMeta[]`                                  |
+| GET    | `/v1/sessions?limit=&owner_id=&include_subagents=` | —                              | `SessionMeta[]` (subagents hidden unless `include_subagents=true`) |
 | GET    | `/v1/sessions/:id`                 | —                                                    | `{session: SessionMeta, projection: Projection}` |
 | GET    | `/v1/sessions/:id/events?from_seq` | —                                                    | SSE stream (`text/event-stream`)                 |
 | POST   | `/v1/sessions/:id/turns`           | `{content: ContentBlock[] \| {text: string}, task?}` | `202 {turn_id, session_id}`                      |
 | POST   | `/v1/sessions/:id/fork`            | `{at_seq: number}`                                   | `201 SessionMeta`                                |
+| GET    | `/v1/sessions/:id/subagents`       | —                                                    | `SubagentInfo[]` (Phase 3)                       |
+| DELETE | `/v1/subagents/:id`                | —                                                    | `{aborted: id}` (owner-only, 403 otherwise)      |
+| DELETE | `/v1/sessions/:id`                 | —                                                    | `{archived, session}` (subagent sessions only)   |
 | GET    | `/v1/approvals?session_id=`        | —                                                    | `ApprovalRecord[]` (pending)                     |
 | POST   | `/v1/approvals/:id`                | `{decision: "allow" \| "deny"}`                      | `ApprovalRecord` (403 for non-owner on R4)       |
 | GET    | `/v1/models`                       | —                                                    | `ModelInfo[]`                                    |
@@ -41,7 +44,17 @@ Route notes:
   **immutable for the session's life**. Creation emits `session.created` with
   the engagement embedded.
 - `GET /v1/sessions` — ordered by `updated_at` descending; `limit` defaults to
-  50; `owner_id` filters.
+  50; `owner_id` filters. Sessions with `kind="subagent"` are excluded unless
+  `include_subagents=true` (they are reachable via their parent and
+  `GET /v1/sessions/:id/subagents`).
+- `GET /v1/sessions/:id/subagents` — the parent's subagent children with
+  their states, reconstructed from the event log (restart-safe).
+- `DELETE /v1/subagents/:id` — aborts a running subagent (owner-only).
+  In-process children abort directly; anything running elsewhere gets a
+  control-row request on `nyx.db` that the owning process drains.
+- `DELETE /v1/sessions/:id` — subagent sessions only: abort if running, then
+  ARCHIVE (set `archived_at`, hide from lists). Nothing is ever hard-deleted;
+  the id stays resolvable and the log replayable.
 - `GET /v1/sessions/:id` — the `Projection` is
   `{session_id, last_seq, messages, tool_calls, approvals, usage}`.
 - `POST /v1/sessions/:id/turns` — returns `202` immediately; the turn runs
@@ -160,6 +173,10 @@ event log).
 | `turn.completed`       | `usage: Usage`                                                               | the turn ended normally                                                                     | loop           |
 | `turn.failed`          | `error: SerializedError`                                                     | the turn ended in error (after one recovery attempt)                                        | loop           |
 | `session.forked`       | `new_session_id`, `at_seq`                                                   | the session was forked; recorded on the parent's log                                        | store          |
+| `subagent.spawned`     | `subagent_session_id`, `turn_id`, `parent_session_id`, `parent_turn_id`, `task`, `depth` | a subagent child was spawned; mirrored on BOTH logs (Phase 3)              | manager        |
+| `subagent.completed`   | `subagent_session_id`, `parent_session_id`, `summary`, `tokens_used`, `duration_ms` | the child's turn completed; the summary is the only thing that crosses back | manager        |
+| `subagent.failed`      | `subagent_session_id`, `parent_session_id`, `error`                          | the child's turn failed (incl. `budget_exceeded`)                                           | manager        |
+| `subagent.aborted`     | `subagent_session_id`, `parent_session_id`, `reason`                         | the child was aborted (parent abort, external request)                                      | manager        |
 
 `ToolOutput` is one of `{kind: "text", text}`, `{kind: "json", json}`,
 `{kind: "file", path, bytes, mime}`, or `{kind: "artifact", artifact_id, path,
