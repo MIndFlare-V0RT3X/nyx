@@ -5,6 +5,7 @@
 // resolution, output, and exit codes only.
 
 import { Command } from "commander";
+import { join } from "node:path";
 import { resolveCliConfig, resolveDataDir } from "./config.js";
 import { runOneShot } from "./run.js";
 import { loadEngagementFile } from "./engagement.js";
@@ -24,6 +25,11 @@ import { listDeclaredModels, renderModels } from "./models.js";
 import { validateConfigFile } from "./validate.js";
 import { doctorChecks, renderDoctorReport } from "./doctor.js";
 import { initNextSteps, runInit, STARTER_CONFIG_NAME } from "./init.js";
+import {
+  bootstrapUserMd,
+  createReadlinePrompter,
+  userMdNote,
+} from "./user-md.js";
 import { CliError } from "./errors.js";
 
 const CLI_ID = "nyx/0.1.0";
@@ -53,7 +59,8 @@ async function main(): Promise<void> {
       `write a starter ${STARTER_CONFIG_NAME} in the current directory (offline defaults: mock provider, local sandbox)`,
     )
     .option("--force", "overwrite an existing config file")
-    .action(async (opts: { force?: boolean }) => {
+    .option("--yes", "non-interactive: write the USER.md template unchanged, no prompts")
+    .action(async (opts: { force?: boolean; yes?: boolean }) => {
       const result = await runInit(process.cwd(), { force: opts.force === true });
       if (result.refused) {
         process.stdout.write(
@@ -61,6 +68,16 @@ async function main(): Promise<void> {
         );
         return;
       }
+      // First-run profile bootstrap: prompt for name/timezone/standing
+      // instructions and write them into the default persona's USER.md.
+      // Skips when the file already has real content; --yes writes the
+      // template unchanged.
+      const bootstrap = await bootstrapUserMd({
+        personaDir: join(process.cwd(), "personas", "default"),
+        ...(opts.yes === true ? {} : { prompter: createReadlinePrompter() }),
+        yes: opts.yes === true,
+      });
+      process.stdout.write(`${userMdNote(bootstrap)}\n`);
       process.stdout.write(`${initNextSteps(result)}\n`);
     });
 
