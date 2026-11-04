@@ -13,11 +13,15 @@
 // Location host with no check at all.
 
 import * as path from "node:path";
-import { makeScopeChecker } from "@nyx/scope";
+import * as http from "node:http";
+import * as https from "node:https";
+import { checkResolvedTarget } from "@nyx/scope";
+import { DnsEgressResolver, stripTrailingDot } from "./egress.js";
+import type { EgressResolver, ResolvedEndpoint } from "./egress.js";
 import type {
   Capability,
-  Engagement,
   RiskTier,
+  ScopeCheckResult,
   ToolDefinition,
   ToolHandler,
   ToolOutput,
@@ -151,132 +155,255 @@ function isTextualContentType(contentType: string): boolean {
 }
 
 /**
- * Read the body up to `cap` bytes, then cancel the stream. Stops one chunk
- * past the cap so an exactly-`cap`-byte body is not flagged as truncated.
+ * Read the response body up to `cap` bytes, then destroy the stream. Stops
+ * one chunk past the cap so an exactly-`cap`-byte body is not flagged as
+ * truncated.
  */
 async function readBodyCapped(
-  res: Response,
+  msg: http.IncomingMessage,
   cap: number,
 ): Promise<{ body: Buffer; truncated: boolean }> {
-  if (res.body === null) return { body: Buffer.alloc(0), truncated: false };
-  const reader = res.body.getReader();
-  const chunks: Buffer[] = [];
-  let received = 0;
-  let truncated = false;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (value === undefined) continue;
-    chunks.push(Buffer.from(value));
-    received += value.byteLength;
-    if (received > cap) {
-      truncated = true;
-      break;
-    }
-  }
-  await reader.cancel().catch(() => undefined);
-  const full = Buffer.concat(chunks);
-  return { body: full.length > cap ? full.subarray(0, cap) : full, truncated };
+  if (msg.readableEnded) return { body: Buffer.alloc(0), truncated: false };
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let received = 0;
+    let settled = false;
+    const finish = (truncated: boolean): void => {
+      if (settled) return;
+      settled = true;
+      const full = Buffer.concat(chunks);
+      resolve({ body: full.length > cap ? full.subarray(0, cap) : full, truncated });
+    };
+    msg.on("data", (chunk: Buffer) => {
+      chunks.push(chunk);
+      received += chunk.length;
+      if (received > cap) {
+        msg.destroy();
+        finish(true);
+      }
+    });
+    msg.on("end", () => finish(false));
+    msg.on("error", (err: Error) => {
+      if (!settled) reject(err);
+    });
+  });
+}
+
+/** The pinned-transport response: headers via case-insensitive get(). */
+interface HttpExchange {
+  status: number;
+  statusText: string;
+  header(name: string): string | null;
+  msg: http.IncomingMessage;
+}
+
+function hostHeaderValue(hostname: string, port: number, isHttps: boolean): string {
+  const defaultPort = isHttps ? 443 : 80;
+  return port === defaultPort ? hostname : `${hostname}:${port}`;
 }
 
 /**
- * Scope-check one redirect hop (deny-first). The Location target is a network
- * action the operator never approved by name, so it faces the same engagement
- * scope check the runtime applied to the original url — same host/port
- * extraction semantics (default ports materialized, bracketed IPv6 kept for
- * normalizeHost to unwrap). Returns a denial reason or null when allowed.
+ * One connection attempt to a pinned address. The `lookup` override is the
+ * actual pin: net.connect would otherwise re-resolve the hostname through
+ * DNS, re-opening the rebinding window the resolver just closed. SNI and
+ * Host stay the real hostname so TLS and vhosting behave normally.
  */
-function redirectScopeDenial(engagement: Engagement | null, target: URL): string | null {
-  if (engagement === null) {
-    return "no engagement declared for this session; network egress denied";
-  }
-  const port = target.port !== "" ? Number(target.port) : target.protocol === "https:" ? 443 : 80;
-  const verdict = makeScopeChecker(engagement)({ host: target.hostname, port });
-  if (!verdict.allowed) {
-    return `redirect to ${target.host} denied: ${verdict.reason}`;
-  }
-  return null;
+function requestOnce(
+  url: URL,
+  ip: { address: string; family: 4 | 6 },
+  hostname: string,
+  port: number,
+  isHttps: boolean,
+  signal: AbortSignal | undefined,
+): Promise<HttpExchange> {
+  return new Promise((resolve, reject) => {
+    const lookup = ((
+      _hostname: string,
+      options: { all?: boolean },
+      cb: (...args: unknown[]) => void,
+    ) => {
+      if (options?.all) {
+        cb(null, [{ address: ip.address, family: ip.family }]);
+      } else {
+        cb(null, ip.address, ip.family);
+      }
+    }) as unknown as import("node:net").LookupFunction;
+    const req = (isHttps ? https : http).request({
+      host: ip.address,
+      port,
+      method: "GET",
+      path: url.pathname + url.search,
+      setHost: false,
+      headers: { host: hostHeaderValue(hostname, port, isHttps) },
+      ...(isHttps ? { servername: hostname } : {}),
+      lookup,
+      ...(signal !== undefined ? { signal } : {}),
+    });
+    req.once("response", (msg) => {
+      resolve({
+        status: msg.statusCode ?? 0,
+        statusText: msg.statusMessage ?? "",
+        header(name) {
+          const v = msg.headers[name.toLowerCase()];
+          if (v === undefined) return null;
+          return Array.isArray(v) ? v[0]! : String(v);
+        },
+        msg,
+      });
+    });
+    req.once("error", reject);
+    req.end();
+  });
 }
 
-const webFetchHandler: ToolHandler = {
-  async execute(call, ctx) {
-    const input = webFetchInput.parse(call.input);
-    const cap = input.max_bytes ?? DEFAULT_FETCH_MAX_BYTES;
-
-    // Redirects are followed manually: fetch(redirect: "follow") would
-    // connect to the Location host with no scope check, letting an in-scope
-    // url pivot egress to any out-of-scope host. Each hop below re-validates
-    // scheme, userinfo, and engagement scope before any connection is made.
-    // ctx.signal is the runtime's timeout-linked signal, so every fetch dies
-    // with the tool call.
-    let current = new URL(input.url);
-    let res: Response;
-    for (let hop = 0; ; hop++) {
-      res = await fetch(current, { signal: ctx.signal, redirect: "manual" });
-      if (!REDIRECT_STATUSES.has(res.status)) break;
-      const location = res.headers.get("location");
-      if (location === null) break; // malformed redirect: surface as-is, like fetch
-      if (res.body !== null) await res.body.cancel().catch(() => undefined);
-      if (hop >= MAX_REDIRECT_HOPS) {
-        throw new Error(`too many redirects (limit ${MAX_REDIRECT_HOPS}) fetching ${input.url}`);
-      }
-      let next: URL;
-      try {
-        next = new URL(location, current);
-      } catch {
-        throw new Error(`invalid redirect location "${location}" from ${current.origin}`);
-      }
-      if (next.protocol !== "http:" && next.protocol !== "https:") {
-        throw new Error(`redirect to non-http(s) scheme ${next.protocol} is not allowed`);
-      }
-      if (next.username !== "" || next.password !== "") {
-        throw new Error("redirects to urls with embedded userinfo are not allowed");
-      }
-      const denial = redirectScopeDenial(ctx.engagement, next);
-      if (denial !== null) {
-        // Audit-truth first (same shape as the runtime's scope denials), then
-        // fail the call — denials never produce a tool.result.
-        ctx.emit({
-          type: "action.denied",
-          session_id: ctx.session_id,
-          turn_id: ctx.turn_id,
-          call_id: call.call_id,
-          reason: "scope",
-          detail: `denied by scope: ${denial}`,
-          ts: Date.now(),
-        });
-        throw new Error(`denied by scope: ${denial}`);
-      }
-      current = next;
+/**
+ * Connect to the pinned endpoint, trying its addresses in order (simple
+ * happy-eyeballs: first address that completes the exchange wins).
+ */
+async function pinnedRequest(
+  url: URL,
+  endpoint: ResolvedEndpoint,
+  signal: AbortSignal | undefined,
+): Promise<HttpExchange> {
+  const isHttps = url.protocol === "https:";
+  const { hostname, port } = endpoint;
+  let lastError: unknown;
+  for (const ip of endpoint.ips) {
+    try {
+      return await requestOnce(url, ip, hostname, port, isHttps, signal);
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      lastError = err;
     }
-    if (res.status >= 400) {
-      throw new Error(`HTTP ${res.status} ${res.statusText}`.trim());
-    }
-    const contentType = res.headers.get("content-type") ?? "";
-    const { body, truncated } = await readBodyCapped(res, cap);
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
 
-    if (isTextualContentType(contentType)) {
-      const text = body.toString("utf8") + (truncated ? `\n\n[truncated after ${cap} bytes]` : "");
+function discardBody(ex: HttpExchange): void {
+  ex.msg.on("error", () => undefined); // swallow post-discard socket errors
+  ex.msg.destroy();
+}
+
+/** Denial reason text for one hop (redirects name their target). */
+function hopDenialText(hop: number, target: URL, reason: string): string {
+  return hop === 0 ? reason : `redirect to ${target.host} denied: ${reason}`;
+}
+
+function makeWebFetchHandler(egress: { resolver: EgressResolver }): ToolHandler {
+  return {
+    async execute(call, ctx) {
+      const input = webFetchInput.parse(call.input);
+      const cap = input.max_bytes ?? DEFAULT_FETCH_MAX_BYTES;
+
+      // Redirects are followed manually, and EVERY hop — the original url
+      // included — is authorized at CONNECTION time: the hostname is
+      // resolved once through the egress resolver, the pinned endpoint is
+      // what gets scope-checked (hostname against engagement domains,
+      // resolved addresses against engagement CIDRs — the DNS-rebinding
+      // defense), and the transport then connects to the pinned address
+      // without ever consulting DNS again. `redirect: "follow"` semantics
+      // are rejected outright: they would connect to the Location host with
+      // no check at all. ctx.signal is the runtime's timeout-linked signal,
+      // so every connection dies with the tool call.
+      let current = new URL(input.url);
+      let exchange: HttpExchange;
+      for (let hop = 0; ; hop++) {
+        const hostname = stripTrailingDot(current.hostname);
+        const port =
+          current.port !== "" ? Number(current.port) : current.protocol === "https:" ? 443 : 80;
+
+        let verdict: ScopeCheckResult;
+        let endpoint: ResolvedEndpoint;
+        if (ctx.engagement === null) {
+          verdict = {
+            allowed: false,
+            reason: "no engagement declared for this session; network egress denied",
+          };
+          endpoint = { hostname, port, ips: [], pinned_until: 0 };
+        } else {
+          endpoint = await egress.resolver.resolve(hostname, port);
+          verdict = checkResolvedTarget(ctx.engagement, { host: hostname, port }, endpoint.ips);
+        }
+        if (!verdict.allowed) {
+          const detail = hopDenialText(hop, current, verdict.reason);
+          // Audit-truth first (same shape as the runtime's scope denials),
+          // then fail the call — denials never produce a tool.result.
+          ctx.emit({
+            type: "action.denied",
+            session_id: ctx.session_id,
+            turn_id: ctx.turn_id,
+            call_id: call.call_id,
+            reason: "scope",
+            detail: `denied by scope: ${detail}`,
+            ts: Date.now(),
+          });
+          throw new Error(`denied by scope: ${detail}`);
+        }
+
+        exchange = await pinnedRequest(current, endpoint, ctx.signal);
+        if (!REDIRECT_STATUSES.has(exchange.status)) break;
+        const location = exchange.header("location");
+        if (location === null) break; // malformed redirect: surface as-is
+        discardBody(exchange);
+        if (hop >= MAX_REDIRECT_HOPS) {
+          throw new Error(`too many redirects (limit ${MAX_REDIRECT_HOPS}) fetching ${input.url}`);
+        }
+        let next: URL;
+        try {
+          next = new URL(location, current);
+        } catch {
+          throw new Error(`invalid redirect location "${location}" from ${current.origin}`);
+        }
+        if (next.protocol !== "http:" && next.protocol !== "https:") {
+          throw new Error(`redirect to non-http(s) scheme ${next.protocol} is not allowed`);
+        }
+        if (next.username !== "" || next.password !== "") {
+          throw new Error("redirects to urls with embedded userinfo are not allowed");
+        }
+        current = next;
+      }
+      if (exchange.status >= 400) {
+        throw new Error(`HTTP ${exchange.status} ${exchange.statusText}`.trim());
+      }
+      const contentType = exchange.header("content-type") ?? "";
+      const { body, truncated } = await readBodyCapped(exchange.msg, cap);
+
+      if (isTextualContentType(contentType)) {
+        const text = body.toString("utf8") + (truncated ? `\n\n[truncated after ${cap} bytes]` : "");
+        return {
+          kind: "text",
+          text: `fetched ${input.url} [${exchange.status} ${contentType}]\n\n${text}`,
+        };
+      }
+
+      await ensureArtifactsDir(ctx.sandbox);
+      const name = safeArtifactName(call.call_id);
+      await ctx.sandbox.writeFile(path.posix.join(ARTIFACTS_DIR, `${name}.bin`), body);
       return {
-        kind: "text",
-        text: `fetched ${input.url} [${res.status} ${contentType}]\n\n${text}`,
+        kind: "artifact",
+        artifact_id: call.call_id,
+        path: artifactAbsPath(ctx.sandbox, name, ".bin"),
+        bytes: body.length,
       };
-    }
+    },
+  };
+}
 
-    await ensureArtifactsDir(ctx.sandbox);
-    const name = safeArtifactName(call.call_id);
-    await ctx.sandbox.writeFile(path.posix.join(ARTIFACTS_DIR, `${name}.bin`), body);
-    return {
-      kind: "artifact",
-      artifact_id: call.call_id,
-      path: artifactAbsPath(ctx.sandbox, name, ".bin"),
-      bytes: body.length,
-    };
-  },
-};
+/** Options for the builtin tool set. */
+export interface BuiltinToolsOptions {
+  /**
+   * Egress resolver used by web.fetch for connection-time authorization
+   * (DNS-rebinding defense). Defaults to DnsEgressResolver (node:dns).
+   */
+  egress?: { resolver: EgressResolver };
+}
 
 /** Register the five builtin tools (fs.read, fs.list, fs.write, shell.exec, web.fetch). */
-export function registerBuiltinTools(registry: ToolRegistry): void {
+export function registerBuiltinTools(
+  registry: ToolRegistry,
+  opts: BuiltinToolsOptions = {},
+): void {
+  const webFetch = makeWebFetchHandler(opts.egress ?? { resolver: new DnsEgressResolver() });
   registry.register(
     builtinDef(
       "fs.read",
@@ -316,12 +443,12 @@ export function registerBuiltinTools(registry: ToolRegistry): void {
   registry.register(
     builtinDef(
       "web.fetch",
-      'Fetch an HTTP(S) URL. Only http/https with no embedded userinfo is accepted, the target host must be inside the session\'s engagement scope, and every fetch passes the policy engine (an "ask" verdict pauses for operator approval). HTTP redirects are followed only when every hop stays inside the engagement scope (max 5). Text-like responses (text/*, JSON, XML, YAML) come back inline; binary responses are stored as an artifact file in the sandbox.',
+      'Fetch an HTTP(S) URL. Only http/https with no embedded userinfo is accepted, the target host must be inside the session\'s engagement scope, the host\'s resolved addresses must fall inside the engagement\'s CIDR ranges (DNS-rebinding defense: the connection is pinned to the validated addresses), and every fetch passes the policy engine (an "ask" verdict pauses for operator approval). HTTP redirects are followed only when every hop stays inside the engagement scope (max 5). Text-like responses (text/*, JSON, XML, YAML) come back inline; binary responses are stored as an artifact file in the sandbox.',
       "R2",
       ["net.egress"],
       WEB_FETCH_TIMEOUT_MS,
     ),
-    webFetchHandler,
+    webFetch,
   );
 }
 

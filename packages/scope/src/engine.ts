@@ -107,6 +107,12 @@ export function validateTargets(targets: ScopeTargets): string[] {
   return problems;
 }
 
+/** One resolved address of a hostname, as returned by the egress resolver. */
+export interface ResolvedAddress {
+  address: string;
+  family: 4 | 6;
+}
+
 /**
  * Check one egress query against an engagement. Order of evaluation:
  * expiry → inclusion (CIDRs for IP literals, dot-boundary domain suffix for
@@ -180,6 +186,53 @@ export function makeScopeChecker(
   now: () => number = Date.now,
 ): ScopeChecker {
   return (query: ScopeTargetQuery) => checkTarget(engagement, query, now());
+}
+
+/**
+ * Connection-time scope check for DNS-rebinding defense: the hostname must
+ * pass the regular checkTarget authorization AND, when the engagement
+ * declares CIDR ranges, every address the hostname actually resolved to must
+ * fall inside those ranges (and outside the exclusions). A hostname that
+ * matched at policy time but resolves out of scope at connection time is
+ * denied with the `dns_rebinding_out_of_scope` reason — an attacker
+ * controlling DNS cannot pivot an allowed name onto an internal address.
+ *
+ * Engagements that declare no CIDRs keep hostname-only authorization (there
+ * is no IP range to validate against); that residual is documented in
+ * SECURITY-MODEL.md.
+ */
+export function checkResolvedTarget(
+  engagement: Engagement,
+  query: ScopeTargetQuery,
+  ips: ResolvedAddress[],
+  now: number = Date.now(),
+): ScopeCheckResult {
+  const base = checkTarget(engagement, query, now);
+  if (!base.allowed) return base;
+
+  const cidrs = engagement.targets.cidrs ?? [];
+  if (cidrs.length === 0) return base;
+
+  for (const { address } of ips) {
+    if (!cidrs.some((c) => cidrContains(c, address))) {
+      return {
+        allowed: false,
+        reason:
+          `dns_rebinding_out_of_scope: ${query.host} resolved to ${address}, ` +
+          "which is outside the engagement cidr scope",
+      };
+    }
+    const exclude = engagement.targets.exclude;
+    if (exclude && (exclude.cidrs ?? []).some((c) => cidrContains(c, address))) {
+      return {
+        allowed: false,
+        reason:
+          `dns_rebinding_out_of_scope: ${query.host} resolved to excluded ` +
+          `${address}`,
+      };
+    }
+  }
+  return base;
 }
 
 /** One-line human summary for prompts, events, and audit records. */

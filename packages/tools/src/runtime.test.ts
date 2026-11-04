@@ -5,6 +5,7 @@
 // node_modules), LocalSandboxProvider sandboxes under os.tmpdir().
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { promises as fsp } from "node:fs";
+import * as http from "node:http";
 import * as os from "node:os";
 import * as path from "node:path";
 // @ts-expect-error better-sqlite3 is not a declared dependency of @nyx/tools; tests resolve it from the sibling @nyx/policy workspace (tests are exempt from package import boundaries per the package brief).
@@ -512,30 +513,80 @@ describe("web.fetch scope enforcement (net.egress)", () => {
     targets: { cidrs: [], domains: ["in-scope.test"] },
   };
 
-  /** Recorded URLs the handler actually fetched (the stubbed global fetch). */
-  let fetched: string[];
-
-  function redirectTo(location: string, status = 302): Response {
-    return new Response(null, { status, headers: { location } });
+  // ---- loopback HTTP stand-in for the real network --------------------------------
+  // The pinned transport talks node:http to 127.0.0.1 with the scope-checked
+  // hostname in the Host header; a stub resolver maps every hostname to the
+  // loopback address so domain-authorized urls reach this server.
+  interface ServerReq {
+    method: string;
+    url: string;
+    host: string;
   }
+  let route: (req: http.IncomingMessage, res: http.ServerResponse) => void = (_q, rs) => {
+    rs.writeHead(200, { "content-type": "text/plain" });
+    rs.end("never");
+  };
+  const requests: ServerReq[] = [];
+  let server: http.Server;
+  let port = 0;
+
+  beforeAll(async () => {
+    server = http.createServer((req, res) => {
+      requests.push({
+        method: req.method ?? "GET",
+        url: req.url ?? "/",
+        host: req.headers.host ?? "",
+      });
+      route(req, res);
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    port = (server.address() as { port: number }).port;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
 
   beforeEach(() => {
-    fetched = [];
+    requests.length = 0;
+    route = (_q, rs) => {
+      rs.writeHead(200, { "content-type": "text/plain" });
+      rs.end("never");
+    };
   });
 
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
+  /** Records the hostnames the handler actually resolved. */
+  let resolvedHostnames: string[] = [];
+  /** What the stub resolver answers for the Nth call (1-based). */
+  let resolveAnswer: (hostname: string, call: number) => Array<{ address: string; family: 4 | 6 }>;
 
-  it("no engagement → denied by scope before any fetch, action.denied reason scope", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response("never")),
-    );
-    const h = await makeHarness({ rules: WEB_RULES, register: (r) => registerBuiltinTools(r) });
+  const webRegister = (r: ToolRegistryImpl): void => {
+    resolvedHostnames = [];
+    registerBuiltinTools(r, {
+      egress: {
+        resolver: {
+          resolve: async (hostname, p) => {
+            resolvedHostnames.push(hostname);
+            const ips = resolveAnswer(hostname, resolvedHostnames.length);
+            return { hostname, port: p, ips, pinned_until: Date.now() + 60_000 };
+          },
+        },
+      },
+    });
+  };
+
+  const toLoopback = (): ((hostname: string) => Array<{ address: string; family: 4 | 6 }>) => {
+    return () => [{ address: "127.0.0.1", family: 4 }];
+  };
+
+  const url = (path: string): string => `http://in-scope.test:${port}${path}`;
+
+  it("no engagement → denied by scope before any connection, action.denied reason scope", async () => {
+    resolveAnswer = toLoopback();
+    const h = await makeHarness({ rules: WEB_RULES, register: webRegister });
 
     const out = await h.runtime.execute(
-      call("web.fetch", { url: "http://in-scope.test/a" }),
+      call("web.fetch", { url: url("/a") }),
       h.execCtx(), // engagement null
     );
     expect(out).toEqual({
@@ -547,19 +598,17 @@ describe("web.fetch scope enforcement (net.egress)", () => {
     expect(denied[0]!.reason).toBe("scope");
     expect(denied[0]!.detail).toContain("no engagement declared");
     expect(results(h.events)).toEqual([]);
-    expect(fetched).toEqual([]);
+    expect(requests).toEqual([]);
+    expect(resolvedHostnames).toEqual([]);
   });
 
-  it("expired engagement → denied by scope; no fetch happens", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response("never")),
-    );
-    const h = await makeHarness({ rules: WEB_RULES, register: (r) => registerBuiltinTools(r) });
+  it("expired engagement → denied by scope; no connection happens", async () => {
+    resolveAnswer = toLoopback();
+    const h = await makeHarness({ rules: WEB_RULES, register: webRegister });
     const expired: Engagement = { ...webEngagement, expires_at: now - 1 };
 
     const out = await h.runtime.execute(
-      call("web.fetch", { url: "http://in-scope.test/a" }),
+      call("web.fetch", { url: url("/a") }),
       h.execCtx({ engagement: expired }),
     );
     expect(out.kind).toBe("text");
@@ -567,67 +616,67 @@ describe("web.fetch scope enforcement (net.egress)", () => {
     expect(denials(h.events)[0]!.reason).toBe("scope");
     expect(denials(h.events)[0]!.detail).toContain("engagement expired");
     expect(results(h.events)).toEqual([]);
-    expect(fetched).toEqual([]);
+    expect(requests).toEqual([]);
+    expect(resolvedHostnames).toEqual([]);
   });
 
-  it("out-of-scope host → denied by scope without ever fetching", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response("never")),
-    );
-    const h = await makeHarness({ rules: WEB_RULES, register: (r) => registerBuiltinTools(r) });
+  it("out-of-scope host → denied by scope without ever connecting", async () => {
+    resolveAnswer = toLoopback();
+    const h = await makeHarness({ rules: WEB_RULES, register: webRegister });
 
     const out = await h.runtime.execute(
-      call("web.fetch", { url: "http://evil.example/steal" }),
+      call("web.fetch", { url: `http://evil.example:${port}/steal` }),
       h.execCtx({ engagement: webEngagement }),
     );
     expect(out.kind).toBe("text");
     if (out.kind === "text") expect(out.text).toContain("denied by scope");
     expect(denials(h.events)[0]!.detail).toContain("evil.example");
     expect(results(h.events)).toEqual([]);
-    expect(fetched).toEqual([]);
+    expect(requests).toEqual([]);
   });
 
-  it("in-scope host executes and returns the body (redirects: none)", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: string | URL) => {
-        fetched.push(String(input));
-        return new Response("HELLO", { headers: { "content-type": "text/plain" } });
-      }),
-    );
-    const h = await makeHarness({ rules: WEB_RULES, register: (r) => registerBuiltinTools(r) });
+  it("in-scope host executes against the pinned loopback address (redirects: none)", async () => {
+    resolveAnswer = toLoopback();
+    route = (_q, rs) => {
+      rs.writeHead(200, { "content-type": "text/plain" });
+      rs.end("HELLO");
+    };
+    const h = await makeHarness({ rules: WEB_RULES, register: webRegister });
 
     const out = await h.runtime.execute(
-      call("web.fetch", { url: "http://in-scope.test/a" }),
+      call("web.fetch", { url: url("/a") }),
       h.execCtx({ engagement: webEngagement }),
     );
     expect(out.kind).toBe("text");
     if (out.kind === "text") expect(out.text).toContain("HELLO");
     expect(denials(h.events)).toEqual([]);
     expect(results(h.events)).toHaveLength(1);
-    expect(fetched).toEqual(["http://in-scope.test/a"]);
+    // One request; the connection went to the pinned 127.0.0.1 while the
+    // Host header kept the scope-checked hostname.
+    expect(requests).toEqual([
+      { method: "GET", url: "/a", host: `in-scope.test:${port}` },
+    ]);
   });
 
   it("REGRESSION: redirect to an out-of-scope host is denied, never followed", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: string | URL) => {
-        const url = String(input);
-        fetched.push(url);
-        if (url === "http://in-scope.test/start")
-          return redirectTo("http://out-of-scope.example/secret");
-        return new Response("EXFILTRATED", { headers: { "content-type": "text/plain" } });
-      }),
-    );
-    const h = await makeHarness({ rules: WEB_RULES, register: (r) => registerBuiltinTools(r) });
+    resolveAnswer = toLoopback();
+    route = (req, rs) => {
+      if (req.url === "/start") {
+        rs.writeHead(302, { location: "http://out-of-scope.example/secret" });
+        rs.end();
+        return;
+      }
+      rs.writeHead(200, { "content-type": "text/plain" });
+      rs.end("EXFILTRATED");
+    };
+    const h = await makeHarness({ rules: WEB_RULES, register: webRegister });
 
     const out = await h.runtime.execute(
-      call("web.fetch", { url: "http://in-scope.test/start" }),
+      call("web.fetch", { url: url("/start") }),
       h.execCtx({ engagement: webEngagement }),
     );
     // The out-of-scope target was never contacted.
-    expect(fetched).toEqual(["http://in-scope.test/start"]);
+    expect(requests.map((r) => r.url)).toEqual(["/start"]);
     // The denial is on the record with reason scope, and no tool.result fired.
     const denied = denials(h.events);
     expect(denied).toHaveLength(1);
@@ -643,24 +692,24 @@ describe("web.fetch scope enforcement (net.egress)", () => {
   });
 
   it("redirect to an in-scope host is followed and returns the final body", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: string | URL) => {
-        const url = String(input);
-        fetched.push(url);
-        if (url === "http://in-scope.test/start") {
-          return redirectTo("http://alt.in-scope.test/final", 307);
-        }
-        return new Response("FINAL-BODY", { headers: { "content-type": "text/plain" } });
-      }),
-    );
-    const h = await makeHarness({ rules: WEB_RULES, register: (r) => registerBuiltinTools(r) });
+    resolveAnswer = toLoopback();
+    route = (req, rs) => {
+      if (req.url === "/start") {
+        rs.writeHead(307, { location: `http://alt.in-scope.test:${port}/final` });
+        rs.end();
+        return;
+      }
+      rs.writeHead(200, { "content-type": "text/plain" });
+      rs.end("FINAL-BODY");
+    };
+    const h = await makeHarness({ rules: WEB_RULES, register: webRegister });
 
     const out = await h.runtime.execute(
-      call("web.fetch", { url: "http://in-scope.test/start" }),
+      call("web.fetch", { url: url("/start") }),
       h.execCtx({ engagement: webEngagement }),
     );
-    expect(fetched).toEqual(["http://in-scope.test/start", "http://alt.in-scope.test/final"]);
+    expect(requests.map((r) => r.url)).toEqual(["/start", "/final"]);
+    expect(requests[1]!.host).toBe(`alt.in-scope.test:${port}`);
     expect(out.kind).toBe("text");
     if (out.kind === "text") expect(out.text).toContain("FINAL-BODY");
     expect(denials(h.events)).toEqual([]);
@@ -668,54 +717,46 @@ describe("web.fetch scope enforcement (net.egress)", () => {
   });
 
   it("redirect chain past the hop cap fails the call instead of looping", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: string | URL) => {
-        const url = String(input);
-        fetched.push(url);
-        return redirectTo(`${url}x`);
-      }),
-    );
-    const h = await makeHarness({ rules: WEB_RULES, register: (r) => registerBuiltinTools(r) });
+    resolveAnswer = toLoopback();
+    route = (req, rs) => {
+      rs.writeHead(302, { location: `http://in-scope.test:${port}${req.url}x` });
+      rs.end();
+    };
+    const h = await makeHarness({ rules: WEB_RULES, register: webRegister });
 
     const out = await h.runtime.execute(
-      call("web.fetch", { url: "http://in-scope.test/a" }),
+      call("web.fetch", { url: url("/a") }),
       h.execCtx({ engagement: webEngagement }),
     );
     expect(out.kind).toBe("text");
     if (out.kind === "text") expect(out.text).toContain("too many redirects");
-    expect(fetched).toHaveLength(6); // initial + 5 redirect hops
+    expect(requests).toHaveLength(6); // initial + 5 redirect hops
     expect(results(h.events)).toEqual([]);
     expect(denials(h.events)).toEqual([]);
   });
 
   it("redirect to a non-http scheme or embedded userinfo is refused", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: string | URL) => {
-        fetched.push(String(input));
-        return redirectTo("ftp://in-scope.test/f");
-      }),
-    );
-    const h = await makeHarness({ rules: WEB_RULES, register: (r) => registerBuiltinTools(r) });
+    resolveAnswer = toLoopback();
+    route = (_q, rs) => {
+      rs.writeHead(302, { location: "ftp://in-scope.test/f" });
+      rs.end();
+    };
+    const h = await makeHarness({ rules: WEB_RULES, register: webRegister });
     const out = await h.runtime.execute(
-      call("web.fetch", { url: "http://in-scope.test/a" }),
+      call("web.fetch", { url: url("/a") }),
       h.execCtx({ engagement: webEngagement }),
     );
     expect(out.kind).toBe("text");
     if (out.kind === "text") expect(out.text).toContain("non-http(s) scheme");
-    expect(fetched).toHaveLength(1);
+    expect(requests).toHaveLength(1);
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: string | URL) => {
-        fetched.push(String(input));
-        return redirectTo("http://user:pass@in-scope.test/f");
-      }),
-    );
-    const h2 = await makeHarness({ rules: WEB_RULES, register: (r) => registerBuiltinTools(r) });
+    route = (_q, rs) => {
+      rs.writeHead(302, { location: `http://user:pass@in-scope.test:${port}/f` });
+      rs.end();
+    };
+    const h2 = await makeHarness({ rules: WEB_RULES, register: webRegister });
     const out2 = await h2.runtime.execute(
-      call("web.fetch", { url: "http://in-scope.test/a" }),
+      call("web.fetch", { url: url("/a") }),
       h2.execCtx({ engagement: webEngagement }),
     );
     expect(out2.kind).toBe("text");
@@ -724,29 +765,135 @@ describe("web.fetch scope enforcement (net.egress)", () => {
   });
 
   it("port policy applies to redirect hops (default ports materialized)", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: string | URL) => {
-        const url = String(input);
-        fetched.push(url);
-        if (url === "http://in-scope.test/start") return redirectTo("http://in-scope.test:8080/x");
-        return new Response("never");
-      }),
-    );
+    resolveAnswer = toLoopback();
     const portEngagement: Engagement = {
       ...webEngagement,
-      targets: { cidrs: [], domains: ["in-scope.test"], ports: { allow: [80] } },
+      targets: { cidrs: [], domains: ["in-scope.test"], ports: { allow: [port] } },
     };
-    const h = await makeHarness({ rules: WEB_RULES, register: (r) => registerBuiltinTools(r) });
+    route = (req, rs) => {
+      if (req.url === "/start") {
+        rs.writeHead(302, { location: "http://in-scope.test:8080/x" });
+        rs.end();
+        return;
+      }
+      rs.writeHead(200, { "content-type": "text/plain" });
+      rs.end("never");
+    };
+    const h = await makeHarness({ rules: WEB_RULES, register: webRegister });
 
     await h.runtime.execute(
-      call("web.fetch", { url: "http://in-scope.test/start" }),
+      call("web.fetch", { url: url("/start") }),
       h.execCtx({ engagement: portEngagement }),
     );
-    expect(fetched).toEqual(["http://in-scope.test/start"]);
+    expect(requests.map((r) => r.url)).toEqual(["/start"]);
     expect(denials(h.events)[0]!.reason).toBe("scope");
     expect(denials(h.events)[0]!.detail).toContain("8080");
     expect(results(h.events)).toEqual([]);
+  });
+
+  // ---- DNS-rebinding defense (connection-time resolved-IP authorization) ----------
+
+  /** Engagement whose CIDR range covers the loopback address only. */
+  const cidrEngagement: Engagement = {
+    id: "ENG-REBIND",
+    operator_id: "owner",
+    authorized_at: now - 1000,
+    expires_at: now + 3_600_000,
+    targets: { cidrs: ["127.0.0.0/8"], domains: ["allowed.example.com"] },
+  };
+
+  it("REGRESSION: an allowed hostname resolving out of scope is denied (dns_rebinding_out_of_scope)", async () => {
+    // The hostname matches the engagement domain, but DNS answers with an
+    // address outside the engagement CIDRs — the classic rebinding pivot.
+    resolveAnswer = () => [{ address: "203.0.113.66", family: 4 }];
+    const h = await makeHarness({ rules: WEB_RULES, register: webRegister });
+
+    const out = await h.runtime.execute(
+      call("web.fetch", { url: `http://allowed.example.com:${port}/x` }),
+      h.execCtx({ engagement: cidrEngagement }),
+    );
+    expect(out.kind).toBe("text");
+    if (out.kind === "text") {
+      expect(out.text).toContain("denied by scope");
+      expect(out.text).toContain("dns_rebinding_out_of_scope");
+    }
+    const denied = denials(h.events);
+    expect(denied).toHaveLength(1);
+    expect(denied[0]!.reason).toBe("scope");
+    expect(denied[0]!.detail).toContain("dns_rebinding_out_of_scope");
+    expect(denied[0]!.detail).toContain("203.0.113.66");
+    expect(results(h.events)).toEqual([]);
+    // The out-of-scope address was never contacted.
+    expect(requests).toEqual([]);
+    expect(resolvedHostnames).toEqual(["allowed.example.com"]);
+  });
+
+  it("an allowed hostname resolving in scope proceeds (connection authorized on the resolved IP)", async () => {
+    resolveAnswer = () => [{ address: "127.0.0.1", family: 4 }];
+    route = (_q, rs) => {
+      rs.writeHead(200, { "content-type": "text/plain" });
+      rs.end("IN-SCOPE-BODY");
+    };
+    const h = await makeHarness({ rules: WEB_RULES, register: webRegister });
+
+    const out = await h.runtime.execute(
+      call("web.fetch", { url: `http://allowed.example.com:${port}/x` }),
+      h.execCtx({ engagement: cidrEngagement }),
+    );
+    expect(out.kind).toBe("text");
+    if (out.kind === "text") expect(out.text).toContain("IN-SCOPE-BODY");
+    expect(denials(h.events)).toEqual([]);
+    expect(results(h.events)).toHaveLength(1);
+    expect(requests).toEqual([
+      { method: "GET", url: "/x", host: `allowed.example.com:${port}` },
+    ]);
+  });
+
+  it("REGRESSION: the pinned endpoint is what is validated — a changed re-resolution cannot pivot", async () => {
+    // First resolution answers 127.0.0.1 (in scope); every later answer for
+    // the same hostname would be 203.0.113.66 (out of scope). The connection
+    // must be validated against and placed on the FIRST (pinned) answer: one
+    // resolve per connection, no re-resolution at connect time.
+    resolveAnswer = (_hostname, callNo) =>
+      callNo === 1 ? [{ address: "127.0.0.1", family: 4 }] : [{ address: "203.0.113.66", family: 4 }];
+    route = (_q, rs) => {
+      rs.writeHead(200, { "content-type": "text/plain" });
+      rs.end("PINNED-BODY");
+    };
+    const h = await makeHarness({ rules: WEB_RULES, register: webRegister });
+
+    const out = await h.runtime.execute(
+      call("web.fetch", { url: `http://allowed.example.com:${port}/x` }),
+      h.execCtx({ engagement: cidrEngagement }),
+    );
+    expect(out.kind).toBe("text");
+    if (out.kind === "text") expect(out.text).toContain("PINNED-BODY");
+    expect(denials(h.events)).toEqual([]);
+    // Exactly one resolution; the connection used it; the out-of-scope
+    // second answer was never consulted.
+    expect(resolvedHostnames).toEqual(["allowed.example.com"]);
+    expect(requests).toEqual([
+      { method: "GET", url: "/x", host: `allowed.example.com:${port}` },
+    ]);
+  });
+
+  it("REGRESSION: a trailing-dot hostname does not bypass the resolved-IP check", async () => {
+    // "allowed.example.com." (FQDN root dot) must normalize to the same
+    // authorization and the same resolution as "allowed.example.com".
+    resolveAnswer = () => [{ address: "203.0.113.66", family: 4 }];
+    const h = await makeHarness({ rules: WEB_RULES, register: webRegister });
+
+    const out = await h.runtime.execute(
+      call("web.fetch", { url: `http://allowed.example.com.:${port}/x` }),
+      h.execCtx({ engagement: cidrEngagement }),
+    );
+    expect(out.kind).toBe("text");
+    if (out.kind === "text") expect(out.text).toContain("dns_rebinding_out_of_scope");
+    expect(denials(h.events)[0]!.detail).toContain("dns_rebinding_out_of_scope");
+    expect(results(h.events)).toEqual([]);
+    expect(requests).toEqual([]);
+    // The resolver saw the normalized (dot-stripped) hostname.
+    expect(resolvedHostnames).toEqual(["allowed.example.com"]);
   });
 });
 
