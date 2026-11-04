@@ -9,6 +9,14 @@ hold multiple turn-rounds without blowing the window.
 model* is compacted. Elided content stays in the append-only event log;
 recovery is `session.read()`. The pipeline never mutates its input list.
 
+**Tool outputs are persisted (Philosophy B).** Every `tool.result` event —
+including its full output block — is stored verbatim in the event log at
+append time; elision is strictly PRESENTATIONAL (the model's view), never
+storage. A `[elided tool output <id>]` marker in the context refers to a row
+that still exists in full: `session.read()` returns it, retention archives
+it, and the audit chain cross-references it. Nothing compaction does can
+shorten the record.
+
 ## When it runs
 
 The agent loop (step 7 of the turn sequence) invokes the pipeline when either

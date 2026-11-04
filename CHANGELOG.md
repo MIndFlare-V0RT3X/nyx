@@ -6,6 +6,94 @@ SemVer once 0.1.0 ships.
 
 ## [Unreleased]
 
+### Added — Phase 4 (durable tasks · retention · sandbox forking · skills)
+
+- **`@nyx/tasks` (new package).** Durable tasks: long-running work that
+  survives restart, pauses/resumes, retries with exponential backoff
+  (base × 4^(n−1)), recurs on cron (reset to pending at the NEXT fire —
+  never double-fired inside a window), and executes as a subagent of the
+  TASK's own session so its context never pollutes the parent's window.
+  **SQL leases** are the only cross-process coordination: a claim is one
+  conditional `UPDATE` (TTL 5 min, renewal 30 s, `renew < ttl` validated at
+  config load AND pool construction); an expired lease is reclaimable by any
+  worker and the reclaim consumes the crashed owner's attempt, so poison
+  tasks converge to `failed` at `max_attempts` instead of looping forever.
+  The full state machine is enforced by the `WHERE` clauses themselves
+  (illegal transitions throw, never silently coerce); the worker pool (2 per
+  process) releases — not clears — leases on graceful shutdown so another
+  process reclaims immediately. Surfaces: `POST/GET /v1/tasks`,
+  `pause/resume/retry`, `DELETE` (cancel), and `nyx tasks …` from another
+  process (cross-process abort rows, the `nyx subagents abort` pattern).
+  §6.1 three-way fan-out hardened the lease machinery: claim due-ness guard
+  (R2-1), attempts-on-reclaim (R2-5), renew try/catch (R1-2/R3-1),
+  synchronous running-attempt registration + both-directions release on
+  stop() (R3-2), atomic transition columns (R2-3/R2-4/R3-3), cron re-anchor
+  on retry() (R2-6 — found and fixed a live `recordOf` ReferenceError),
+  `renew < ttl` validation (R1-5), settleRunning never fake-succeeds a lost
+  row (R2-2).
+- **Retention (archive-not-delete), as a durable task.** The
+  `nyx:retention-gc` system task (daily 03:30 UTC cron, **ships disabled** —
+  `subagents.retention_enabled` opts in; the surface only ENSURES the task
+  exists at boot: create when absent, revive failed/cancelled, leave
+  healthy/paused alone — never a startup sweep). A session past its window
+  has its event rows MOVED to the sibling `nyx-archive.db` (ATTACHed on the
+  same connection; idempotent copy-before-delete, so a crash anywhere is
+  safely re-runnable and never loses an event) and its row marked
+  `archived=1`/`archived_at`; `session.read()` serves the events from the
+  archive; appends/forks on archived sessions are refused (a log never
+  splits across databases). Scope `subagent`/`subagent+failed`/`all`/`none`
+  with live-work protection: sessions tied to pending/running/paused tasks
+  (own session, current attempt child, bound parent) are NEVER archived;
+  failed ties are kept unless the scope includes failed. Hard deletion is a
+  separate opt-in (`delete_after_days`, default off, archived rows only).
+  Every pass that moves or deletes anything appends a hash-chained
+  `retention.archived`/`retention.deleted` audit row with counts.
+- **Sandbox forking (the new default).** `subagents.sandbox_sharing` flips
+  `inherit → fork`: every child gets a FILESYSTEM COPY of the parent's
+  sandbox (local: `cp -a`; docker: `commit` → temp image → run + host copy,
+  temp image removed by id at destroy) — no shared mounts, no live handles,
+  and a non-forkable sandbox in fork mode is refused LOUDLY (`not_supported`),
+  never a silent fallback to sharing. **Artifacts are the only handoff**:
+  the child-side `subagent_artifact` tool publishes into its sandbox's
+  `artifacts/` (sha256 computed at the write source, hash-chained audit
+  row), the parent-side `subagent_read_artifact` copies into the parent's
+  sandbox only after re-hashing and matching the audited hash;
+  `SubagentResult.artifacts` lists what was published. §6.2 two-way fan-out
+  hardened it: LRU reap never destroys a RUNNING child's sandbox (R4-1),
+  fork/artifacts-dir failures destroy the fork + roll the budget back
+  (R4-2/4), docker forks stop leaking dangling images (R4-3) and mirror
+  `--memory/--cpus` (R4-5), docker readFile refuses truncated captures
+  (R5-2 — the audited handoff silently corrupted on >750KB files),
+  cross-session artifact reads are parentage-refused (R5-1), 64MB artifact
+  cap (R5-3), SQL-side + indexed hash lookup (R5-4), reader-attributed
+  audit-before-write (R5-5/10), full-id default dest (R5-6), printable
+  name charset (R5-8), terminal-mirror failure finalization (R4-6), local
+  cp cleanup + wall clock (R4-7), copy-before-run (R4-10), the read tool
+  structurally absent from CHILD allowlists (R5-11).
+- **`@nyx/skills` (new package).** Progressive disclosure: SKILL.md
+  (Zod-validated frontmatter: name/description/when_to_use/tools/
+  persona_scope/version + Markdown body) scanned from `skills.dirs` and the
+  persona's own `skills/` dir; the catalog rides the system prompt's
+  `SKILLS_CATALOG` section via a `context.initialize` hook (persona-scoped,
+  filtered by the session's REAL capabilities — a skill needing `net.egress`
+  is not advertised to a session without an engagement — and curated under
+  `catalog_max_tokens` with pinned + recency; overflow warns and names the
+  drops); bodies load on demand through the R0 `load_skill` tool
+  (`skill.loaded` on the session log; `already_loaded`/`scope_mismatch`
+  refusals). Skills are trusted CONTENT, not tools: loading grants nothing;
+  the frontmatter `tools` field is informational (runtime gating is Phase 5).
+  Golden-file prompt test covers the exact assembled catalog.
+- **Protocol (recorded deviations, brief-mandated).** `SubagentResult.
+  artifacts` (path+bytes, optional for pre-Phase-4 results) and the
+  `skill.loaded` session event; `SECTION_ORDER`'s `SKILLS_CATALOG` and
+  `PromptAssemblyInput.skills_catalog` were already staged.
+- **Docs.** `docs/TASKS.md`, `docs/RETENTION.md`, `docs/SKILLS.md` (new);
+  `docs/SUBAGENTS.md` rewritten for fork mode + the artifact handoff;
+  ARCHITECTURE (17-package graph), README, SECURITY-MODEL, and the example
+  config updated.
+
+## [Unreleased]
+
 ### Added — Phase 3 (subagents)
 
 - **`@nyx/subagents` (new package).** The subagent system: a child session

@@ -9,7 +9,7 @@ deny-first policy broker, memory is markdown you can read, and the persona is
 a first-class directory of files with an operator contract that binds
 evidence and scope discipline — not refusal suppression.
 
-**Status:** Phase 0 (foundation) — complete and tested. See `docs/ROADMAP.md`.
+**Status:** Phase 4 (durable tasks, retention, sandbox forking, skills) — complete and tested. See `docs/ROADMAP.md`.
 
 ## Quickstart
 
@@ -79,7 +79,8 @@ pnpm --filter @nyx/web dev                 # http://localhost:5173 → paste the
   differs.
 
 Full details: `docs/ARCHITECTURE.md`, `docs/SECURITY-MODEL.md`,
-`docs/PROTOCOL.md` (the REST/SSE/WS contract), `docs/PERSONA.md`.
+`docs/PROTOCOL.md` (the REST/SSE/WS contract), `docs/PERSONA.md`,
+`docs/TASKS.md` (durable tasks + retention), `docs/SKILLS.md` (skills).
 
 ## Layout
 
@@ -99,7 +100,9 @@ Full details: `docs/ARCHITECTURE.md`, `docs/SECURITY-MODEL.md`,
 | `packages/agent`    | the single DI agent loop                                                  |
 | `packages/runtime`  | lane queue (per-session serial turns), cron, heartbeat scheduler          |
 | `packages/channels` | webhook + Telegram ingress, identity/session mapping, `/new` `/fork`      |
-| `packages/subagents`| the subagent system: spawn, isolate, review (`docs/SUBAGENTS.md`)        |
+| `packages/subagents`| the subagent system: spawn, fork, artifact handoff (`docs/SUBAGENTS.md`) |
+| `packages/tasks`   | durable tasks: SQL leases, state machine, retention (`docs/TASKS.md`, `docs/RETENTION.md`) |
+| `packages/skills`  | progressive-disclosure SKILL.md packages (`docs/SKILLS.md`) |
 | `apps/server`       | Hono: REST + SSE + WS, bearer auth, owner-bound R4, channels, heartbeats  |
 | `apps/cli`          | the `nyx` binary: run/chat/sessions/approvals/doctor                      |
 | `apps/web`          | minimal React client (64 KB gzipped)                                      |

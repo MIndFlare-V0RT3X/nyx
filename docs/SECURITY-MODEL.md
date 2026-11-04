@@ -250,6 +250,24 @@ An honest list, so operators can reason about the residual risk:
   defense covers its own connections (see above); **shell egress has no such
   defense** — an engagement authorizing a hostname does not constrain what a
   shell command connects to. That is the docker sandbox's job.
+- **Skills are trusted content, not tools (Phase 4).** The `load_skill`
+  tool is R0 with `capabilities: []`: a SKILL.md body is documentation the
+  model reads — loading it grants no tool, no capability, no permission. The
+  frontmatter `tools` field is informational (catalog filtering only);
+  RUNTIME tool gating by skill is the Phase 5 security subsystem's job, and
+  until it ships a skill's instructions can only ASK the model to use tools
+  it already has (every actual call still passes the full
+  policy/scope/approval pipeline). The catalog itself is capability-filtered:
+  a skill needing `net.egress` is not advertised to a session that cannot
+  back it.
+- **The artifact handoff is hash-audited (Phase 4).** In fork mode the only
+  parent←child channel is `subagent_artifact` → `subagent_read_artifact`:
+  the sha256 is computed at the write source, recorded on the hash-chained
+  audit log, and re-verified before the bytes land in the parent's sandbox
+  (tampered → `artifact_integrity`; unaudited or evicted → `not_found`;
+  reads are parentage-checked and audited before the bytes move; a hard
+  64MB cap bounds the memory cost). The result's `artifacts` listing is
+  directory-derived and advisory — the chain is the proof.
 - **The local sandbox has no network isolation.** No CPU/memory limits, no
   syscall filtering, no network blocking — it runs `/bin/bash -c` on the host
   inside a temp dir. It is development-only and **refuses to provision when

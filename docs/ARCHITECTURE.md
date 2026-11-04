@@ -15,7 +15,7 @@ no analytics, no phone-home.
 
 ## The package graph
 
-Sixteen library packages, three applications, and an end-to-end test workspace.
+Seventeen library packages, three applications, and an end-to-end test workspace.
 `@nyx/protocol` is the frozen contract: every type that crosses a package or
 process boundary lives there, and it imports nothing. Dependency direction is
 machine-enforced by ESLint `no-restricted-imports` in `eslint.config.mjs`.
@@ -43,7 +43,9 @@ flowchart TD
     AGENT["@nyx/agent"]
     RUNTIME["@nyx/runtime<br/>lane queue · cron · heartbeat"]
     CHANNELS["@nyx/channels<br/>webhook · Telegram · manager<br/>approval presenters"]
-    SUBAGENTS["@nyx/subagents<br/>spawn · isolate · review"]
+    SUBAGENTS["@nyx/subagents<br/>spawn · fork · artifact handoff"]
+    TASKS["@nyx/tasks<br/>durable tasks · SQL leases · retention"]
+    SKILLS["@nyx/skills<br/>SKILL.md · catalog · load_skill"]
     DB["@nyx/db<br/>unified nyx.db · split-DB migration"]
   end
 
@@ -70,6 +72,13 @@ flowchart TD
   SUBAGENTS --> MEMORY
   SUBAGENTS --> MODEL
   SUBAGENTS --> SESSION
+  SUBAGENTS --> POLICY
+  SUBAGENTS --> SANDBOX
+  TASKS --> PROTOCOL
+  TASKS --> RUNTIME
+  TASKS --> POLICY
+  TASKS --> SESSION
+  SKILLS --> PROTOCOL
   CHANNELS --> PROTOCOL
   CHANNELS --> POLICY
   DB --> PROTOCOL
@@ -113,8 +122,9 @@ What the arrows encode:
   handle and migrates the Phase 0/1 split layout (policy.db, channels.db,
   heartbeat.db) in a single chain-verified transaction, renaming the legacy
   files (never deleting them).
-- **subagents → protocol, agent, tools, memory, model, session.** The Phase 3
-  subagent system: `SubagentManager.spawn` creates a child session
+- **subagents → protocol, agent, tools, memory, model, session, policy, sandbox.**
+  The Phase 3 subagent system (Phase 4: fork-per-child sandboxes + the
+  hash-audited artifact handoff): `SubagentManager.spawn` creates a child session
   (`kind="subagent"`), builds the child `RunContext` — a `FilteredToolRegistry`
   view (spawn_subagent structurally absent, spec allowlist minus forbidden
   tools), a tool runtime over that filtered registry, an isolated
@@ -123,6 +133,23 @@ What the arrows encode:
   the final summary crosses back, as the `spawn_subagent` tool result
   (`docs/SUBAGENTS.md`). Nothing depends on it except `@nyx/server` and
   `@nyx/cli`, which wire it.
+- **tasks → protocol, runtime, policy, session.** The Phase 4 durable-task
+  substrate (`docs/TASKS.md`): a `tasks` table in the unified `nyx.db`, SQL
+  leases as the ONLY cross-process coordination (a claim is one conditional
+  UPDATE; TTL 5 min, renewal 30 s, crash reclaims consume attempts so poison
+  tasks converge), the full state machine enforced by the `WHERE` clauses,
+  cron recurrence, and the retention engine (`docs/RETENTION.md`) that runs
+  as the `nyx:retention-gc` system task — archive-not-delete into the
+  ATTACHed `nyx-archive.db`, hash-chained audit rows, live work never
+  archived. System tasks never spawn a subagent; the runner branch executes
+  them directly.
+- **skills → protocol.** The Phase 4 progressive-disclosure system
+  (`docs/SKILLS.md`): SKILL.md scanning (configured dirs + the persona's
+  own), a per-session catalog injected through the `context.initialize`
+  hook into the `SKILLS_CATALOG` prompt section (persona-scoped,
+  capability-filtered, curated under a token cap), and the R0 `load_skill`
+  tool — skills are trusted content, loading grants nothing. The Phase 5
+  security subsystem's delivery surface.
 - **agent → protocol only, via DI.** The loop imports types; every collaborator
   — kernel, session store, model router, tool registry and router, policy and
   approval engines, sandbox, memory, persona runtime — arrives through the

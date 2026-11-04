@@ -26,6 +26,14 @@ DDL and `ApprovalEngine.consume()` (Phase 4), `SKILLS_CATALOG` (Phase 5), the
 `Embedder` interface (vector retrieval), and sandbox `allowlist` networking
 (refused with `not_implemented` until the Phase 6 egress work).
 
+## Delivery status
+
+Phases 0–3 and the Phase 4 build plan (durable tasks → retention → sandbox
+forking + the artifact handoff → skills) are **delivered and tested** — see
+`CHANGELOG.md` and `docs/TASKS.md`, `docs/RETENTION.md`, `docs/SKILLS.md`,
+`docs/SUBAGENTS.md`. The notes below are the Phase-0 view of where the
+seams are; where phase numbers differ, the build plan's numbering wins.
+
 ## Notes on later phases
 
 Each later phase has a seam already in the repo — the point of the design is

@@ -23,10 +23,10 @@ parent turn
 | Budget              | Per subagent: `min(spec.budget_tokens ?? default, max_budget_tokens)` — a spec may request **less, never more**. Per parent turn: the sum of allocations ≤ `max_total_per_turn`. A running child that crosses its budget is aborted with `state="budget_exceeded"`. |
 | Tools               | The child's registry is a filtered view: `spawn_subagent` is **structurally absent** (hard rule, not config), `forbidden_tools` never pass, and only the spec's allowlist (intersected with the parent's registry) survives. The child's *tool runtime* is built over the filtered registry, so an attempted call is a clean `tool_unknown`. |
 | Memory              | The child's memory is a `SubagentMemory` view: `session`-scope writes map onto the `subagent` scope keyed by the child's session id; reads see only its own `subagent` entries plus `global`. The parent's session memory is unreachable — by API surface, not instruction. |
-| Sandbox             | Shared with the parent (`sandbox_sharing: "inherit"`; `"fork"` is Phase 4+ and errors loudly today). Concurrent children editing the same files is the parent's problem — conflicts surface as normal tool errors. |
+| Sandbox             | **Forked per child** (`sandbox_sharing: "fork"` — the Phase 4 default): a filesystem COPY of the parent's sandbox (local: `cp -a`; docker: `commit` → temp image → run + host copy), sharing nothing after creation — no shared mounts, no live handles. The ONLY channel back is the artifact handoff (below). `sandbox_sharing: "inherit"` restores Phase 3's shared sandbox. Non-forkable sandboxes in fork mode are refused LOUDLY (`not_supported`) — never a silent fallback to sharing. |
 | Events              | `subagent.spawned/completed/failed/aborted` are mirrored on BOTH logs (the parent's copy carries `subagent_session_id`; the child's copy denormalizes `parent_session_id`). Child turn events **never** enter the parent's log. |
 | Approvals           | The child inherits the policy engine and approval engine. Surfaces copy the parent session's presenter onto the child (server), or surface child approvals through the engine callbacks (CLI) — an "ask" inside a child is interactive, not a TTL death. |
-| Persistence         | Subagent sessions live in `nyx.db` (`sessions.kind = 'subagent'`, lineage via the existing `parent_id`). No GC in Phase 3; `subagents.retention_days` (default 7) is the Phase 4 heartbeat-GC knob. Deletion **archives**: `DELETE /v1/sessions/:id` marks `archived_at`, hides the session from lists, and keeps every row — the id stays resolvable and the log replayable. |
+| Persistence         | Subagent sessions live in `nyx.db` (`sessions.kind = 'subagent'`, lineage via the existing `parent_id`). GC is the Phase 4 retention durable task — see [RETENTION.md](RETENTION.md) (archive-not-delete, ships disabled). Deletion **archives**: `DELETE /v1/sessions/:id` marks `archived_at`, hides the session from lists, and keeps every row — the id stays resolvable and the log replayable. |
 
 ## Configuration (`nyx.config.yaml`)
 
@@ -45,12 +45,15 @@ subagents:
   forbidden_tools:                   # always blocked, cannot be overridden
     - spawn_subagent                 # no, subagents don't spawn subagents
     - spawn_subagent_v2
-  sandbox_sharing: "inherit"         # "fork" is Phase 4+
-  retention_days: 7                  # Phase 4 GC knob
+  sandbox_sharing: "fork"            # the Phase 4 default: fork per child
+  retention_enabled: false           # the retention task SHIPS DISABLED (see RETENTION.md)
+  retention_days: 7                  # archive window; 0 = never
+  retention_scope: subagent          # subagent | subagent+failed | all | none
+  delete_after_days: 0               # hard-delete archived sessions after N days; 0 = off
+  retention_schedule: "30 3 * * *"   # the retention task's cron (UTC)
 ```
 
-The section is optional; every key has the default shown. `sandbox_sharing:
-"fork"` fails at startup until Phase 4.
+The section is optional; every key has the default shown.
 
 ## Parallelism
 
@@ -163,12 +166,14 @@ the parent's session memory.
   `usage` chunks as they stream. A provider that omits usage leaves the
   in-flight guard unarmed for that stream (the per-turn allocation cap still
   holds); the real providers emit usage on every stream.
-- **Crash reconciliation is Phase 4:** if the OWNING PROCESS dies mid-child,
-  the child's log keeps `subagent.spawned` with no terminal event and lists
-  as "running" until `subagents.retention_days` GC lands (Phase 4 heartbeat
-  task). No heuristic is fabricated here: without process-liveness data,
-  auto-failing such children could kill live children owned by another
-  process (server + CLI local runtime can both run subagents on one nyx.db).
+- **Crash reconciliation is retention's job:** if the OWNING PROCESS dies
+  mid-child, the child's log keeps `subagent.spawned` with no terminal event
+  and lists as "running" until retention archives it past the window (see
+  [RETENTION.md](RETENTION.md); live-tied sessions are protected, but an
+  orphaned child's task tie is terminal/stale by then). No heuristic is
+  fabricated here: without process-liveness data, auto-failing such children
+  could kill live children owned by another process (server + CLI local
+  runtime can both run subagents on one nyx.db).
 - **Cross-process abort rows are ownership-aware:** a manager's poll deletes
   only rows it acted on (its own children) or rows that are provably stale
   (settled/unknown session). A row for a child running in another process
@@ -203,3 +208,51 @@ the parent's session memory.
   through the kernel service `tools.runtime` and `ctx.tools`; the field is
   protocol surface for future routing extensions. The child's inline router
   is consistent with the filtered registry it sits over.
+
+## Fork mode and the artifact handoff (Phase 4 §4)
+
+`sandbox_sharing: "fork"` (the default) provisions each child a **filesystem
+copy** of the parent's sandbox — local provider: `cp -a` to a sibling under
+the provider root; docker provider: `docker commit` the parent to a temp
+image, run the child from it with a fresh host bind (the bind content rides
+along with a host-side `cp -a`; binds are not part of a commit), then remove
+the temp image by id when the child is destroyed. Nothing is shared after
+the fork: no mounts, no live handles; writes on either side are invisible to
+the other.
+
+### The handoff
+
+The **only** channel from a child back to its parent:
+
+- `subagent_artifact` (child-side, in the child's toolset on top of the
+  filtered allowlist): copies a sandbox file into the child's `artifacts/`
+  dir. The sha256 is computed **at the write source** and recorded on the
+  hash-chained audit log (`subagent.artifact_written`). Names are single
+  printable path segments (no traversal, no control characters); a hard
+  64MB cap bounds the memory cost.
+- `subagent_read_artifact` (parent-side, registered in fork mode): copies a
+  child artifact into the **parent's** sandbox — only after re-hashing the
+  bytes and matching the audited sha256, and only for the child's OWN parent
+  (parentage is checked per read; the read is audited with the reader
+  session BEFORE the bytes move). Tampered → `artifact_integrity`; evicted
+  or unknown → `not_found`; unaudited files in `artifacts/` → `not_found`
+  (fail-closed: a smuggled file is unreadable).
+- `SubagentResult.artifacts` lists what the child published
+  (`[{path, bytes}]`); the listing is directory-derived and advisory — the
+  sha256s live on the audit chain and are re-verified on every read.
+
+### Sandbox retention (the leak bound)
+
+A settled child's sandbox stays readable for the handoff, LRU-capped at 8
+per manager (the fork happens before the child session exists; a sandbox
+whose child is still RUNNING is never reaped). Past the cap the oldest is
+destroyed — its artifacts are gone and a late read fails `not_found`.
+
+### Failure discipline
+
+Any failure between the fork and the child's existence (the fork itself, the
+artifacts dir, the session create) destroys the forked sandbox and rolls the
+per-turn budget allocation back — a subagent that never existed is never
+charged, and an untracked sandbox is never orphaned. A failure in the
+terminal event append degrades the result to `state="failed"` instead of
+leaving the child "running" forever.

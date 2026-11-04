@@ -310,7 +310,40 @@ owner_id: owner
 #                                   # simply lacks it)
 #     - spawn_subagent
 #     - spawn_subagent_v2
-#   sandbox_sharing: "inherit"      # children share the parent's sandbox.
-#                                   # "fork" is Phase 4+ and errors at startup.
-#   retention_days: 7               # Phase 4 GC knob (heartbeat task); no
-#                                   # subagent-session cleanup in Phase 3.
+#   sandbox_sharing: "fork"         # THE DEFAULT (Phase 4): each child gets
+#                                   # a filesystem COPY of the parent's
+#                                   # sandbox; artifacts are the only
+#                                   # handoff (subagent_artifact /
+#                                   # subagent_read_artifact, hash-audited).
+#                                   # "inherit" restores the Phase 3 shared
+#                                   # sandbox.
+#   retention_enabled: false        # the retention task SHIPS DISABLED —
+#                                   # opt in (docs/RETENTION.md)
+#   retention_days: 7               # archive window (days); 0 = never
+#   retention_scope: subagent       # subagent | subagent+failed | all | none
+#   delete_after_days: 0            # hard-delete ARCHIVED sessions after N
+#                                   # days; 0 = off (never deletes live rows)
+#   retention_schedule: "30 3 * * *"  # the retention task's cron (UTC)
+
+# ── durable tasks (Phase 4) ────────────────────────────────────────────────
+# The worker pool shares the queue with any other NYX process on the same
+# nyx.db through SQL leases. renew_interval_ms MUST be < lease_ttl_ms
+# (validated at load). docs/TASKS.md.
+# tasks:
+#   enabled: true                   # the pool starts with the process
+#   workers: 2                      # per process
+#   poll_interval_ms: 500
+#   lease_ttl_ms: 300000            # 5 minutes
+#   renew_interval_ms: 30000        # renewal cadence during a long run
+
+# ── skills (Phase 4) ───────────────────────────────────────────────────────
+# Progressive disclosure: SKILL.md frontmatter rides the system prompt's
+# SKILLS_CATALOG section (curated under the token cap); bodies load on
+# demand via the R0 load_skill tool. The persona's own
+# <persona_root>/<id>/skills/ dir joins the scan automatically. docs/SKILLS.md.
+# skills:
+#   catalog_max_tokens: 2000        # the catalog section's token cap
+#   dirs:                           # shared skill bases (~ expands)
+#     - ~/.nyx/skills
+#   pinned: []                      # always in the catalog, in this order
+#   excluded: []                    # never advertised
