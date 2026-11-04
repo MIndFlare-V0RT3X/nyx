@@ -396,11 +396,17 @@ describe("subagents section (Phase 3)", () => {
       default_allowed_tools: ["fs.read", "fs.write", "fs.list", "shell.exec", "web.fetch"],
       forbidden_tools: ["spawn_subagent", "spawn_subagent_v2"],
       sandbox_sharing: "inherit",
+      retention_enabled: false,
       retention_days: 7,
       retention_scope: "subagent",
       delete_after_days: 0,
       retention_schedule: "30 3 * * *",
     });
+  });
+
+  it("ships the retention task DISABLED by default (opt-in)", () => {
+    const cfg = configSchema.parse(MINIMAL);
+    expect(cfg.subagents.retention_enabled).toBe(false);
   });
 
   it("fills the Phase 4 tasks defaults when the section is absent", () => {

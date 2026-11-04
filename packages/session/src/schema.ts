@@ -19,8 +19,14 @@ export const sessions = sqliteTable("sessions", {
   metadataJson: text("metadata_json"),
   /** Lineage (0001): 'session' | 'fork' | 'subagent'. */
   kind: text("kind").notNull().default("session"),
-  /** Set by archiveSession(); null while live. */
+  /** Phase 3 soft-archive (DELETE /v1/sessions/:id); null while live. */
   archivedAt: integer("archived_at"),
+  /**
+   * Retention archive (0003): 1 once the retention task moved this
+   * session's events to the archive database. Reads fall back to it;
+   * appends are refused (the log must never split across databases).
+   */
+  archived: integer("archived").notNull().default(0),
 });
 
 export const events = sqliteTable("events", {

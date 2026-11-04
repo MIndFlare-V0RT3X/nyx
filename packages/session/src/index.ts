@@ -7,3 +7,7 @@ export { APPROVAL_TTL_MS } from "./projections.js";
 // 2.0.1: the drizzle migration runner is part of the unified-DB contract
 // (@nyx/db ensures the session-store tables exist on a shared handle).
 export { migrate } from "./migrate.js";
+// Phase 4 §3: the retention archive (nyx-archive.db) rides the same
+// connection as nyx.db via ATTACH — the retention durable task and any
+// other process touching archived sessions share this helper.
+export { ensureArchiveAttached, archivePathOf, ARCHIVE_ALIAS } from "./archive.js";

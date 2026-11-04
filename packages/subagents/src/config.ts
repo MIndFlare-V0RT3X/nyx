@@ -19,6 +19,12 @@ export interface SubagentsConfig {
   forbidden_tools: string[];
   /** "inherit" (shared with parent — Phase 3) | "fork" (Phase 4+). */
   sandbox_sharing: "inherit" | "fork";
+  /**
+   * Phase 4 GC knob: the retention durable task (`nyx:retention-gc`) is
+   * created by the surface only when this is true — it SHIPS DISABLED so a
+   * fresh install never moves user data to the archive unbidden.
+   */
+  retention_enabled: boolean;
   /** Phase 4 GC knob: subagent sessions older than this are collected. 0 = never. Default 7. */
   retention_days: number;
   /** Phase 4 GC knob: which session states retention may archive. Default "subagent". */
@@ -57,6 +63,7 @@ export const DEFAULT_SUBAGENTS_CONFIG: SubagentsConfig = {
   default_allowed_tools: [...DEFAULT_ALLOWED_TOOLS],
   forbidden_tools: [...DEFAULT_FORBIDDEN_TOOLS],
   sandbox_sharing: "inherit",
+  retention_enabled: false,
   retention_days: 7,
   retention_scope: "subagent",
   delete_after_days: 0,

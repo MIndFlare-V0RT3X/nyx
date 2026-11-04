@@ -21,15 +21,16 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@nyx/policy": "workspace:*",
     "@nyx/protocol": "workspace:*",
     "@nyx/runtime": "workspace:*",
+    "@nyx/session": "workspace:*",
     "nanoid": "^5.0.9",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "vitest": "^2.1.8",
     "@types/node": "^22.10.2",
-    "@nyx/session": "workspace:*",
     "better-sqlite3": "^11.8.1",
     "@types/better-sqlite3": "^7.6.12"
   }

@@ -569,12 +569,18 @@ importers:
 
   packages/tasks:
     dependencies:
+      '@nyx/policy':
+        specifier: workspace:*
+        version: link:../policy
       '@nyx/protocol':
         specifier: workspace:*
         version: link:../protocol
       '@nyx/runtime':
         specifier: workspace:*
         version: link:../runtime
+      '@nyx/session':
+        specifier: workspace:*
+        version: link:../session
       nanoid:
         specifier: ^5.0.9
         version: 5.1.16
@@ -582,9 +588,6 @@ importers:
         specifier: ^3.24.1
         version: 3.25.76
     devDependencies:
-      '@nyx/session':
-        specifier: workspace:*
-        version: link:../session
       '@types/better-sqlite3':
         specifier: ^7.6.12
         version: 7.6.13

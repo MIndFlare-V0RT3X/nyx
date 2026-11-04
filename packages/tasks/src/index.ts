@@ -33,3 +33,14 @@ export {
   type TaskWorkerConfig,
   type TaskWorkerPoolDeps,
 } from "./worker.js";
+export {
+  auditPayloadOf,
+  ensureRetentionTask,
+  isSystemTaskId,
+  retentionTaskSpec,
+  runRetention,
+  runRetentionAttempt,
+  type RetentionConfig,
+  type RetentionDeps,
+  type RetentionStats,
+} from "./retention.js";

@@ -22,7 +22,7 @@ import { z } from "zod";
 import { createKernel } from "@nyx/kernel";
 import { BRAND, type NyxConfig } from "@nyx/config";
 import { openUnifiedDatabase } from "@nyx/db";
-import { openSessionStore } from "@nyx/session";
+import { openSessionStore, archivePathOf } from "@nyx/session";
 import { openApprovalEngine, PolicyEngineImpl } from "@nyx/policy";
 import { EngagementOwnershipError, assertEngagementOwnership } from "@nyx/policy";
 import { auditEngagementCreated } from "@nyx/policy";
@@ -49,6 +49,9 @@ import { createLaneQueue, createHeartbeatScheduler, HeartbeatStore } from "@nyx/
 import type { LaneQueue, Scheduler } from "@nyx/runtime";
 import {
   createTaskManager,
+  ensureRetentionTask,
+  isSystemTaskId,
+  runRetentionAttempt,
   TaskWorkerPool,
   type TaskManager,
   type TaskRunner,
@@ -177,6 +180,9 @@ export function createServer(deps: ServerDeps): NyxServer {
   const store = openSessionStore(join(deps.data_dir, "nyx.db"), {
     db: unified.db,
     onEventsCommitted: (stored) => auditHook.onEventsCommitted?.(stored),
+    // Phase 4 §3: the retention archive rides the same connection — reads
+    // of archived sessions (archived = 1) fall back to it transparently.
+    archivePath: archivePathOf(join(deps.data_dir, "nyx.db")),
   });
   const sink = createEventSink(store);
 
@@ -377,6 +383,25 @@ export function createServer(deps: ServerDeps): NyxServer {
   };
   const taskRunner: TaskRunner = {
     run: async (task, handle) => {
+      // System tasks never spawn a subagent (§3): the retention pass is pure
+      // SQL + audit on the shared handle, and its result is synthesized —
+      // no model spend, no child session, nothing to budget.
+      if (isSystemTaskId(task.id)) {
+        const started_at = Date.now();
+        return runRetentionAttempt(
+          {
+            db: unified.db,
+            archivePath: archivePathOf(join(deps.data_dir, "nyx.db")),
+            config: {
+              retention_days: subagentsConfig.retention_days,
+              retention_scope: subagentsConfig.retention_scope,
+              delete_after_days: subagentsConfig.delete_after_days,
+            },
+          },
+          task.task_session_id,
+          started_at,
+        );
+      }
       const turn_id = `task-${task.id}-${task.attempts + 1}`;
       const ctx = await taskContextFor(task, handle.signal);
       // subagents.bindTurn is unnecessary here: the spawn_subagent tool is
@@ -392,6 +417,7 @@ export function createServer(deps: ServerDeps): NyxServer {
       return result;
     },
     abort: async (task) => {
+      if (isSystemTaskId(task.id)) return; // synchronous pass — nothing to abort
       const row = await tasks.get(task.id);
       if (row?.subagent_session_id != null) {
         await subagents.abort(row.subagent_session_id);
@@ -1144,6 +1170,29 @@ export function createServer(deps: ServerDeps): NyxServer {
       // shutdown (close below) aborts running attempts and releases their
       // leases so another NYX process on the same nyx.db reclaims them.
       if (config.tasks?.enabled !== false) {
+        // Phase 4 §3: retention is a SCHEDULED DURABLE TASK, not a startup
+        // sweep — the surface only ensures the `nyx:retention-gc` task
+        // EXISTS (opt-in via subagents.retention_enabled); the worker pool
+        // fires it on its cron. Idempotent: absent → created, terminally
+        // dead → revived, healthy/paused → untouched.
+        if (
+          subagentsConfig.retention_enabled &&
+          subagentsConfig.retention_days > 0 &&
+          subagentsConfig.retention_scope !== "none"
+        ) {
+          await ensureRetentionTask(
+            tasks,
+            { retention_schedule: subagentsConfig.retention_schedule },
+            { owner_id: config.owner_id, persona_id: config.persona.default_id },
+          );
+          logger.info("tasks.retention_scheduled", {
+            task: "nyx:retention-gc",
+            schedule: subagentsConfig.retention_schedule,
+            scope: subagentsConfig.retention_scope,
+            retention_days: subagentsConfig.retention_days,
+            delete_after_days: subagentsConfig.delete_after_days,
+          });
+        }
         taskPool.start();
         logger.info("tasks.workers_started", {
           workers: config.tasks?.workers ?? 2,

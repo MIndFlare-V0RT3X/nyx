@@ -173,6 +173,7 @@ describe("loadConfig — golden files", () => {
         default_allowed_tools: ["fs.read", "fs.list", "web.fetch"],
         forbidden_tools: ["spawn_subagent", "spawn_subagent_v2", "shell.exec"],
         sandbox_sharing: "inherit",
+        retention_enabled: true,
         retention_days: 14,
         retention_scope: "subagent+failed",
         delete_after_days: 90,

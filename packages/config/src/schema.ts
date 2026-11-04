@@ -348,6 +348,10 @@ export const configSchema = z
           .default(["spawn_subagent", "spawn_subagent_v2"]),
         sandbox_sharing: z.enum(["inherit", "fork"]).default("inherit"),
         // Phase 4 GC knobs (retention durable task); see docs/RETENTION.md.
+        // The task itself SHIPS DISABLED: retention_enabled must be set true
+        // before the surface creates `nyx:retention-gc` — moving user data
+        // to the archive database on first boot would otherwise surprise.
+        retention_enabled: z.boolean().default(false),
         retention_days: z.number().int().min(0).default(7),
         retention_scope: z
           .enum(["subagent", "subagent+failed", "all", "none"])

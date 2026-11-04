@@ -23,6 +23,7 @@ import type {
   ToolCallRecord,
   Usage,
 } from "@nyx/protocol";
+import { ensureArchiveAttached } from "./archive.js";
 import { migrate } from "./migrate.js";
 import {
   applyProjectionEvent,
@@ -36,7 +37,16 @@ const STREAM_POLL_MS = 25;
 /** list() default page size. */
 const LIST_DEFAULT_LIMIT = 50;
 
-export type SessionStoreErrorCode = "not_found" | "validation_failed" | "closed";
+export type SessionStoreErrorCode =
+  | "not_found"
+  | "validation_failed"
+  | "closed"
+  /**
+   * The session is retention-archived (its events live in the archive
+   * database) but no archivePath was configured on this store — the
+   * events exist and are readable, just not through this handle.
+   */
+  | "archived";
 
 /** Typed error for outcomes a caller must distinguish. */
 export class SessionStoreError extends Error {
@@ -80,6 +90,14 @@ export interface SessionStoreOptions {
    * real event-log rows and get their audit cross-references too).
    */
   onEventsCommitted?: (stored: StoredEvent[]) => void;
+  /**
+   * Phase 4 §3: ATTACH the retention archive (nyx-archive.db) on this
+   * connection. session.read()/stream() of a retention-archived session
+   * (archived = 1) then serve its events from the archive; appends to it
+   * are refused (a log must never split across databases). Absent —
+   * reading an archived session throws SessionStoreError("archived").
+   */
+  archivePath?: string;
 }
 
 interface SessionRow {
@@ -94,6 +112,8 @@ interface SessionRow {
   metadata_json: string | null;
   kind: string;
   archived_at: number | null;
+  /** 0003: 1 once retention moved the events to the archive database. */
+  archived: number;
 }
 
 interface EventRow {
@@ -126,10 +146,13 @@ export class SessionStoreImpl implements SessionStore {
   private readonly ownsDb: boolean;
   private readonly validate: boolean;
   private readonly onEventsCommitted: ((stored: StoredEvent[]) => void) | undefined;
+  private readonly archiveAttached: boolean;
   private readonly projectionStmts: ProjectionStatements;
   private readonly stmts: {
     insertEvent: SqliteStatement;
     readEvents: SqliteStatement;
+    /** Present only when archivePath was configured (Phase 4 §3). */
+    readArchiveEvents?: SqliteStatement;
     readEventsUpTo: SqliteStatement;
     eventsPage: SqliteStatement;
     usageEvents: SqliteStatement;
@@ -154,6 +177,10 @@ export class SessionStoreImpl implements SessionStore {
     this.dz = drizzle(this.db);
     this.validate = opts.validate ?? false;
     this.onEventsCommitted = opts.onEventsCommitted;
+    // Phase 4 §3: the archive rides the SAME connection (ATTACH) so reads
+    // of archived sessions stay ordinary prepared-statement queries.
+    this.archiveAttached = opts.archivePath !== undefined;
+    if (opts.archivePath !== undefined) ensureArchiveAttached(this.db, opts.archivePath);
     this.projectionStmts = prepareProjectionStatements(this.db);
     this.stmts = {
       // Hot path: raw prepared statements. payload_json is the canonical JSON
@@ -165,6 +192,18 @@ export class SessionStoreImpl implements SessionStore {
       readEvents: this.db.prepare(
         "SELECT seq, type, payload_json, ts FROM events WHERE session_id = ? AND seq >= ? ORDER BY seq LIMIT ?",
       ),
+      // The archive mirror of readEvents (same shape, same global seqs):
+      // serves retention-archived sessions — the log moved, the reads did
+      // not change shape. Prepared only when the archive is ATTACHed
+      // (better-sqlite3 binds statements at prepare time — a missing
+      // archive.events would throw here otherwise).
+      ...(this.archiveAttached
+        ? {
+            readArchiveEvents: this.db.prepare(
+              "SELECT seq, type, payload_json, ts FROM archive.events WHERE session_id = ? AND seq >= ? ORDER BY seq LIMIT ?",
+            ),
+          }
+        : {}),
       readEventsUpTo: this.db.prepare(
         "SELECT seq, type, payload_json, ts FROM events WHERE session_id = ? AND seq <= ? ORDER BY seq",
       ),
@@ -177,7 +216,7 @@ export class SessionStoreImpl implements SessionStore {
         "SELECT payload_json FROM events WHERE session_id = ? AND type = 'turn.completed' ORDER BY seq",
       ),
       selectSession: this.db.prepare(
-        "SELECT id, parent_id, owner_id, persona_id, title, created_at, updated_at, engagement_json, metadata_json, kind, archived_at FROM sessions WHERE id = ?",
+        "SELECT id, parent_id, owner_id, persona_id, title, created_at, updated_at, engagement_json, metadata_json, kind, archived_at, archived FROM sessions WHERE id = ?",
       ),
       selectLastSeq: this.db.prepare("SELECT last_seq FROM projection_version WHERE name = ?"),
       touchSession: this.db.prepare("UPDATE sessions SET updated_at = ? WHERE id = ?"),
@@ -254,6 +293,7 @@ export class SessionStoreImpl implements SessionStore {
           metadataJson: null,
           kind,
           archivedAt: null,
+          archived: 0,
         })
         .run();
       this.insertEvents(id, [event], now);
@@ -264,7 +304,11 @@ export class SessionStoreImpl implements SessionStore {
 
   async append(session_id: string, events: SessionEvent[]): Promise<StoredEvent[]> {
     this.assertOpen();
-    this.requireSessionRow(session_id);
+    const row = this.requireSessionRow(session_id);
+    // Phase 4 §3: a retention-archived session's events live in the archive
+    // database — appending here would split the log across two files with
+    // read() unable to serve the tail. Refused, loudly.
+    this.refuseIfArchived(row);
     for (const ev of events) {
       if (ev.session_id !== session_id) {
         throw new SessionStoreError(
@@ -281,29 +325,29 @@ export class SessionStoreImpl implements SessionStore {
 
   async read(session_id: string, from_seq = 0, limit?: number): Promise<StoredEvent[]> {
     this.assertOpen();
-    this.requireSessionRow(session_id);
-    const rows = this.stmts.readEvents.all(session_id, from_seq, limit ?? -1) as EventRow[];
-    return rows.map((row) => this.rowToStored(row));
+    const row = this.requireSessionRow(session_id);
+    const rows = this.eventsOf(row, from_seq, limit);
+    return rows.map((r) => this.rowToStored(r));
   }
 
   async *stream(session_id: string, from_seq = 0): AsyncGenerator<StoredEvent, void, unknown> {
     this.assertOpen();
-    this.requireSessionRow(session_id);
     // Existing events first, then poll. The generator is pull-driven, so
     // polling happens only when the consumer awaits the next value —
     // backpressure is inherent. A `break` in for-await suspends the generator
     // at its yield point and it never polls again.
     let lastSeq = from_seq - 1;
-    for (const row of this.readEventsAfter(session_id, from_seq)) {
-      lastSeq = row.seq;
-      yield this.rowToStored(row);
+    const row = this.requireSessionRow(session_id);
+    for (const ev of this.eventsOf(row, from_seq, -1)) {
+      lastSeq = ev.seq;
+      yield this.rowToStored(ev);
     }
     while (true) {
       await sleep(STREAM_POLL_MS);
       this.assertOpen();
-      for (const row of this.readEventsAfter(session_id, lastSeq + 1)) {
-        lastSeq = row.seq;
-        yield this.rowToStored(row);
+      for (const ev of this.eventsOf(row, lastSeq + 1, -1)) {
+        lastSeq = ev.seq;
+        yield this.rowToStored(ev);
       }
     }
   }
@@ -314,6 +358,10 @@ export class SessionStoreImpl implements SessionStore {
       throw new SessionStoreError("validation_failed", "fork: at_seq must be an integer >= 1");
     }
     const parent = this.requireSessionRow(session_id);
+    // Phase 4 §3: forking an archived parent would append session.forked to
+    // its (immutable, archive-resident) log — refused for the same reason
+    // appends are.
+    this.refuseIfArchived(parent);
     const childId = nanoid();
     const now = Date.now();
     const txn = this.db.transaction((): SessionMeta => {
@@ -331,6 +379,7 @@ export class SessionStoreImpl implements SessionStore {
           metadataJson: null,
           kind: "fork",
           archivedAt: null,
+          archived: 0,
         })
         .run();
       // Re-append the parent's prefix under the child: fresh global seqs,
@@ -404,6 +453,7 @@ export class SessionStoreImpl implements SessionStore {
       metadata_json: row.metadataJson,
       kind: row.kind,
       archived_at: row.archivedAt,
+      archived: row.archived,
     }));
   }
 
@@ -521,6 +571,35 @@ export class SessionStoreImpl implements SessionStore {
     }
   }
 
+  /** Phase 4 §3: retention-archived sessions are immutable. */
+  private refuseIfArchived(row: SessionRow): void {
+    if (row.archived === 1) {
+      throw new SessionStoreError(
+        "archived",
+        `session ${row.id} is retention-archived (its events live in the archive database); appends and forks are refused`,
+      );
+    }
+  }
+
+  /**
+   * The events of a session, routed by residence: live sessions read
+   * nyx.db, retention-archived ones (archived = 1) read the ATTACHed
+   * archive. An archived session without an attached archive is a
+   * misconfiguration, not an empty log — loud error, never a silent [].
+   */
+  private eventsOf(row: SessionRow, from_seq: number, limit?: number): EventRow[] {
+    if (row.archived === 1) {
+      if (this.stmts.readArchiveEvents === undefined) {
+        throw new SessionStoreError(
+          "archived",
+          `session ${row.id} is retention-archived but no archivePath is configured on this store`,
+        );
+      }
+      return this.stmts.readArchiveEvents.all(row.id, from_seq, limit ?? -1) as EventRow[];
+    }
+    return this.stmts.readEvents.all(row.id, from_seq, limit ?? -1) as EventRow[];
+  }
+
   private selectSessionRow(session_id: string): SessionRow | undefined {
     return this.stmts.selectSession.get(session_id) as SessionRow | undefined;
   }
@@ -561,10 +640,6 @@ export class SessionStoreImpl implements SessionStore {
       }
     }
     return stored;
-  }
-
-  private readEventsAfter(session_id: string, from_seq: number): EventRow[] {
-    return this.stmts.readEvents.all(session_id, from_seq, -1) as EventRow[];
   }
 
   private lastSeq(session_id: string): number {
