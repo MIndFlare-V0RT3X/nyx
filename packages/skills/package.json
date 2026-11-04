@@ -1,0 +1,35 @@
+{
+  "name": "@nyx/skills",
+  "version": "0.1.0",
+  "description": "NYX — skills: progressive-disclosure SKILL.md packages (catalog in the system prompt, body on demand via load_skill)",
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@nyx/protocol": "workspace:*",
+    "nanoid": "^5.0.9",
+    "yaml": "^2.6.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@nyx/kernel": "workspace:*",
+    "@nyx/session": "workspace:*",
+    "@types/node": "^22.10.2",
+    "vitest": "^2.1.8"
+  }
+}

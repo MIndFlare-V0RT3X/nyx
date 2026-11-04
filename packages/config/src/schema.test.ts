@@ -420,6 +420,24 @@ describe("subagents section (Phase 3)", () => {
     });
   });
 
+  it("fills the Phase 4 skills defaults when the section is absent", () => {
+    const cfg = configSchema.parse(MINIMAL);
+    expect(cfg.skills).toEqual({
+      catalog_max_tokens: 2000,
+      dirs: ["~/.nyx/skills"],
+      pinned: [],
+      excluded: [],
+    });
+  });
+
+  it("rejects an unknown key inside skills", () => {
+    const result = configSchema.safeParse({
+      ...MINIMAL,
+      skills: { catalog_max_tokens: 1000, autoload: true },
+    });
+    expect(result.success).toBe(false);
+  });
+
   it("rejects an unknown key inside tasks", () => {
     const result = configSchema.safeParse({
       ...MINIMAL,

@@ -97,3 +97,8 @@ tasks:
   lease_ttl_ms: 120000
   renew_interval_ms: 15000
 owner_id: owner
+skills:
+  catalog_max_tokens: 1500
+  dirs: ["~/.nyx/skills", "/opt/nyx/skills"]
+  pinned: [deploy-runbook]
+  excluded: [legacy-migrations]

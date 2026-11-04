@@ -1,0 +1,25 @@
+## BASE_PREAMBLE
+BASE_PREAMBLE body.
+
+## CONTRACT
+CONTRACT body.
+
+## SOUL
+SOUL body.
+
+## USER
+USER body.
+
+## MEMORY_CATALOG
+MEMORY_CATALOG body.
+
+## SKILLS_CATALOG
+Available skills (load one with the load_skill tool):
+- deploy (v1.0.0): Production deploy runbook steps. — trigger: deploying to prod [tools: shell.exec]
+- review: Code review checklist for this repo.
+
+## TOOLS_CATALOG
+TOOLS_CATALOG body.
+
+## SESSION_CONTEXT
+SESSION_CONTEXT body.

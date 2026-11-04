@@ -219,6 +219,18 @@ export type SessionEvent =
       next_attempt_at: number;
       error: SerializedError;
       ts: number;
+    }
+  /**
+   * Phase 4 §4.4 (recorded deviation from the protocol freeze — the Phase 4
+   * brief mandates this event): a session loaded a skill's body through the
+   * load_skill tool. Progressive disclosure, on the record.
+   */
+  | {
+      type: "skill.loaded";
+      session_id: string;
+      name: string;
+      version: string | null;
+      ts: number;
     };
 
 /** An event as stored: the caller's payload plus the store-assigned seq. */

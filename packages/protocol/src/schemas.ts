@@ -381,6 +381,15 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
     error: SerializedErrorSchema,
     ts: z.number().int().nonnegative(),
   }),
+  // Phase 4 §4.4 (recorded deviation, brief-mandated): progressive
+  // disclosure on the record — a session loaded a skill body.
+  z.object({
+    type: z.literal("skill.loaded"),
+    session_id: z.string(),
+    name: z.string(),
+    version: z.string().nullable(),
+    ts: z.number().int().nonnegative(),
+  }),
 ]);
 
 export const StoredEventSchema = z.intersection(

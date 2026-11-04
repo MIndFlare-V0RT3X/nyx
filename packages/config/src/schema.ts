@@ -391,6 +391,18 @@ export const configSchema = z
         }
       })
       .default({}),
+    // Optional (Phase 4 §4.4): the progressive-disclosure skill system. The
+    // persona's own skills/ dir joins the scan at runtime; dirs here are the
+    // shared bases. See docs/SKILLS.md.
+    skills: z
+      .object({
+        catalog_max_tokens: z.number().int().min(200).max(20_000).default(2000),
+        dirs: z.array(z.string().min(1)).default(["~/.nyx/skills"]),
+        pinned: z.array(z.string().min(1)).default([]),
+        excluded: z.array(z.string().min(1)).default([]),
+      })
+      .strict()
+      .default({}),
     // Optional (Phase 2 §2.2): the four-tier compaction pipeline. Absent →
     // code defaults (documented in docs/COMPACTION.md).
     context: z

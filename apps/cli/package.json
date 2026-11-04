@@ -1,7 +1,7 @@
 {
   "name": "@nyx/cli",
   "version": "0.1.0",
-  "description": "NYX \u2014 cli package",
+  "description": "NYX — cli package",
   "type": "module",
   "license": "AGPL-3.0-or-later",
   "bin": {
@@ -36,6 +36,7 @@
     "@nyx/sandbox": "workspace:*",
     "@nyx/scope": "workspace:*",
     "@nyx/session": "workspace:*",
+    "@nyx/skills": "workspace:*",
     "@nyx/subagents": "workspace:*",
     "@nyx/tasks": "workspace:*",
     "@nyx/tools": "workspace:*",

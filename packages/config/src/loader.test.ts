@@ -186,6 +186,12 @@ describe("loadConfig — golden files", () => {
         lease_ttl_ms: 120_000,
         renew_interval_ms: 15_000,
       },
+      skills: {
+        catalog_max_tokens: 1500,
+        dirs: ["~/.nyx/skills", "/opt/nyx/skills"],
+        pinned: ["deploy-runbook"],
+        excluded: ["legacy-migrations"],
+      },
       owner_id: "owner",
     });
   });

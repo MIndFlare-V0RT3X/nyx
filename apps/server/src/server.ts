@@ -46,6 +46,11 @@ import {
   resolveSubagentsConfig,
   type SubagentManager,
 } from "@nyx/subagents";
+import {
+  SkillsProvider,
+  registerLoadSkillTool,
+  registerSkillsHook,
+} from "@nyx/skills";
 import { createLaneQueue, createHeartbeatScheduler, HeartbeatStore } from "@nyx/runtime";
 import type { LaneQueue, Scheduler } from "@nyx/runtime";
 import {
@@ -302,6 +307,19 @@ export function createServer(deps: ServerDeps): NyxServer {
   if (subagentsConfig.sandbox_sharing === "fork") {
     registerSubagentArtifactTools(toolRegistry, { manager: subagents });
   }
+  // ── skills (Phase 4 §4.4) ──
+  // Progressive disclosure: the catalog rides the SKILLS_CATALOG prompt
+  // section via the context.initialize hook (persona-scoped, capability-
+  // filtered, curated under the token cap); bodies load on demand through
+  // the R0 load_skill tool — skills are content, loading grants nothing.
+  const skillsProvider = new SkillsProvider(config.skills ?? {}, {
+    persona_root: config.persona.root,
+    store: sink.wrapped,
+    registry: toolRegistry,
+    logger,
+  });
+  registerLoadSkillTool(toolRegistry, { provider: skillsProvider });
+  registerSkillsHook(kernel, { provider: skillsProvider });
   // 2.2: the four-tier compaction pipeline, configured from
   // context.compaction; the loop looks it up as a kernel service.
   kernel.services.set(

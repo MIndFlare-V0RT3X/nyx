@@ -45,6 +45,11 @@ import {
   resolveSubagentsConfig,
   type SubagentManager,
 } from "@nyx/subagents";
+import {
+  SkillsProvider,
+  registerLoadSkillTool,
+  registerSkillsHook,
+} from "@nyx/skills";
 import type {
   ApprovalEngine,
   ApprovalRecord,
@@ -285,6 +290,15 @@ export function createLocalRuntime(deps: LocalRuntimeDeps): LocalRuntime {
   if (subagentsConfig.sandbox_sharing === "fork") {
     registerSubagentArtifactTools(toolRegistry, { manager: subagents });
   }
+  // ── skills (Phase 4 §4.4): catalog in the prompt, body via load_skill.
+  const skillsProvider = new SkillsProvider(config.skills ?? {}, {
+    persona_root: config.persona.root,
+    store: sink.wrapped,
+    registry: toolRegistry,
+    logger,
+  });
+  registerLoadSkillTool(toolRegistry, { provider: skillsProvider });
+  registerSkillsHook(kernel, { provider: skillsProvider });
   // 2.2: the four-tier compaction pipeline, configured from
   // context.compaction; the loop looks it up as a kernel service.
   kernel.services.set(
