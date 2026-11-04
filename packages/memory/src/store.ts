@@ -51,7 +51,13 @@ interface RowWithRank extends MemoryRow {
 }
 
 const SCOPES: readonly MemoryScope[] = ["session", "persona", "owner", "global"];
-const KINDS: readonly MemoryEntry["kind"][] = ["fact", "preference", "procedure", "episode", "skill-note"];
+const KINDS: readonly MemoryEntry["kind"][] = [
+  "fact",
+  "preference",
+  "procedure",
+  "episode",
+  "skill-note",
+];
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export class MemoryStoreImpl implements MemoryStore {
@@ -93,10 +99,14 @@ export class MemoryStoreImpl implements MemoryStore {
 
   async write(entry: Omit<MemoryEntry, "id" | "created_at" | "updated_at">): Promise<MemoryEntry> {
     if (!SCOPES.includes(entry.scope)) {
-      throw new MemoryValidationError(`write: scope must be one of ${SCOPES.join("|")}, got ${JSON.stringify(entry.scope)}`);
+      throw new MemoryValidationError(
+        `write: scope must be one of ${SCOPES.join("|")}, got ${JSON.stringify(entry.scope)}`,
+      );
     }
     if (!KINDS.includes(entry.kind)) {
-      throw new MemoryValidationError(`write: kind must be one of ${KINDS.join("|")}, got ${JSON.stringify(entry.kind)}`);
+      throw new MemoryValidationError(
+        `write: kind must be one of ${KINDS.join("|")}, got ${JSON.stringify(entry.kind)}`,
+      );
     }
     if (typeof entry.content !== "string") {
       throw new MemoryValidationError("write: content must be a string");
@@ -125,7 +135,10 @@ export class MemoryStoreImpl implements MemoryStore {
     return full;
   }
 
-  async search(query: string, opts: MemorySearchOptions = {}): Promise<Array<MemoryEntry & { score: number }>> {
+  async search(
+    query: string,
+    opts: MemorySearchOptions = {},
+  ): Promise<Array<MemoryEntry & { score: number }>> {
     const match = sanitizeFtsQuery(query);
     if (match === "") return [];
     const limit = opts.limit ?? 20;
@@ -186,7 +199,9 @@ export class MemoryStoreImpl implements MemoryStore {
     return entry;
   }
 
-  async list(opts: { scope?: MemoryScope[]; kind?: MemoryEntry["kind"]; limit?: number } = {}): Promise<MemoryEntry[]> {
+  async list(
+    opts: { scope?: MemoryScope[]; kind?: MemoryEntry["kind"]; limit?: number } = {},
+  ): Promise<MemoryEntry[]> {
     const where: string[] = [];
     const params: unknown[] = [];
     if (opts.scope && opts.scope.length > 0) {
@@ -212,7 +227,9 @@ export class MemoryStoreImpl implements MemoryStore {
     // Grouped on indexed content; the survivor is the newest updated_at
     // (deterministic tie-break on id) with the union of all tags.
     const facts = this.db
-      .prepare<[], MemoryRow>("SELECT * FROM memories WHERE kind = 'fact' ORDER BY updated_at DESC, id")
+      .prepare<[], MemoryRow>(
+        "SELECT * FROM memories WHERE kind = 'fact' ORDER BY updated_at DESC, id",
+      )
       .all();
     const groups = new Map<string, MemoryRow[]>();
     for (const row of facts) {
@@ -242,7 +259,10 @@ export class MemoryStoreImpl implements MemoryStore {
         this.deleteRowAndFts(dup.entry.id);
         if (fs.existsSync(dup.file)) fs.rmSync(dup.file);
       }
-      if (tags.length !== keeper.entry.tags.length || tags.some((t, i) => t !== keeper.entry.tags[i])) {
+      if (
+        tags.length !== keeper.entry.tags.length ||
+        tags.some((t, i) => t !== keeper.entry.tags[i])
+      ) {
         const mergedEntry: MemoryEntry = { ...keeper.entry, tags };
         fs.writeFileSync(keeper.file, entryToMarkdown(mergedEntry), "utf8");
         this.indexRow(mergedEntry, keeper.file);
@@ -254,7 +274,9 @@ export class MemoryStoreImpl implements MemoryStore {
     // drop the index row.
     const cutoff = Date.now() - this.episodeExpiryDays * DAY_MS;
     const episodes = this.db
-      .prepare<[number], MemoryRow>("SELECT * FROM memories WHERE kind = 'episode' AND created_at < ?")
+      .prepare<[number], MemoryRow>(
+        "SELECT * FROM memories WHERE kind = 'episode' AND created_at < ?",
+      )
       .all(cutoff);
     for (const row of episodes) {
       if (fs.existsSync(row.path)) {
@@ -284,7 +306,9 @@ export class MemoryStoreImpl implements MemoryStore {
     const tagsJson = JSON.stringify(entry.tags);
     const sourceJson = JSON.stringify(entry.source);
     this.db.transaction(() => {
-      const existing = this.db.prepare<[string], { rowid: number }>("SELECT rowid FROM memories WHERE id = ?").get(entry.id);
+      const existing = this.db
+        .prepare<[string], { rowid: number }>("SELECT rowid FROM memories WHERE id = ?")
+        .get(entry.id);
       let rowid: number;
       if (existing) {
         rowid = existing.rowid;
@@ -328,20 +352,28 @@ export class MemoryStoreImpl implements MemoryStore {
           );
         rowid = Number(res.lastInsertRowid);
       }
-      this.db.prepare("INSERT INTO memories_fts (rowid, content, tags) VALUES (?, ?, ?)").run(rowid, entry.content, entry.tags.join(" "));
+      this.db
+        .prepare("INSERT INTO memories_fts (rowid, content, tags) VALUES (?, ?, ?)")
+        .run(rowid, entry.content, entry.tags.join(" "));
     })();
   }
 
   private deleteRowAndFts(id: string): void {
     this.db.transaction(() => {
-      const row = this.db.prepare<[string], { rowid: number }>("SELECT rowid FROM memories WHERE id = ?").get(id);
+      const row = this.db
+        .prepare<[string], { rowid: number }>("SELECT rowid FROM memories WHERE id = ?")
+        .get(id);
       if (!row) return;
       this.db.prepare("DELETE FROM memories WHERE id = ?").run(id);
       this.db.prepare("DELETE FROM memories_fts WHERE rowid = ?").run(row.rowid);
     })();
   }
 
-  private runSearch(match: string, scopes: MemoryScope[] | undefined, limit: number): RowWithRank[] {
+  private runSearch(
+    match: string,
+    scopes: MemoryScope[] | undefined,
+    limit: number,
+  ): RowWithRank[] {
     const where = ["memories_fts MATCH ?"];
     const params: unknown[] = [match];
     if (scopes && scopes.length > 0) {

@@ -5,12 +5,7 @@
 // (child session id).
 
 import { openSessionStore } from "@nyx/session";
-import type {
-  Projection,
-  SessionMeta,
-  SessionStore,
-  StoredEvent,
-} from "@nyx/protocol";
+import type { Projection, SessionMeta, SessionStore, StoredEvent } from "@nyx/protocol";
 import { CliError } from "./errors.js";
 import { formatTimestamp, truncate } from "./format.js";
 import { renderTable } from "./table.js";
@@ -47,7 +42,12 @@ export async function listSessions(data_dir: string, limit = 50): Promise<Sessio
 export function renderSessionList(rows: readonly SessionRow[]): string {
   return renderTable(
     ["session", "title", "turns", "updated"],
-    rows.map((r) => [r.session_id, truncate(r.title, 40), String(r.turns), formatTimestamp(r.updated_at)]),
+    rows.map((r) => [
+      r.session_id,
+      truncate(r.title, 40),
+      String(r.turns),
+      formatTimestamp(r.updated_at),
+    ]),
   );
 }
 
@@ -94,7 +94,9 @@ export function renderSessionDetail(detail: SessionDetail): string {
   out.push(`created   ${formatTimestamp(meta.created_at)}`);
   out.push(`updated   ${formatTimestamp(meta.updated_at)}`);
   if (meta.engagement !== null) {
-    out.push(`engagement ${meta.engagement.id} (expires ${formatTimestamp(meta.engagement.expires_at)})`);
+    out.push(
+      `engagement ${meta.engagement.id} (expires ${formatTimestamp(meta.engagement.expires_at)})`,
+    );
   }
   out.push("");
   out.push("messages");
@@ -113,12 +115,7 @@ export function renderSessionDetail(detail: SessionDetail): string {
     out.push(
       renderTable(
         ["call", "tool", "status", "ts"],
-        projection.tool_calls.map((c) => [
-          c.call_id,
-          c.name,
-          c.status,
-          formatTimestamp(c.ts),
-        ]),
+        projection.tool_calls.map((c) => [c.call_id, c.name, c.status, formatTimestamp(c.ts)]),
       )
         .split("\n")
         .map((l) => `  ${l}`)
@@ -180,13 +177,19 @@ export function renderSessionEvents(detail: SessionDetail): string {
           return "";
       }
     })();
-    out.push(`${String(event.seq).padStart(6)}  ${event.type.padEnd(20)} ${formatTimestamp(event.ts)}  ${detailField}`);
+    out.push(
+      `${String(event.seq).padStart(6)}  ${event.type.padEnd(20)} ${formatTimestamp(event.ts)}  ${detailField}`,
+    );
   }
   return out.length > 0 ? out.join("\n") : "(no events)";
 }
 
 /** Fork a session at an inclusive seq boundary; returns the child meta. */
-export async function forkSession(data_dir: string, id: string, at_seq: number): Promise<SessionMeta> {
+export async function forkSession(
+  data_dir: string,
+  id: string,
+  at_seq: number,
+): Promise<SessionMeta> {
   const store = openSessionStore(`${data_dir}/nyx.db`);
   try {
     await openOrThrow(store, id);

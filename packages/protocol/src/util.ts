@@ -26,7 +26,8 @@ export interface JsonSchema {
 }
 
 /** Compaction strategies. Phase 0 implements `rule-elision` only; the rest are seams. */
-export type CompactionStrategy = "rule-elision" | "llm-summary" | "session-memory" | "emergency-degrade";
+export type CompactionStrategy =
+  "rule-elision" | "llm-summary" | "session-memory" | "emergency-degrade";
 
 /** Structured hint returned by the `feedback.recover` hook. */
 export interface RecoveryHint {
@@ -104,7 +105,8 @@ function serializeCanonical(value: unknown): string {
   if (t === "number") return Number.isFinite(value) ? String(value) : "null";
   if (t === "boolean") return value ? "true" : "false";
   if (t === "bigint") return String(value);
-  if (Array.isArray(value)) return `[${value.map((v) => serializeCanonical(v === undefined ? null : v)).join(",")}]`;
+  if (Array.isArray(value))
+    return `[${value.map((v) => serializeCanonical(v === undefined ? null : v)).join(",")}]`;
   if (t === "object") {
     const obj = value as Record<string, unknown>;
     const keys = Object.keys(obj)

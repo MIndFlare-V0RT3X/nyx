@@ -22,7 +22,9 @@ describe("policyRuleSchema.parse", () => {
   });
 
   it("parses a minimal rule", () => {
-    expect(policyRuleSchema.parse({ id: "x", match: { tool: "fs.read" }, decision: "ask" })).toEqual({
+    expect(
+      policyRuleSchema.parse({ id: "x", match: { tool: "fs.read" }, decision: "ask" }),
+    ).toEqual({
       id: "x",
       match: { tool: "fs.read" },
       decision: "ask",
@@ -38,7 +40,11 @@ describe("policyRuleSchema.parse", () => {
 
 describe("policyRuleSchema.safeParse", () => {
   it("returns success:false with a message instead of throwing", () => {
-    const result = policyRuleSchema.safeParse({ id: "", match: { tool: "fs.read" }, decision: "allow" });
+    const result = policyRuleSchema.safeParse({
+      id: "",
+      match: { tool: "fs.read" },
+      decision: "allow",
+    });
     expect(result.success).toBe(false);
     if (!result.success) expect(result.error).toContain("id");
   });
@@ -49,8 +55,14 @@ describe("policyRuleSchema.safeParse", () => {
     ["empty id", { id: "", match: { tool: "fs.read" }, decision: "allow" }],
     ["missing match", { id: "x", decision: "allow" }],
     ["empty match", { id: "x", match: {}, decision: "allow" }],
-    ["unknown match field", { id: "x", match: { tool: "fs.read", toolz: "fs.write" }, decision: "allow" }],
-    ["unknown top-level field", { id: "x", match: { tool: "fs.read" }, decision: "allow", decizion: "deny" }],
+    [
+      "unknown match field",
+      { id: "x", match: { tool: "fs.read", toolz: "fs.write" }, decision: "allow" },
+    ],
+    [
+      "unknown top-level field",
+      { id: "x", match: { tool: "fs.read" }, decision: "allow", decizion: "deny" },
+    ],
     ["bad decision", { id: "x", match: { tool: "fs.read" }, decision: "maybe" }],
     ["bad capability", { id: "x", match: { capability: "fs.fly" }, decision: "allow" }],
     ["bad risk", { id: "x", match: { risk: "R9" }, decision: "allow" }],
@@ -60,7 +72,10 @@ describe("policyRuleSchema.safeParse", () => {
     ["non-boolean owner_only", { id: "x", match: { owner_only: "yes" }, decision: "allow" }],
     ["non-string path_prefix", { id: "x", match: { path_prefix: 1 }, decision: "allow" }],
     ["non-string reason", { id: "x", match: { tool: "fs.read" }, decision: "allow", reason: 3 }],
-    ["non-boolean immutable", { id: "x", match: { tool: "fs.read" }, decision: "allow", immutable: 1 }],
+    [
+      "non-boolean immutable",
+      { id: "x", match: { tool: "fs.read" }, decision: "allow", immutable: 1 },
+    ],
   ])("rejects %s", (_label, value) => {
     const result = policyRuleSchema.safeParse(value);
     expect(result.success).toBe(false);
@@ -68,14 +83,35 @@ describe("policyRuleSchema.safeParse", () => {
   });
 
   it("accepts every valid capability and risk tier", () => {
-    for (const cap of ["fs.read", "fs.write", "fs.delete", "proc.spawn", "proc.kill", "net.egress", "net.listen", "browser.control", "desktop.control", "credential.use", "host.access", "git.push", "deploy"]) {
-      expect(policyRuleSchema.safeParse({ id: "x", match: { capability: cap }, decision: "ask" }).success).toBe(true);
+    for (const cap of [
+      "fs.read",
+      "fs.write",
+      "fs.delete",
+      "proc.spawn",
+      "proc.kill",
+      "net.egress",
+      "net.listen",
+      "browser.control",
+      "desktop.control",
+      "credential.use",
+      "host.access",
+      "git.push",
+      "deploy",
+    ]) {
+      expect(
+        policyRuleSchema.safeParse({ id: "x", match: { capability: cap }, decision: "ask" })
+          .success,
+      ).toBe(true);
     }
     for (const risk of ["R0", "R1", "R2", "R3", "R4"]) {
-      expect(policyRuleSchema.safeParse({ id: "x", match: { risk }, decision: "ask" }).success).toBe(true);
+      expect(
+        policyRuleSchema.safeParse({ id: "x", match: { risk }, decision: "ask" }).success,
+      ).toBe(true);
     }
     for (const decision of ["allow", "ask", "deny"]) {
-      expect(policyRuleSchema.safeParse({ id: "x", match: { tool: "fs.read" }, decision }).success).toBe(true);
+      expect(
+        policyRuleSchema.safeParse({ id: "x", match: { tool: "fs.read" }, decision }).success,
+      ).toBe(true);
     }
   });
 

@@ -128,7 +128,9 @@ export function createServer(deps: ServerDeps): NyxServer {
             ts: Date.now(),
           },
         ])
-        .catch((err) => logger.warn("approval.event_append_failed", { error: toSerializedError(err) }));
+        .catch((err) =>
+          logger.warn("approval.event_append_failed", { error: toSerializedError(err) }),
+        );
       wsHub?.broadcastApprovals(rec.session_id, [rec]);
     },
     onResolved: (rec) => {
@@ -144,7 +146,9 @@ export function createServer(deps: ServerDeps): NyxServer {
             ts: Date.now(),
           },
         ])
-        .catch((err) => logger.warn("approval.event_append_failed", { error: toSerializedError(err) }));
+        .catch((err) =>
+          logger.warn("approval.event_append_failed", { error: toSerializedError(err) }),
+        );
     },
   });
   const approvals = approvalEngineHandle.engine;
@@ -217,7 +221,11 @@ export function createServer(deps: ServerDeps): NyxServer {
   const busySessions = new Set<string>();
   const turnControllers = new Map<string, AbortController>();
 
-  const runTurn = async (session_id: string, turn_id: string, content: ContentBlock[]): Promise<void> => {
+  const runTurn = async (
+    session_id: string,
+    turn_id: string,
+    content: ContentBlock[],
+  ): Promise<void> => {
     const controller = new AbortController();
     turnControllers.set(session_id, controller);
     const log = logger.child({ session_id, turn_id, component: "turn" });
@@ -241,7 +249,10 @@ export function createServer(deps: ServerDeps): NyxServer {
         signal: controller.signal,
         logger: log,
       };
-      for await (const _event of loop.run({ session_id, turn_id, user_message: { role: "user", content } }, ctx)) {
+      for await (const _event of loop.run(
+        { session_id, turn_id, user_message: { role: "user", content } },
+        ctx,
+      )) {
         // The loop appended every event to the store through the sink before
         // yielding it; consuming keeps the generator alive and nothing else.
         void _event;
@@ -284,8 +295,7 @@ export function createServer(deps: ServerDeps): NyxServer {
   });
 
   app.get("/v1/health", async (c) => {
-    const sandboxHealthy =
-      config.sandbox.provider === "docker" ? await checkDocker() : true;
+    const sandboxHealthy = config.sandbox.provider === "docker" ? await checkDocker() : true;
     const providerList = providerRegistry.list().map((p) => ({ id: p.id, models: 0 }));
     for (const entry of providerList) {
       try {
@@ -308,20 +318,29 @@ export function createServer(deps: ServerDeps): NyxServer {
   app.post("/v1/sessions", async (c) => {
     const parsed = CreateSessionBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
-      return badRequest("validation_failed", parsed.error.issues.map((i) => `${i.path.join(".") || "body"} ${i.message}`).join("; "));
+      return badRequest(
+        "validation_failed",
+        parsed.error.issues.map((i) => `${i.path.join(".") || "body"} ${i.message}`).join("; "),
+      );
     }
     const body = parsed.data;
     if (body.engagement !== undefined) {
       const problems = validateTargets(body.engagement.targets);
       if (problems.length > 0) {
-        return badRequest("validation_failed", `invalid engagement targets: ${problems.join("; ")}`);
+        return badRequest(
+          "validation_failed",
+          `invalid engagement targets: ${problems.join("; ")}`,
+        );
       }
     }
     const persona_id = body.persona_id ?? config.persona.default_id;
     try {
       await personaFor(persona_id);
     } catch (err) {
-      return badRequest("validation_failed", `unknown persona "${persona_id}": ${err instanceof Error ? err.message : String(err)}`);
+      return badRequest(
+        "validation_failed",
+        `unknown persona "${persona_id}": ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
     const meta = await store.create({
       owner_id: config.owner_id,
@@ -385,7 +404,10 @@ export function createServer(deps: ServerDeps): NyxServer {
     if (meta === null) return c.json(errorBody("not_found", `session ${id} not found`), 404);
     const parsed = TurnBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
-      return badRequest("validation_failed", parsed.error.issues.map((i) => `${i.path.join(".") || "body"} ${i.message}`).join("; "));
+      return badRequest(
+        "validation_failed",
+        parsed.error.issues.map((i) => `${i.path.join(".") || "body"} ${i.message}`).join("; "),
+      );
     }
     if (busySessions.has(id)) {
       return c.json(
@@ -447,7 +469,10 @@ export function createServer(deps: ServerDeps): NyxServer {
       const resolved = await approvals.resolve(id, parsed.data.decision, actor.id);
       return c.json(resolved);
     } catch (err) {
-      const code = err instanceof Error && "code" in err ? String((err as { code: unknown }).code) : "approval_denied";
+      const code =
+        err instanceof Error && "code" in err
+          ? String((err as { code: unknown }).code)
+          : "approval_denied";
       return c.json(errorBody(code, err instanceof Error ? err.message : String(err)), 409);
     }
   });
@@ -548,4 +573,3 @@ async function* withHeartbeat<T>(
     }
   }
 }
-

@@ -39,7 +39,9 @@ describe("estimateTokens", () => {
   it("estimates ceil(jsonLength / 4): ~4 characters of JSON per token", () => {
     const message = userMsg("a".repeat(9));
     expect(estimateTokens([message])).toBe(Math.ceil(JSON.stringify(message).length / 4));
-    expect(estimateTokens([userMsg("a".repeat(100))])).toBeGreaterThan(estimateTokens([userMsg("a")]));
+    expect(estimateTokens([userMsg("a".repeat(100))])).toBeGreaterThan(
+      estimateTokens([userMsg("a")]),
+    );
     // summed per message, not just the first (chars accumulate, ceil applies once)
     const per = JSON.stringify(userMsg("a".repeat(40))).length;
     const one = estimateTokens([userMsg("a".repeat(40))]);
@@ -55,7 +57,10 @@ describe("elideMessages", () => {
     const sys = sysMsg("system prompt");
     const old = { role: "tool", content: [toolResult("old-1", "o".repeat(400))] } satisfies Message;
     const keep = userMsg("keep me");
-    const recent = { role: "tool", content: [toolResult("new-1", "n".repeat(400))] } satisfies Message;
+    const recent = {
+      role: "tool",
+      content: [toolResult("new-1", "n".repeat(400))],
+    } satisfies Message;
     const messages = [sys, old, keep, recent];
 
     // target exactly fits after eliding only the oldest output
@@ -71,7 +76,9 @@ describe("elideMessages", () => {
 
     expect(result.elidedToolResults).toBe(1);
     expect(result.droppedReasoning).toBe(0);
-    expect(result.messages[1]!.content[0]).toEqual(toolResult("old-1", "[elided tool output old-1]"));
+    expect(result.messages[1]!.content[0]).toEqual(
+      toolResult("old-1", "[elided tool output old-1]"),
+    );
     // untouched messages are shared with the input, not copied
     expect(result.messages[0]).toBe(sys);
     expect(result.messages[3]).toBe(recent);
@@ -92,7 +99,10 @@ describe("elideMessages", () => {
     expect(result.elidedToolResults).toBe(0);
     expect(result.messages[1]!.content).toEqual([textBlock("older answer")]);
     expect(result.messages[2]).toBe(newest);
-    expect(result.messages[2]!.content).toEqual([reasoning("s".repeat(40)), textBlock("newer answer")]);
+    expect(result.messages[2]!.content).toEqual([
+      reasoning("s".repeat(40)),
+      textBlock("newer answer"),
+    ]);
   });
 
   it("removes a message reduced to an empty husk by reasoning drops", () => {
@@ -145,7 +155,10 @@ describe("elideMessages", () => {
 
   it("leaves system sections untouched (structurally immune)", () => {
     const sys = sysMsg("system prompt");
-    const toolMsg = { role: "tool", content: [toolResult("c1", "o".repeat(300))] } satisfies Message;
+    const toolMsg = {
+      role: "tool",
+      content: [toolResult("c1", "o".repeat(300))],
+    } satisfies Message;
 
     const result = elideMessages([sys, toolMsg], 0);
 

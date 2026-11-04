@@ -34,7 +34,12 @@ export {
   ReusableMockProvider,
   buildProviders,
 } from "./providers.js";
-export { createCliLogger, type CliLoggerOptions, type LogLevel, type LoggingConfig } from "./logger.js";
+export {
+  createCliLogger,
+  type CliLoggerOptions,
+  type LogLevel,
+  type LoggingConfig,
+} from "./logger.js";
 export { loadEngagementFile } from "./engagement.js";
 
 // commands (testable core)
@@ -57,12 +62,7 @@ export {
   type ApprovalSurface,
   type ResolveApprovalOptions,
 } from "./approvals.js";
-export {
-  listDeclaredModels,
-  renderModels,
-  type ModelRow,
-  type ModelsListing,
-} from "./models.js";
+export { listDeclaredModels, renderModels, type ModelRow, type ModelsListing } from "./models.js";
 export { validateConfigFile, type ValidateConfigResult } from "./validate.js";
 export {
   doctorChecks,

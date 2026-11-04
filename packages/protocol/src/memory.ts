@@ -23,9 +23,16 @@ export interface MemorySearchOptions {
 
 export interface MemoryStore {
   write(entry: Omit<MemoryEntry, "id" | "created_at" | "updated_at">): Promise<MemoryEntry>;
-  search(query: string, opts?: MemorySearchOptions): Promise<Array<MemoryEntry & { score: number }>>;
+  search(
+    query: string,
+    opts?: MemorySearchOptions,
+  ): Promise<Array<MemoryEntry & { score: number }>>;
   get(id: string): Promise<MemoryEntry | null>;
-  list(opts?: { scope?: MemoryScope[]; kind?: MemoryEntry["kind"]; limit?: number }): Promise<MemoryEntry[]>;
+  list(opts?: {
+    scope?: MemoryScope[];
+    kind?: MemoryEntry["kind"];
+    limit?: number;
+  }): Promise<MemoryEntry[]>;
   compact(): Promise<{ merged: number; dropped: number }>;
 }
 

@@ -13,7 +13,13 @@ import {
   renderSessionList,
   showSession,
 } from "./sessions.js";
-import { loopbackEngagement, loopbackServer, makeRig, scriptedMock, until } from "./harness.test.js";
+import {
+  loopbackEngagement,
+  loopbackServer,
+  makeRig,
+  scriptedMock,
+  until,
+} from "./harness.test.js";
 import { runOneShot } from "./run.js";
 import { captureOutput } from "./harness.test.js";
 
@@ -112,7 +118,9 @@ describe("sessions", () => {
   it("fork refuses an at_seq past the end and an unknown session", async () => {
     const rig = await makeRig();
     const id = await seedTwoTurnSession(rig);
-    await expect(forkSession(rig.dirs.data, id, 99_999)).rejects.toThrow(/past the session's last event/);
+    await expect(forkSession(rig.dirs.data, id, 99_999)).rejects.toThrow(
+      /past the session's last event/,
+    );
     await expect(forkSession(rig.dirs.data, "no-such-session", 1)).rejects.toThrow(/not found/);
   });
 

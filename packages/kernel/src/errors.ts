@@ -138,7 +138,12 @@ export class ToolOwnershipError extends Error {
   readonly tool: string;
   readonly owner: string | null;
 
-  constructor(plugin: string, tool: string, owner: string | null, action: "register" | "unregister") {
+  constructor(
+    plugin: string,
+    tool: string,
+    owner: string | null,
+    action: "register" | "unregister",
+  ) {
     const ownerDesc = owner === null ? "host" : `"${owner}"`;
     super(`plugin "${plugin}" cannot ${action} tool "${tool}" owned by ${ownerDesc}`);
     this.name = "ToolOwnershipError";

@@ -74,9 +74,15 @@ describe("HookBusImpl results and unsubscribe", () => {
     const bus = new HookBusImpl(makeScope().scope);
     bus.on("context.initialize", async () => ({ facts: { from: "priority-1" } }), { priority: 1 });
     bus.on("context.initialize", async () => undefined, { priority: 0 });
-    bus.on("context.initialize", async () => ({ facts: { from: "priority--1" } }), { priority: -1 });
+    bus.on("context.initialize", async () => ({ facts: { from: "priority--1" } }), {
+      priority: -1,
+    });
     const results = await bus.emit("context.initialize", ctx);
-    expect(results).toEqual([{ facts: { from: "priority-1" } }, undefined, { facts: { from: "priority--1" } }]);
+    expect(results).toEqual([
+      { facts: { from: "priority-1" } },
+      undefined,
+      { facts: { from: "priority--1" } },
+    ]);
   });
 
   it("unsubscribe stops the hook and is idempotent", async () => {
@@ -108,9 +114,13 @@ describe("HookBusImpl errors", () => {
   it("wraps hook failures naming the hook and plugin, with cause", async () => {
     const bus = new HookBusImpl(makeScope().scope);
     const original = new Error("hook body exploded");
-    bus.on("context.initialize", async () => {
-      throw original;
-    }, { plugin: "my-plugin" });
+    bus.on(
+      "context.initialize",
+      async () => {
+        throw original;
+      },
+      { plugin: "my-plugin" },
+    );
     const attempt = bus.emit("context.initialize", ctx);
     await expect(attempt).rejects.toBeInstanceOf(HookExecutionError);
     await expect(attempt).rejects.toMatchObject({
@@ -137,10 +147,14 @@ describe("HookBusImpl errors", () => {
     const bus = new HookBusImpl(makeScope().scope);
     const order: string[] = [];
     bus.on("context.initialize", async () => void order.push("before"), { priority: 10 });
-    bus.on("context.initialize", async () => {
-      order.push("boom");
-      throw new Error("boom");
-    }, { priority: 5 });
+    bus.on(
+      "context.initialize",
+      async () => {
+        order.push("boom");
+        throw new Error("boom");
+      },
+      { priority: 5 },
+    );
     bus.on("context.initialize", async () => void order.push("after"), { priority: 1 });
     await expect(bus.emit("context.initialize", ctx)).rejects.toThrowError("boom");
     expect(order).toEqual(["before", "boom"]);

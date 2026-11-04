@@ -62,10 +62,9 @@ export async function loadConfig(
 
   const result = configSchema.safeParse(interpolated);
   if (!result.success) {
-    throw new ConfigError(
-      formatConfigValidationMessage(result.error, path, resolvedEnvValues),
-      { cause: result.error },
-    );
+    throw new ConfigError(formatConfigValidationMessage(result.error, path, resolvedEnvValues), {
+      cause: result.error,
+    });
   }
 
   return deepFreeze(result.data);

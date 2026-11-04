@@ -113,7 +113,8 @@ describe("foldEvent: ordered turn script", () => {
   it("accumulates text deltas into a streaming bubble before the final message", () => {
     const state = foldAll(script.slice(0, 5));
     const streaming = state.items.at(-1);
-    if (streaming === undefined || streaming.kind !== "streaming") throw new Error("expected streaming");
+    if (streaming === undefined || streaming.kind !== "streaming")
+      throw new Error("expected streaming");
     expect(streaming.text).toBe("Let me check.");
   });
 
@@ -161,15 +162,18 @@ describe("foldEvent: approvals, denials and tool errors", () => {
     });
     expect(state.items.at(-1)?.kind).toBe("approval");
 
-    const resolved = foldEvent(state, withSeq(3, {
-      type: "approval.resolved",
-      session_id: "s1",
-      turn_id: "t1",
-      approval_id: "a1",
-      decision: "allow",
-      decided_by: "owner",
-      ts: 2000,
-    }));
+    const resolved = foldEvent(
+      state,
+      withSeq(3, {
+        type: "approval.resolved",
+        session_id: "s1",
+        turn_id: "t1",
+        approval_id: "a1",
+        decision: "allow",
+        decided_by: "owner",
+        ts: 2000,
+      }),
+    );
     expect(resolved.pendingApprovals).toEqual([]);
     expect(resolved.approvals["a1"]).toMatchObject({ decision: "allow", decidedBy: "owner" });
   });
@@ -247,12 +251,19 @@ describe("foldEvent: approvals, denials and tool errors", () => {
 
   it("reasoning.delta accumulates into the same streaming bubble", () => {
     const state = foldAll([
-      withSeq(1, { type: "reasoning.delta", session_id: "s1", turn_id: "t1", text: "think ", ts: 1 }),
+      withSeq(1, {
+        type: "reasoning.delta",
+        session_id: "s1",
+        turn_id: "t1",
+        text: "think ",
+        ts: 1,
+      }),
       withSeq(2, { type: "text.delta", session_id: "s1", turn_id: "t1", text: "answer", ts: 2 }),
       withSeq(3, { type: "reasoning.delta", session_id: "s1", turn_id: "t1", text: "more", ts: 3 }),
     ]);
     const streaming = state.items.at(-1);
-    if (streaming === undefined || streaming.kind !== "streaming") throw new Error("expected streaming");
+    if (streaming === undefined || streaming.kind !== "streaming")
+      throw new Error("expected streaming");
     expect(streaming.reasoning).toBe("think more");
     expect(streaming.text).toBe("answer");
   });
@@ -301,7 +312,8 @@ describe("stateFromProjection", () => {
       withSeq(10, { type: "text.delta", session_id: "s1", turn_id: "t2", text: "live", ts: 10 }),
     );
     const streaming = continued.items.at(-1);
-    if (streaming === undefined || streaming.kind !== "streaming") throw new Error("expected streaming");
+    if (streaming === undefined || streaming.kind !== "streaming")
+      throw new Error("expected streaming");
     expect(streaming.text).toBe("live");
   });
 

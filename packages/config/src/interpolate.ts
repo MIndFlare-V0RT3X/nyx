@@ -44,7 +44,9 @@ function walk(
     return interpolateString(node, path, env, configPath, resolvedEnvValues);
   }
   if (Array.isArray(node)) {
-    return node.map((item, index) => walk(item, [...path, index], env, configPath, resolvedEnvValues));
+    return node.map((item, index) =>
+      walk(item, [...path, index], env, configPath, resolvedEnvValues),
+    );
   }
   if (node !== null && typeof node === "object") {
     const out: Record<string, unknown> = {};

@@ -31,9 +31,20 @@ const baseChunk = {
 /** Full scripted SSE completion: reasoning, text, split tool_call, usage, finish. */
 function scriptFullStream(res: ServerResponse): void {
   res.writeHead(200, { "content-type": "text/event-stream" });
-  sse(res, { ...baseChunk, choices: [{ index: 0, delta: { reasoning_content: "Thinking about Paris." }, finish_reason: null }] });
-  sse(res, { ...baseChunk, choices: [{ index: 0, delta: { content: "Hello" }, finish_reason: null }] });
-  sse(res, { ...baseChunk, choices: [{ index: 0, delta: { content: " world" }, finish_reason: null }] });
+  sse(res, {
+    ...baseChunk,
+    choices: [
+      { index: 0, delta: { reasoning_content: "Thinking about Paris." }, finish_reason: null },
+    ],
+  });
+  sse(res, {
+    ...baseChunk,
+    choices: [{ index: 0, delta: { content: "Hello" }, finish_reason: null }],
+  });
+  sse(res, {
+    ...baseChunk,
+    choices: [{ index: 0, delta: { content: " world" }, finish_reason: null }],
+  });
   sse(res, {
     ...baseChunk,
     choices: [
@@ -41,7 +52,12 @@ function scriptFullStream(res: ServerResponse): void {
         index: 0,
         delta: {
           tool_calls: [
-            { index: 0, id: "call_1", type: "function", function: { name: "get_weather", arguments: '{"ci' } },
+            {
+              index: 0,
+              id: "call_1",
+              type: "function",
+              function: { name: "get_weather", arguments: '{"ci' },
+            },
           ],
         },
         finish_reason: null,
@@ -86,7 +102,9 @@ const testMessages: CompletionRequest["messages"] = [
   },
   {
     role: "tool",
-    content: [{ type: "tool_result", call_id: "call_1", output: { kind: "text", text: "20C sunny" } }],
+    content: [
+      { type: "tool_result", call_id: "call_1", output: { kind: "text", text: "20C sunny" } },
+    ],
   },
 ];
 
@@ -121,7 +139,12 @@ describe("OpenAICompatibleProvider (local HTTP server)", () => {
     handler = (req, res) => {
       if (req.url === "/v1/models") {
         res.writeHead(200, { "content-type": "application/json" });
-        res.end(JSON.stringify({ object: "list", data: [{ id: "local-model-a" }, { id: "local-model-b" }] }));
+        res.end(
+          JSON.stringify({
+            object: "list",
+            data: [{ id: "local-model-a" }, { id: "local-model-b" }],
+          }),
+        );
         return;
       }
       scriptFullStream(res);
@@ -131,7 +154,11 @@ describe("OpenAICompatibleProvider (local HTTP server)", () => {
       model: "local-model-a",
       messages: testMessages,
       tools: [
-        { name: "get_weather", description: "Get weather", input_schema: { type: "object", properties: { city: { type: "string" } } } },
+        {
+          name: "get_weather",
+          description: "Get weather",
+          input_schema: { type: "object", properties: { city: { type: "string" } } },
+        },
       ],
       temperature: 0.2,
       max_tokens: 512,
@@ -141,7 +168,13 @@ describe("OpenAICompatibleProvider (local HTTP server)", () => {
       { type: "reasoning.delta", text: "Thinking about Paris." },
       { type: "text.delta", text: "Hello" },
       { type: "text.delta", text: " world" },
-      { type: "tool_call.delta", index: 0, id: "call_1", name: "get_weather", arguments_delta: '{"ci' },
+      {
+        type: "tool_call.delta",
+        index: 0,
+        id: "call_1",
+        name: "get_weather",
+        arguments_delta: '{"ci',
+      },
       { type: "tool_call.delta", index: 0, arguments_delta: 'ty":"Paris"}' },
       { type: "usage", usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 } },
       { type: "done", finish_reason: "tool_calls" },
@@ -175,7 +208,11 @@ describe("OpenAICompatibleProvider (local HTTP server)", () => {
         role: "assistant",
         content: null,
         tool_calls: [
-          { id: "call_1", type: "function", function: { name: "get_weather", arguments: '{"city":"Paris"}' } },
+          {
+            id: "call_1",
+            type: "function",
+            function: { name: "get_weather", arguments: '{"city":"Paris"}' },
+          },
         ],
       },
       { role: "tool", tool_call_id: "call_1", content: "20C sunny" },
@@ -189,9 +226,7 @@ describe("OpenAICompatibleProvider (local HTTP server)", () => {
       res.end(
         JSON.stringify({
           object: "list",
-          data: [
-            { id: "local-model-a", object: "model", created: 1, owned_by: "test" },
-          ],
+          data: [{ id: "local-model-a", object: "model", created: 1, owned_by: "test" }],
         }),
       );
     };
@@ -207,14 +242,22 @@ describe("OpenAICompatibleProvider (local HTTP server)", () => {
       throw new Error("listModels with declared models must not hit the network");
     };
     const declared = [
-      { id: "declared-1", context_window: 128000, max_output: 8192, supports: ["tools" as const, "streaming_tools" as const] },
+      {
+        id: "declared-1",
+        context_window: 128000,
+        max_output: 8192,
+        supports: ["tools" as const, "streaming_tools" as const],
+      },
     ];
     const provider = new OpenAICompatibleProvider({ id: "local", baseUrl, models: declared });
     expect(await provider.listModels()).toEqual(declared);
   });
 
   it("constructs against an arbitrary private-network base URL without contacting it", () => {
-    const provider = new OpenAICompatibleProvider({ id: "lan", baseUrl: "http://10.1.2.3:9999/v1" });
+    const provider = new OpenAICompatibleProvider({
+      id: "lan",
+      baseUrl: "http://10.1.2.3:9999/v1",
+    });
     expect(provider.id).toBe("lan");
   });
 
@@ -225,9 +268,7 @@ describe("OpenAICompatibleProvider (local HTTP server)", () => {
       res.end(
         JSON.stringify({
           object: "list",
-          data: [
-            { id: "llama-model", object: "model", created: 1, owned_by: "test" },
-          ],
+          data: [{ id: "llama-model", object: "model", created: 1, owned_by: "test" }],
         }),
       );
     });
@@ -240,7 +281,10 @@ describe("OpenAICompatibleProvider (local HTTP server)", () => {
       return;
     }
     try {
-      const provider = new OpenAICompatibleProvider({ id: "llamacpp", baseUrl: "http://127.0.0.1:8080/v1" });
+      const provider = new OpenAICompatibleProvider({
+        id: "llamacpp",
+        baseUrl: "http://127.0.0.1:8080/v1",
+      });
       const models = await provider.listModels();
       expect(models).toEqual([
         { id: "llama-model", context_window: 8192, max_output: 4096, supports: [] },
@@ -253,7 +297,9 @@ describe("OpenAICompatibleProvider (local HTTP server)", () => {
   it("classifies 429 responses as rate_limit retryable", async () => {
     handler = (_req, res) => {
       res.writeHead(429, { "content-type": "application/json" });
-      res.end(JSON.stringify({ error: { message: "Rate limit exceeded", type: "rate_limit_error" } }));
+      res.end(
+        JSON.stringify({ error: { message: "Rate limit exceeded", type: "rate_limit_error" } }),
+      );
     };
     const provider = new OpenAICompatibleProvider({ id: "local", baseUrl });
     const err = await collect(provider.complete({ model: "m", messages: testMessages })).then(
@@ -270,7 +316,10 @@ describe("OpenAICompatibleProvider (local HTTP server)", () => {
       res.writeHead(500, { "content-type": "application/json" });
       res.end(
         JSON.stringify({
-          error: { message: "upstream rejected key sk-abcdefgh12345678 for tenant x", type: "server_error" },
+          error: {
+            message: "upstream rejected key sk-abcdefgh12345678 for tenant x",
+            type: "server_error",
+          },
         }),
       );
     };
@@ -298,11 +347,21 @@ describe("OpenAICompatibleProvider (local HTTP server)", () => {
       seen.push(parsed);
       if (parsed.reasoning_effort !== undefined || parsed.stream_options !== undefined) {
         res.writeHead(400, { "content-type": "application/json" });
-        res.end(JSON.stringify({ error: { message: "Unrecognized request argument supplied: reasoning_effort", type: "invalid_request_error" } }));
+        res.end(
+          JSON.stringify({
+            error: {
+              message: "Unrecognized request argument supplied: reasoning_effort",
+              type: "invalid_request_error",
+            },
+          }),
+        );
         return;
       }
       res.writeHead(200, { "content-type": "text/event-stream" });
-      sse(res, { ...baseChunk, choices: [{ index: 0, delta: { content: "ok" }, finish_reason: null }] });
+      sse(res, {
+        ...baseChunk,
+        choices: [{ index: 0, delta: { content: "ok" }, finish_reason: null }],
+      });
       sse(res, { ...baseChunk, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] });
       res.write("data: [DONE]\n\n");
       res.end();
@@ -343,7 +402,10 @@ describe("OpenAICompatibleProvider (local HTTP server)", () => {
           res.end();
           return;
         }
-        sse(res, { ...baseChunk, choices: [{ index: 0, delta: { content: `t${i} ` }, finish_reason: null }] });
+        sse(res, {
+          ...baseChunk,
+          choices: [{ index: 0, delta: { content: `t${i} ` }, finish_reason: null }],
+        });
       }, 20);
     };
     const provider = new OpenAICompatibleProvider({ id: "local", baseUrl });

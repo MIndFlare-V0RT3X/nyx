@@ -32,28 +32,20 @@ describe("resolveContained", () => {
   });
 
   it("rejects sibling dirs sharing the workdir prefix", () => {
-    expect(() => resolveContained(workdir, "/tmp/nyx-workdirx/file")).toThrowError(
-      PathEscapeError,
-    );
+    expect(() => resolveContained(workdir, "/tmp/nyx-workdirx/file")).toThrowError(PathEscapeError);
   });
 
   it("only judges the final resolved path: leaving and re-entering is allowed", () => {
     // Resolves to /tmp/nyx-workdir/b — contained, so the pure check passes.
-    expect(resolveContained(workdir, "a/../../nyx-workdir/b")).toBe(
-      path.join(workdir, "b"),
-    );
+    expect(resolveContained(workdir, "a/../../nyx-workdir/b")).toBe(path.join(workdir, "b"));
   });
 
   it("allows sub/../ok.txt (stays within)", () => {
-    expect(resolveContained(workdir, "sub/../ok.txt")).toBe(
-      path.join(workdir, "ok.txt"),
-    );
+    expect(resolveContained(workdir, "sub/../ok.txt")).toBe(path.join(workdir, "ok.txt"));
   });
 
   it("allows an absolute path inside the workdir", () => {
-    expect(resolveContained(workdir, path.join(workdir, "x"))).toBe(
-      path.join(workdir, "x"),
-    );
+    expect(resolveContained(workdir, path.join(workdir, "x"))).toBe(path.join(workdir, "x"));
   });
 
   it("allows the workdir itself and empty/./ targets", () => {
@@ -105,9 +97,7 @@ describe("assertRealpathContained", () => {
     const outsideFile = path.join(outside, "secret.txt");
     await fsp.writeFile(outsideFile, "outside");
     await fsp.symlink(outsideFile, path.join(workdir, "link"));
-    await expect(assertRealpathContained(workdir, "link")).rejects.toThrowError(
-      PathEscapeError,
-    );
+    await expect(assertRealpathContained(workdir, "link")).rejects.toThrowError(PathEscapeError);
   });
 
   it("rejects a symlinked dir inside the workdir pointing outside", async () => {
@@ -115,9 +105,9 @@ describe("assertRealpathContained", () => {
     const outside = await tmpDir();
     await fsp.writeFile(path.join(outside, "f.txt"), "x");
     await fsp.symlink(outside, path.join(workdir, "linkdir"));
-    await expect(
-      assertRealpathContained(workdir, "linkdir/f.txt"),
-    ).rejects.toThrowError(PathEscapeError);
+    await expect(assertRealpathContained(workdir, "linkdir/f.txt")).rejects.toThrowError(
+      PathEscapeError,
+    );
   });
 
   it("rejects a dangling symlink pointing outside (writeFile escape)", async () => {

@@ -88,7 +88,13 @@ function InputBox({ state }: { state: ChatState }): React.ReactElement {
   );
 }
 
-export function ChatApp({ driver, owner_id }: { driver: ChatDriver; owner_id: string }): React.ReactElement {
+export function ChatApp({
+  driver,
+  owner_id,
+}: {
+  driver: ChatDriver;
+  owner_id: string;
+}): React.ReactElement {
   const state = useSyncExternalStore(driver.subscribe, driver.getState);
   const { exit } = useApp();
   const [now, setNow] = useState(() => Date.now());
@@ -149,8 +155,8 @@ export function ChatApp({ driver, owner_id }: { driver: ChatDriver; owner_id: st
       <Box flexDirection="column" marginTop={1}>
         {state.notice !== null && <Text color="red">{state.notice}</Text>}
         <Text dimColor>
-          session {state.session_id} · persona {state.persona_id} · tokens{" "}
-          {state.usage ?? "—"} · /exit quits
+          session {state.session_id} · persona {state.persona_id} · tokens {state.usage ?? "—"} ·
+          /exit quits
         </Text>
         <InputBox state={state} />
       </Box>

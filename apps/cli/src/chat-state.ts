@@ -12,13 +12,7 @@ import { mergeUsage } from "@nyx/protocol";
 import { compactJson, describeToolOutput, formatUsage, truncate } from "./format.js";
 
 export type ChatEntryKind =
-  | "user"
-  | "assistant"
-  | "tool"
-  | "denial"
-  | "approval"
-  | "error"
-  | "info";
+  "user" | "assistant" | "tool" | "denial" | "approval" | "error" | "info";
 
 export interface ChatEntry {
   kind: ChatEntryKind;
@@ -168,7 +162,11 @@ export function applyEventToChat(state: ChatState, event: SessionEvent): ChatSta
         total_usage: mergeUsage(state.total_usage, event.usage),
       };
     case "turn.failed":
-      return withEntry({ ...state, running: false }, "error", `turn failed: ${event.error.message}`);
+      return withEntry(
+        { ...state, running: false },
+        "error",
+        `turn failed: ${event.error.message}`,
+      );
     case "compaction.started":
       return withEntry(state, "info", `compaction started (${event.strategy})`);
     case "compaction.completed":

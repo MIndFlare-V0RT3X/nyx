@@ -35,7 +35,10 @@ function sketchInput(input: unknown): string {
   if (input !== null && typeof input === "object" && !Array.isArray(input)) {
     const obj = input as Record<string, unknown>;
     const keyParams = ["path", "url", "host"].filter((k) => typeof obj[k] === "string");
-    sketch = keyParams.length > 0 ? keyParams.map((k) => `${k}=${JSON.stringify(obj[k])}`).join(" ") : canonicalJson(input);
+    sketch =
+      keyParams.length > 0
+        ? keyParams.map((k) => `${k}=${JSON.stringify(obj[k])}`).join(" ")
+        : canonicalJson(input);
   } else {
     sketch = canonicalJson(input);
   }

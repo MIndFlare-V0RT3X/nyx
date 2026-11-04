@@ -55,9 +55,10 @@ describe("DockerSandboxProvider (no daemon required)", () => {
   it("refuses network modes other than none in Phase 0", async () => {
     const hostDir = await freshHostDir();
     for (const network of ["allowlist", "open"] as const) {
-      const err = await provider
-        .provision(spec(hostDir, { network }))
-        .then(() => undefined, (e: unknown) => e);
+      const err = await provider.provision(spec(hostDir, { network })).then(
+        () => undefined,
+        (e: unknown) => e,
+      );
       expect(err).toBeInstanceOf(Error);
       const e = err as Error & { code?: string };
       expect(e.code).toBe("not_implemented");

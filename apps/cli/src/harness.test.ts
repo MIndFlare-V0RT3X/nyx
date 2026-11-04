@@ -81,7 +81,10 @@ export interface Rig {
   dirs: RigDirs;
   config: NyxConfig;
   /** A fresh runtime over the rig's config (callers must close()). */
-  runtime(providers?: ModelProvider[], opts?: { approval_mode?: "interactive" | "auto-deny" }): LocalRuntime;
+  runtime(
+    providers?: ModelProvider[],
+    opts?: { approval_mode?: "interactive" | "auto-deny" },
+  ): LocalRuntime;
   close(): Promise<void>;
 }
 

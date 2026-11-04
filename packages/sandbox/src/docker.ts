@@ -258,9 +258,7 @@ class DockerSandbox implements Sandbox {
     throwIfFailed("exec (writeFile)", r);
   }
 
-  async list(
-    p: string,
-  ): Promise<Array<{ name: string; type: "file" | "dir"; size: number }>> {
+  async list(p: string): Promise<Array<{ name: string; type: "file" | "dir"; size: number }>> {
     const target = resolveContained(WORKSPACE, p);
     const script =
       `for f in ${shQuote(target)}/*; do [ -e "$f" ] || continue; ` +

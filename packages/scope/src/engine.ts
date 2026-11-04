@@ -81,7 +81,8 @@ export function validateTargets(targets: ScopeTargets): string[] {
         continue;
       }
       const key = normalizeDomain(domain);
-      if (seenExDomains.has(key)) problems.push(`duplicate excluded domain: ${JSON.stringify(domain)}`);
+      if (seenExDomains.has(key))
+        problems.push(`duplicate excluded domain: ${JSON.stringify(domain)}`);
       seenExDomains.add(key);
     }
   }
@@ -174,7 +175,10 @@ export function checkTarget(
  * Bind an engagement into a ScopeChecker closure for the tool runtime. `now`
  * is injectable for tests and defaults to Date.now.
  */
-export function makeScopeChecker(engagement: Engagement, now: () => number = Date.now): ScopeChecker {
+export function makeScopeChecker(
+  engagement: Engagement,
+  now: () => number = Date.now,
+): ScopeChecker {
   return (query: ScopeTargetQuery) => checkTarget(engagement, query, now());
 }
 

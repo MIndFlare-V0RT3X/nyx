@@ -8,9 +8,7 @@ describe("parseSSEChunk", () => {
     const { frames, rest } = parseSSEChunk(
       'id: 42\nevent: nyx\ndata: {"type":"turn.started","seq":42}\n\n',
     );
-    expect(frames).toEqual([
-      { id: "42", event: "nyx", data: '{"type":"turn.started","seq":42}' },
-    ]);
+    expect(frames).toEqual([{ id: "42", event: "nyx", data: '{"type":"turn.started","seq":42}' }]);
     expect(rest).toBe("");
   });
 
@@ -24,11 +22,11 @@ describe("parseSSEChunk", () => {
   });
 
   it("keeps an incomplete frame as rest (split across chunks)", () => {
-    const first = parseSSEChunk("id: 7\nevent: nyx\ndata: {\"seq\":7");
+    const first = parseSSEChunk('id: 7\nevent: nyx\ndata: {"seq":7');
     expect(first.frames).toEqual([]);
     expect(first.rest).toBe('id: 7\nevent: nyx\ndata: {"seq":7');
 
-    const second = parseSSEChunk(first.rest + '}\n\n');
+    const second = parseSSEChunk(first.rest + "}\n\n");
     expect(second.frames).toEqual([{ id: "7", event: "nyx", data: '{"seq":7}' }]);
     expect(second.rest).toBe("");
   });
@@ -43,7 +41,9 @@ describe("parseSSEChunk", () => {
 
   it("ignores comment lines (heartbeat pings)", () => {
     expect(parseSSEChunk(": ping\n\n").frames).toEqual([]);
-    expect(parseSSEChunk(": hb\n\nid: 5\ndata: x\n\n: ping\n\n").frames).toEqual([{ id: "5", data: "x" }]);
+    expect(parseSSEChunk(": hb\n\nid: 5\ndata: x\n\n: ping\n\n").frames).toEqual([
+      { id: "5", data: "x" },
+    ]);
     // A comment inside a record does not break the record.
     expect(parseSSEChunk(": keepalive\ndata: y\n\n").frames).toEqual([{ data: "y" }]);
   });

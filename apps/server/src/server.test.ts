@@ -51,7 +51,10 @@ function buildConfig(overrides: Partial<Parameters<typeof configSchema.parse>[0]
   });
 }
 
-async function makeRig(providers?: ModelProvider[], overrides: Record<string, unknown> = {}): Promise<Rig> {
+async function makeRig(
+  providers?: ModelProvider[],
+  overrides: Record<string, unknown> = {},
+): Promise<Rig> {
   const dataDir = await mkdtemp(join(tmpdir(), "nyx-server-data-"));
   const sandboxRoot = await mkdtemp(join(tmpdir(), "nyx-server-sbx-"));
   const memoryRoot = await mkdtemp(join(tmpdir(), "nyx-server-mem-"));
@@ -121,7 +124,11 @@ describe("auth + health", () => {
     const rig = await makeRig([new MockProvider("mock", [mockTextTurn("x")])]);
     const res = await rig.server.app.request("/v1/health");
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { status: string; sandbox: { provider: string }; providers: Array<{ id: string }> };
+    const body = (await res.json()) as {
+      status: string;
+      sandbox: { provider: string };
+      providers: Array<{ id: string }>;
+    };
     expect(body.status).toBe("ok");
     expect(body.sandbox.provider).toBe("local");
     expect(body.providers.map((p) => p.id)).toContain("mock");
@@ -208,7 +215,10 @@ describe("sessions", () => {
       headers: ownerHeaders(),
     });
     expect(got.status).toBe(200);
-    const body = (await got.json()) as { session: { session_id: string }; projection: { messages: unknown[] } };
+    const body = (await got.json()) as {
+      session: { session_id: string };
+      projection: { messages: unknown[] };
+    };
     expect(body.session.session_id).toBe(meta.session_id);
     expect(Array.isArray(body.projection.messages)).toBe(true);
 
@@ -220,7 +230,11 @@ describe("sessions", () => {
 describe("turns (mock provider, full loop)", () => {
   it("runs a tool round: fs.write executes (R1 allow) and the turn completes", async () => {
     const provider = new MockProvider("mock", [
-      mockToolTurn({ call_id: "c1", name: "fs.write", input: { path: "note.txt", content: "hello nyx" } }),
+      mockToolTurn({
+        call_id: "c1",
+        name: "fs.write",
+        input: { path: "note.txt", content: "hello nyx" },
+      }),
       mockTextTurn("note written"),
     ]);
     const rig = await makeRig([provider]);
@@ -260,7 +274,9 @@ describe("turns (mock provider, full loop)", () => {
     const detail = await rig.server.app.request(`/v1/sessions/${meta.session_id}`, {
       headers: ownerHeaders(),
     });
-    const body = (await detail.json()) as { projection: { tool_calls: Array<{ status: string; name: string }> } };
+    const body = (await detail.json()) as {
+      projection: { tool_calls: Array<{ status: string; name: string }> };
+    };
     expect(body.projection.tool_calls[0]).toMatchObject({ status: "ok", name: "fs.write" });
 
     // the file landed inside the session's sandbox workdir (the local
@@ -305,9 +321,12 @@ describe("turns (mock provider, full loop)", () => {
       // web.fetch is R2 → ask: the turn stays busy until resolved.
       let approvalId = "";
       await until(async () => {
-        const pending = await rig.server.app.request(`/v1/approvals?session_id=${meta.session_id}`, {
-          headers: ownerHeaders(),
-        });
+        const pending = await rig.server.app.request(
+          `/v1/approvals?session_id=${meta.session_id}`,
+          {
+            headers: ownerHeaders(),
+          },
+        );
         const records = (await pending.json()) as Array<{ id: string }>;
         approvalId = records[0]?.id ?? "";
         return approvalId !== "";
@@ -332,7 +351,9 @@ describe("turns (mock provider, full loop)", () => {
         const detail = await rig.server.app.request(`/v1/sessions/${meta.session_id}`, {
           headers: ownerHeaders(),
         });
-        const body = (await detail.json()) as { projection: { tool_calls: Array<{ status: string }> } };
+        const body = (await detail.json()) as {
+          projection: { tool_calls: Array<{ status: string }> };
+        };
         return body.projection.tool_calls[0]?.status === "ok";
       });
       const detail = await rig.server.app.request(`/v1/sessions/${meta.session_id}`, {
@@ -379,9 +400,12 @@ describe("approvals", () => {
 
       let approvalId = "";
       await until(async () => {
-        const pending = await rig.server.app.request(`/v1/approvals?session_id=${meta.session_id}`, {
-          headers: ownerHeaders(),
-        });
+        const pending = await rig.server.app.request(
+          `/v1/approvals?session_id=${meta.session_id}`,
+          {
+            headers: ownerHeaders(),
+          },
+        );
         const records = (await pending.json()) as Array<{ id: string }>;
         approvalId = records[0]?.id ?? "";
         return approvalId !== "";
@@ -398,7 +422,9 @@ describe("approvals", () => {
         const detail = await rig.server.app.request(`/v1/sessions/${meta.session_id}`, {
           headers: ownerHeaders(),
         });
-        const body = (await detail.json()) as { projection: { tool_calls: Array<{ status: string }> } };
+        const body = (await detail.json()) as {
+          projection: { tool_calls: Array<{ status: string }> };
+        };
         return body.projection.tool_calls[0]?.status === "denied";
       });
     } finally {
@@ -571,7 +597,8 @@ describe("SSE + fork", () => {
       expect(childEvents.length).toBe(parent.length);
       const strip = (e: { session_id?: string; seq?: number }) => {
         const { session_id: _sid, seq: _seq, ...rest } = e;
-        void _sid; void _seq;
+        void _sid;
+        void _seq;
         return JSON.stringify(rest);
       };
       for (let i = 0; i < parent.length; i++) {
@@ -583,4 +610,3 @@ describe("SSE + fork", () => {
     }
   });
 });
-

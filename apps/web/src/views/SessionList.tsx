@@ -85,7 +85,12 @@ export function SessionListView(props: {
           value={title}
           onChange={(e) => setTitle(e.target.value)}
         />
-        <input className="narrow" placeholder="persona" value={personaId} onChange={(e) => setPersonaId(e.target.value)} />
+        <input
+          className="narrow"
+          placeholder="persona"
+          value={personaId}
+          onChange={(e) => setPersonaId(e.target.value)}
+        />
         <button type="button" className="ghost" onClick={() => setShowEngagement(!showEngagement)}>
           {showEngagement ? "− scope" : "+ scope"}
         </button>
@@ -94,9 +99,21 @@ export function SessionListView(props: {
         </button>
         {showEngagement && (
           <div className="engagement-row">
-            <input placeholder="engagement id (e.g. ENG-042)" value={engagement.id} onChange={(e) => setEngagement({ ...engagement, id: e.target.value })} />
-            <input placeholder="cidrs, comma-separated" value={engagement.cidrs} onChange={(e) => setEngagement({ ...engagement, cidrs: e.target.value })} />
-            <input placeholder="domains, comma-separated" value={engagement.domains} onChange={(e) => setEngagement({ ...engagement, domains: e.target.value })} />
+            <input
+              placeholder="engagement id (e.g. ENG-042)"
+              value={engagement.id}
+              onChange={(e) => setEngagement({ ...engagement, id: e.target.value })}
+            />
+            <input
+              placeholder="cidrs, comma-separated"
+              value={engagement.cidrs}
+              onChange={(e) => setEngagement({ ...engagement, cidrs: e.target.value })}
+            />
+            <input
+              placeholder="domains, comma-separated"
+              value={engagement.domains}
+              onChange={(e) => setEngagement({ ...engagement, domains: e.target.value })}
+            />
             <input
               className="narrow"
               type="number"
@@ -110,9 +127,14 @@ export function SessionListView(props: {
       </form>
 
       {sessions.isError && (
-        <p className="inline-error">cannot list sessions: {sessions.error instanceof Error ? sessions.error.message : String(sessions.error)}</p>
+        <p className="inline-error">
+          cannot list sessions:{" "}
+          {sessions.error instanceof Error ? sessions.error.message : String(sessions.error)}
+        </p>
       )}
-      {sessions.isSuccess && sessions.data.length === 0 && <p className="dim">no sessions yet — create one above.</p>}
+      {sessions.isSuccess && sessions.data.length === 0 && (
+        <p className="dim">no sessions yet — create one above.</p>
+      )}
       {sessions.data !== undefined && sessions.data.length > 0 && (
         <table className="sessions">
           <thead>
@@ -130,7 +152,13 @@ export function SessionListView(props: {
                 <td>{s.title !== "" ? s.title : <span className="dim">(untitled)</span>}</td>
                 <td className="mono">{shortId(s.session_id)}</td>
                 <td>{s.persona_id}</td>
-                <td>{s.engagement !== null ? <span className="badge scope">{s.engagement.id}</span> : <span className="dim">—</span>}</td>
+                <td>
+                  {s.engagement !== null ? (
+                    <span className="badge scope">{s.engagement.id}</span>
+                  ) : (
+                    <span className="dim">—</span>
+                  )}
+                </td>
                 <td className="dim">{timeAgo(s.updated_at)}</td>
               </tr>
             ))}

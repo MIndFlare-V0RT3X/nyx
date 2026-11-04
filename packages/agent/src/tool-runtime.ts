@@ -52,7 +52,10 @@ export interface ToolRuntimeService {
  * wrapper so nothing executable rides back into the context.
  */
 export function wrapToolOutput(output: ToolOutput): ToolOutput {
-  return { kind: "text", text: `<tool_output trust="untrusted">\n${renderInner(output)}\n</tool_output>` };
+  return {
+    kind: "text",
+    text: `<tool_output trust="untrusted">\n${renderInner(output)}\n</tool_output>`,
+  };
 }
 
 /** Model-facing result for an action the loop denied without execution (hook veto). */

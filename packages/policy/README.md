@@ -15,9 +15,9 @@ SQLite transaction.
   `canonicalJson({ tool, input, risk })` (protocol `canonicalJson`), i.e. the
   exact-action binding.
 - `ApprovalEngineImpl` — `new ApprovalEngineImpl(db: better-sqlite3.Database,
-  opts?: { now?: () => number; ttl_ms?: number; poll_ms?: number })`.
+opts?: { now?: () => number; ttl_ms?: number; poll_ms?: number })`.
   Creates the `approvals` (and `audit`) tables with `CREATE TABLE IF NOT
-  EXISTS`, so it works against any db handle. Implements the protocol
+EXISTS`, so it works against any db handle. Implements the protocol
   `ApprovalEngine`: `request`, `resolve`, `get`, `pending`, `consume`.
 - `appendAudit(db, entry: { actor; action; payload }, opts?: { now? })` —
   append one hash-chained row.
@@ -25,7 +25,7 @@ SQLite transaction.
 - `policyRuleSchema` — runtime validation mirror of the protocol `PolicyRule`
   type with a zod-flavored API: `parse(value): PolicyRule` (throws a typed
   error, `code: "validation_failed"`) and `safeParse(value): { success: true;
-  data } | { success: false; error }`.
+data } | { success: false; error }`.
 - Types: `PolicyEngineOptions`, `ApprovalEngineOptions`, `AuditEntry`,
   `AuditVerifyResult`, `PolicyRuleSchema`, `SafeParseResult`.
 
@@ -36,20 +36,32 @@ import Database from "better-sqlite3";
 import { ApprovalEngineImpl, PolicyEngineImpl, appendAudit, verifyAuditChain } from "@nyx/policy";
 
 const engine = new PolicyEngineImpl([
-  { id: "allow-scratch-reads", match: { tool: ["fs.read"], path_prefix: "/tmp" }, decision: "allow" },
+  {
+    id: "allow-scratch-reads",
+    match: { tool: ["fs.read"], path_prefix: "/tmp" },
+    decision: "allow",
+  },
   { id: "deny-secrets", match: { path_prefix: "/etc" }, decision: "deny" },
 ]);
 const verdict = await engine.evaluate({
-  session_id: "s1", turn_id: "t1", tool: "fs.read",
-  input: { path: "/etc/passwd" }, risk: "R2",
-  capabilities: ["fs.read"], actor_id: "agent",
+  session_id: "s1",
+  turn_id: "t1",
+  tool: "fs.read",
+  input: { path: "/etc/passwd" },
+  risk: "R2",
+  capabilities: ["fs.read"],
+  actor_id: "agent",
 });
 // verdict.decision === "deny" — and an R4 action would be "ask" no matter
 // what the config says.
 
 const db = new Database("nyx.db");
 const approvals = new ApprovalEngineImpl(db);
-const outcome = await approvals.request(verdict, { session_id: "s1", turn_id: "t1", actor_id: "agent" });
+const outcome = await approvals.request(verdict, {
+  session_id: "s1",
+  turn_id: "t1",
+  actor_id: "agent",
+});
 if (outcome === "allow") await approvals.consume(id, verdict.action_digest);
 
 appendAudit(db, { actor: "owner", action: "session.created", payload: { id: "s1" } });
@@ -63,7 +75,7 @@ verifyAuditChain(db); // { ok: true, checked: 1 }
 - **Immutable invariants, evaluated first:** `risk === "R4"` → at least `ask`
   (`rule_id: "invariant:r4-owner-approval"`, summary notes owner approval);
   capabilities ∩ `{host.access, credential.use, git.push, deploy}` → at least
-  `ask` (`invariant:dangerous-capability`). They only *raise* decisions: a
+  `ask` (`invariant:dangerous-capability`). They only _raise_ decisions: a
   matching config `deny` still denies.
 - **Resolution:** collect all matching config rules; any `deny` → deny (first
   deny's id); else invariant ask or any config `ask` → ask (invariant ids win
@@ -114,8 +126,8 @@ verifyAuditChain(db); // { ok: true, checked: 1 }
 ### Audit chain
 
 - Schema: `audit(id, prev_hash, hash, actor, action, payload_json,
-  created_at)`. `hash = sha256(prev_hash + "\n" + payload_json + "\n" +
-  actor + "\n" + action + "\n" + String(created_at))`, genesis `prev_hash`
+created_at)`. `hash = sha256(prev_hash + "\n" + payload_json + "\n" +
+actor + "\n" + action + "\n" + String(created_at))`, genesis `prev_hash`
   is `""`. Payloads are stored in canonical JSON and the hash covers the
   exact stored text, so even a semantically neutral edit (key reordering)
   breaks the row hash.
@@ -126,7 +138,7 @@ verifyAuditChain(db); // { ok: true, checked: 1 }
   so it works on any handle.
 - `verifyAuditChain` walks rows in id order, recomputing every hash and every
   `prev_hash` link. It detects tampered `payload_json`/`actor`/`action`/
-  `created_at`, rows that were edited *and* rehashed (the next row's link
+  `created_at`, rows that were edited _and_ rehashed (the next row's link
   breaks), and deleted middle rows. Deleting the **last** row leaves a valid
   chain and verifies ok — documented behavior. A full-chain rewrite by an
   attacker who recomputes every hash is undetectable without an externally
@@ -148,7 +160,7 @@ verifyAuditChain(db); // { ok: true, checked: 1 }
   package composes `policyRuleSchema` for that); no rule hot-reload.
 - No field-aware `path_prefix`/`host` extraction (see above).
 - No persistent audit checkpoint anchoring (e.g. writing the head hash to a
-  second store or the event log) — the chain is tamper-*evident*, not
-  tamper-*proof* against a full rewrite.
+  second store or the event log) — the chain is tamper-_evident_, not
+  tamper-_proof_ against a full rewrite.
 - `request()` polls the database; a push-based notifier (SQLite update hook
   or IPC) can replace the polling later without changing the contract.

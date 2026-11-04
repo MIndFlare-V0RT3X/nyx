@@ -62,11 +62,11 @@ reference config.
   a top-level `key:` with nothing under it counts as omitted) → interpolate
   `${VAR}` → Zod-validate → deep-freeze. Interpolation happens before
   validation so error paths refer to the final tree.
-- **Env interpolation** applies to string *values* only, never keys. Only
+- **Env interpolation** applies to string _values_ only, never keys. Only
   POSIX-ish names (`[A-Za-z_][A-Za-z0-9_]*`) interpolate; anything else
   (`$HOME`, `${1bad}`) is left as written. A referenced-but-unset variable is
   a `ConfigError` naming the variable, the file, and the field path. When
-  `opts.env` is provided it *replaces* `process.env` entirely (hermetic
+  `opts.env` is provided it _replaces_ `process.env` entirely (hermetic
   tests); otherwise `process.env` is used.
 - **Never log env-resolved values.** The loader itself never logs, and env
   values that Zod error messages would otherwise echo (enum mismatches) are
@@ -85,7 +85,7 @@ reference config.
 - **Reserved names**: `server.auth.tokens` may not define the actor `owner`;
   the owner identity is `owner_id` + `owner_token`.
 - **Frozen output**: the returned object is deep-frozen at runtime. The
-  TypeScript type is deliberately *not* `Readonly`-mapped so config values
+  TypeScript type is deliberately _not_ `Readonly`-mapped so config values
   stay assignable to protocol-typed parameters — treat it as immutable.
 - **Policy mirror**: `policy.rules` is validated by a local Zod mirror of
   `@nyx/protocol`'s `PolicyRule` (protocol exports types, not config

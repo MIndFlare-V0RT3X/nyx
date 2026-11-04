@@ -66,7 +66,10 @@ describe("AnthropicProvider (local HTTP server)", () => {
           res.end(
             JSON.stringify({
               type: "error",
-              error: { type: "overloaded_error", message: "overloaded with key sk-abcdefgh12345678" },
+              error: {
+                type: "overloaded_error",
+                message: "overloaded with key sk-abcdefgh12345678",
+              },
             }),
           );
           return;
@@ -77,7 +80,9 @@ describe("AnthropicProvider (local HTTP server)", () => {
         }
       }
       res.writeHead(404, { "content-type": "application/json" });
-      res.end(JSON.stringify({ type: "error", error: { type: "not_found_error", message: "nope" } }));
+      res.end(
+        JSON.stringify({ type: "error", error: { type: "not_found_error", message: "nope" } }),
+      );
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const port = (server.address() as AddressInfo).port;
@@ -92,7 +97,14 @@ describe("AnthropicProvider (local HTTP server)", () => {
     return new AnthropicProvider({
       id: "anthropic-test",
       apiKey: "test-key",
-      models: [{ id: "claude-test", context_window: 200000, max_output: 8192, supports: ["tools", "vision"] }],
+      models: [
+        {
+          id: "claude-test",
+          context_window: 200000,
+          max_output: 8192,
+          supports: ["tools", "vision"],
+        },
+      ],
       baseUrl,
     });
   }
@@ -110,7 +122,12 @@ describe("AnthropicProvider (local HTTP server)", () => {
           content: [],
           stop_reason: null,
           stop_sequence: null,
-          usage: { input_tokens: 12, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+          usage: {
+            input_tokens: 12,
+            output_tokens: 1,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+          },
         },
       });
       sse(res, "content_block_start", {
@@ -129,8 +146,16 @@ describe("AnthropicProvider (local HTTP server)", () => {
         index: 1,
         content_block: { type: "text", text: "" },
       });
-      sse(res, "content_block_delta", { type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "Hel" } });
-      sse(res, "content_block_delta", { type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "lo" } });
+      sse(res, "content_block_delta", {
+        type: "content_block_delta",
+        index: 1,
+        delta: { type: "text_delta", text: "Hel" },
+      });
+      sse(res, "content_block_delta", {
+        type: "content_block_delta",
+        index: 1,
+        delta: { type: "text_delta", text: "lo" },
+      });
       sse(res, "content_block_stop", { type: "content_block_stop", index: 1 });
       sse(res, "content_block_start", {
         type: "content_block_start",
@@ -163,7 +188,11 @@ describe("AnthropicProvider (local HTTP server)", () => {
         model: "claude-test",
         messages: testMessages,
         tools: [
-          { name: "get_weather", description: "Get weather", input_schema: { type: "object", properties: { city: { type: "string" } } } },
+          {
+            name: "get_weather",
+            description: "Get weather",
+            input_schema: { type: "object", properties: { city: { type: "string" } } },
+          },
         ],
         temperature: 0.1,
         max_tokens: 256,
@@ -204,7 +233,9 @@ describe("AnthropicProvider (local HTTP server)", () => {
       },
       {
         role: "assistant",
-        content: [{ type: "tool_use", id: "toolu_prev", name: "get_weather", input: { city: "Paris" } }],
+        content: [
+          { type: "tool_use", id: "toolu_prev", name: "get_weather", input: { city: "Paris" } },
+        ],
       },
       {
         role: "user",
@@ -218,7 +249,9 @@ describe("AnthropicProvider (local HTTP server)", () => {
     status = 529;
     streamScript = undefined;
     const provider = makeProvider();
-    const err = await collect(provider.complete({ model: "claude-test", messages: testMessages })).then(
+    const err = await collect(
+      provider.complete({ model: "claude-test", messages: testMessages }),
+    ).then(
       () => undefined,
       (e: unknown) => e,
     );
@@ -243,7 +276,12 @@ describe("AnthropicProvider (local HTTP server)", () => {
           content: [],
           stop_reason: null,
           stop_sequence: null,
-          usage: { input_tokens: 3, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+          usage: {
+            input_tokens: 3,
+            output_tokens: 1,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+          },
         },
       });
       let i = 0;
@@ -254,8 +292,16 @@ describe("AnthropicProvider (local HTTP server)", () => {
           res.end();
           return;
         }
-        sse(res, "content_block_start", { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } });
-        sse(res, "content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: `t${i} ` } });
+        sse(res, "content_block_start", {
+          type: "content_block_start",
+          index: 0,
+          content_block: { type: "text", text: "" },
+        });
+        sse(res, "content_block_delta", {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "text_delta", text: `t${i} ` },
+        });
       }, 20);
     };
     const provider = makeProvider();

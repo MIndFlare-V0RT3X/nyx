@@ -72,11 +72,7 @@ match it without importing this package (no dependency cycle).
 ## Usage
 
 ```ts
-import {
-  ModelRouterImpl,
-  OpenAICompatibleProvider,
-  ProviderRegistryImpl,
-} from "@nyx/model";
+import { ModelRouterImpl, OpenAICompatibleProvider, ProviderRegistryImpl } from "@nyx/model";
 
 const registry = new ProviderRegistryImpl();
 registry.register(
@@ -91,7 +87,9 @@ registry.register(
     id: "hosted",
     baseUrl: "https://api.example.com/v1",
     apiKey: process.env["EXAMPLE_API_KEY"], // env var *name* resolved by config
-    models: [{ id: "glm-4.7", context_window: 131072, max_output: 8192, supports: ["tools", "reasoning"] }],
+    models: [
+      { id: "glm-4.7", context_window: 131072, max_output: 8192, supports: ["tools", "reasoning"] },
+    ],
   }),
 );
 
@@ -127,7 +125,7 @@ for await (const chunk of router.complete(
   touches the network until first iteration, and abandoning the iterator
   (break/return) aborts the underlying request.
 - **`done` is always the final chunk** a consumer sees on success — usage
-  chunks (which OpenAI servers deliver *after* the finish_reason) are yielded
+  chunks (which OpenAI servers deliver _after_ the finish_reason) are yielded
   first. Mid-stream user aborts surface as a thrown error with code
   `"aborted"` from both providers (the OpenAI SDK would otherwise end
   silently; this is normalized).
@@ -177,5 +175,5 @@ for await (const chunk of router.complete(
   thinking deltas are mapped, outbound effort→budget conversion is not.
 - `response_format` JSON-schema enforcement on the Anthropic provider (no
   equivalent in the pinned SDK); `metadata` is not forwarded to either API.
-- Streaming tool-call *reassembly* (index/keyed accumulation of
+- Streaming tool-call _reassembly_ (index/keyed accumulation of
   `tool_call.delta` fragments) — consumers (the agent) assemble.

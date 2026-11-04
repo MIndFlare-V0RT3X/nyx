@@ -13,7 +13,7 @@ and `BUILD-CONVENTIONS.md` for the working agreement every package follows.
    Agent code cannot edit the policy engine, its own audit log, or its
    verifier.
 3. **No secrets in the repo.** Keys arrive via environment variables whose
-   *names* are declared in config. Tests use the mock provider.
+   _names_ are declared in config. Tests use the mock provider.
 4. **No telemetry.** The only outbound calls are to model providers the
    operator configured, and egress the operator's policy allows.
 5. **Local-first.** Self-hosted, no phone-home, no accounts.

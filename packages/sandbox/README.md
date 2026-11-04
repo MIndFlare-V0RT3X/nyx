@@ -12,32 +12,34 @@ that `@nyx/tools` reuses for its file tools.
 
 ```ts
 // paths.ts — centralized path containment (reused by @nyx/tools)
-class PathEscapeError extends Error { code: "path_escape" }
-function resolveContained(workdir: string, target: string): string
-function assertRealpathContained(workdir: string, target: string): Promise<string>
+class PathEscapeError extends Error {
+  code: "path_escape";
+}
+function resolveContained(workdir: string, target: string): string;
+function assertRealpathContained(workdir: string, target: string): Promise<string>;
 
 // local.ts — DEVELOPMENT ONLY
 class LocalSandboxProvider implements SandboxProvider {
-  constructor(opts?: { root?: string; force_prod?: boolean }) // root defaults to ~/.nyx/sandboxes
-  readonly id: "local"
-  provision(spec: SandboxSpec): Promise<Sandbox>
+  constructor(opts?: { root?: string; force_prod?: boolean }); // root defaults to ~/.nyx/sandboxes
+  readonly id: "local";
+  provision(spec: SandboxSpec): Promise<Sandbox>;
 }
 
 // docker.ts
-function checkDocker(dockerBin?: string): Promise<boolean>
+function checkDocker(dockerBin?: string): Promise<boolean>;
 class DockerSandboxProvider implements SandboxProvider {
-  constructor(opts?: { image?: string; dockerBin?: string }) // image defaults to "alpine:3.20"
-  readonly id: "docker"
-  provision(spec: SandboxSpec): Promise<Sandbox>
+  constructor(opts?: { image?: string; dockerBin?: string }); // image defaults to "alpine:3.20"
+  readonly id: "docker";
+  provision(spec: SandboxSpec): Promise<Sandbox>;
 }
 
 // registry.ts
 class SandboxProviders {
-  register(provider: SandboxProvider): this
-  get(id: string): SandboxProvider   // throws on unknown id
-  list(): string[]
+  register(provider: SandboxProvider): this;
+  get(id: string): SandboxProvider; // throws on unknown id
+  list(): string[];
 }
-function createDefaultSandboxRegistry(): SandboxProviders // pre-registers local + docker
+function createDefaultSandboxRegistry(): SandboxProviders; // pre-registers local + docker
 ```
 
 ## Usage
@@ -69,7 +71,7 @@ await sb.destroy();
   paths like `/workdirx` are refused with `PathEscapeError`).
   `assertRealpathContained` additionally resolves symlinks on both the
   workdir and the target — a symlink planted inside the workdir that points
-  outside (including *dangling* symlinks whose target does not exist yet)
+  outside (including _dangling_ symlinks whose target does not exist yet)
   is caught before any fs operation. Providers run every `readFile`,
   `writeFile`, and `list` path through it and operate on the returned real
   path. Known Phase 0 limitation: the check-then-use gap is still a TOCTOU
@@ -92,7 +94,7 @@ await sb.destroy();
   `truncated: true` when the cap was hit; streams are still drained so a
   chatty command cannot deadlock on a full pipe.
 - **Docker provider talks to the `docker` CLI only** (no dockerode). The
-  sandbox id *is* the container name (`nyx-sbx-<nanoid>`). The host bind
+  sandbox id _is_ the container name (`nyx-sbx-<nanoid>`). The host bind
   source is `spec.workdir` (created if missing; removed again on `destroy()`
   only when the provider created it). `spec.limits.memory_mb` / `.cpu` map
   to `--memory`/`--cpus`; `limits.wall_ms` is per-exec (it defaults the
@@ -111,15 +113,15 @@ The docker provider shells out to exactly these shapes (`dockerBin`
 defaults to `docker`; the sandbox id below is the full container name
 `nyx-sbx-<nanoid>`):
 
-| Operation    | Command                                                                                                                                                                  |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| availability | `docker version` (must exit 0 within 3 s)                                                                                                                                |
+| Operation    | Command                                                                                                                                                                     |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| availability | `docker version` (must exit 0 within 3 s)                                                                                                                                   |
 | provision    | `docker run -d --name <id> --network none -v <spec.workdir>:/workspace -w /workspace [--memory <n>m] [--cpus <n>] <image> sleep infinity` (image defaults to `alpine:3.20`) |
-| exec         | `docker exec [-w <contained cwd>] [-e K=V ...] <id> sh -c <cmd>`                                                                                                          |
-| readFile     | `docker exec <id> sh -c 'base64 <path>'` (output decoded, whitespace stripped)                                                                                            |
-| writeFile    | `docker exec -i <id> sh -c 'base64 -d > <path>'` (payload base64-fed via stdin)                                                                                           |
-| list         | `docker exec <id> sh -c 'for f in <path>/*; do [ -e "$f" ] || continue; if [ -d "$f" ]; then echo "d 0 $(basename "$f")"; else echo "f $(wc -c < "$f") $(basename "$f")"; fi; done'` |
-| destroy      | `docker rm -f <id>`                                                                                                                                                      |
+| exec         | `docker exec [-w <contained cwd>] [-e K=V ...] <id> sh -c <cmd>`                                                                                                            |
+| readFile     | `docker exec <id> sh -c 'base64 <path>'` (output decoded, whitespace stripped)                                                                                              |
+| writeFile    | `docker exec -i <id> sh -c 'base64 -d > <path>'` (payload base64-fed via stdin)                                                                                             |
+| list         | `docker exec <id> sh -c 'for f in <path>/*; do [ -e "$f" ]                                                                                                                  |     | continue; if [ -d "$f" ]; then echo "d 0 $(basename "$f")"; else echo "f $(wc -c < "$f") $(basename "$f")"; fi; done'` |
+| destroy      | `docker rm -f <id>`                                                                                                                                                         |
 
 The local provider runs `/bin/bash -c <cmd>` with `cwd` inside the sandbox
 workdir and the minimal env allowlist, and uses plain `fs`

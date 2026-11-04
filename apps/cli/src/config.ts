@@ -28,7 +28,9 @@ export interface ResolvedConfig {
  * local dev sandbox). A file that exists but is invalid throws ConfigError;
  * the fallback never masks a broken config.
  */
-export async function resolveCliConfig(env: NodeJS.ProcessEnv = process.env): Promise<ResolvedConfig> {
+export async function resolveCliConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<ResolvedConfig> {
   const path = env[CONFIG_PATH_ENV] ?? DEFAULT_CONFIG_PATH;
   if (existsSync(path)) {
     return { config: await loadConfig(path), source: { kind: "file", path } };

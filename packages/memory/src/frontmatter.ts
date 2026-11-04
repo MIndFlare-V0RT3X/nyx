@@ -78,8 +78,13 @@ export function parseMemoryFile(filePath: string, text: string): MemoryEntry {
     raw = YAML.parse(fmLines.join("\n"));
   } catch (err) {
     const yamlLine = parserLine(err);
-    const detail = err instanceof Error ? (err.message.split("\n")[0] ?? "").replace(/:\s*$/, "") : String(err);
-    fail(filePath, `invalid YAML in frontmatter: ${detail}`, yamlLine !== undefined ? yamlLine + 1 : undefined);
+    const detail =
+      err instanceof Error ? (err.message.split("\n")[0] ?? "").replace(/:\s*$/, "") : String(err);
+    fail(
+      filePath,
+      `invalid YAML in frontmatter: ${detail}`,
+      yamlLine !== undefined ? yamlLine + 1 : undefined,
+    );
   }
 
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
@@ -91,10 +96,18 @@ export function parseMemoryFile(filePath: string, text: string): MemoryEntry {
     fail(filePath, 'frontmatter key "id" must be a non-empty string', keyLine(fmLines, "id"));
   }
   if (typeof fm.scope !== "string" || !SCOPES.includes(fm.scope)) {
-    fail(filePath, `frontmatter key "scope" must be one of ${SCOPES.join("|")}`, keyLine(fmLines, "scope"));
+    fail(
+      filePath,
+      `frontmatter key "scope" must be one of ${SCOPES.join("|")}`,
+      keyLine(fmLines, "scope"),
+    );
   }
   if (typeof fm.kind !== "string" || !KINDS.includes(fm.kind)) {
-    fail(filePath, `frontmatter key "kind" must be one of ${KINDS.join("|")}`, keyLine(fmLines, "kind"));
+    fail(
+      filePath,
+      `frontmatter key "kind" must be one of ${KINDS.join("|")}`,
+      keyLine(fmLines, "kind"),
+    );
   }
   if (!Array.isArray(fm.tags) || fm.tags.some((t) => typeof t !== "string")) {
     fail(filePath, 'frontmatter key "tags" must be a list of strings', keyLine(fmLines, "tags"));
@@ -106,7 +119,11 @@ export function parseMemoryFile(filePath: string, text: string): MemoryEntry {
     for (const key of SOURCE_KEYS) {
       const v = source[key];
       if (v !== undefined && typeof v !== "string") {
-        fail(filePath, `frontmatter key "source.${key}" must be a string when present`, keyLine(fmLines, "source"));
+        fail(
+          filePath,
+          `frontmatter key "source.${key}" must be a string when present`,
+          keyLine(fmLines, "source"),
+        );
       }
     }
   }
@@ -156,7 +173,11 @@ function parserLine(err: unknown): number | undefined {
   if (Array.isArray(lp)) {
     const first = lp[0] as { line?: unknown } | undefined;
     if (first && typeof first.line === "number") return first.line;
-  } else if (lp !== null && typeof lp === "object" && typeof (lp as { line?: unknown }).line === "number") {
+  } else if (
+    lp !== null &&
+    typeof lp === "object" &&
+    typeof (lp as { line?: unknown }).line === "number"
+  ) {
     return (lp as { line: number }).line;
   }
   return undefined;

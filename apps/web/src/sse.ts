@@ -50,7 +50,11 @@ function parseRecord(record: string): SSEFrame | null {
     else if (field === "data") dataLines.push(value);
   }
   if (id === undefined && event === undefined && dataLines.length === 0) return null;
-  return { ...(id !== undefined ? { id } : {}), ...(event !== undefined ? { event } : {}), ...(dataLines.length > 0 ? { data: dataLines.join("\n") } : {}) };
+  return {
+    ...(id !== undefined ? { id } : {}),
+    ...(event !== undefined ? { event } : {}),
+    ...(dataLines.length > 0 ? { data: dataLines.join("\n") } : {}),
+  };
 }
 
 export interface ConnectSSEOptions {
@@ -85,7 +89,9 @@ export function connectSSE(opts: ConnectSSEOptions): SSEConnection {
       try {
         parsed = JSON.parse(frame.data);
       } catch (err) {
-        opts.onError?.(new Error(`malformed SSE data: ${err instanceof Error ? err.message : String(err)}`));
+        opts.onError?.(
+          new Error(`malformed SSE data: ${err instanceof Error ? err.message : String(err)}`),
+        );
         return;
       }
       const event = parsed as StoredEvent;

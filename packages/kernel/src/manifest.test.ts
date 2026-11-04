@@ -44,10 +44,18 @@ describe("pluginManifestSchema", () => {
   });
 
   it("accepts all 13 protocol capabilities and rejects anything else", () => {
-    expect(pluginManifestSchema.safeParse({ ...valid, capabilities: [...ALL_CAPABILITIES] }).success).toBe(true);
-    expect(pluginManifestSchema.safeParse({ ...valid, capabilities: ["fs.exec"] }).success).toBe(false);
-    expect(pluginManifestSchema.safeParse({ ...valid, capabilities: ["FS.READ"] }).success).toBe(false);
-    expect(pluginManifestSchema.safeParse({ ...valid, capabilities: "fs.read" }).success).toBe(false);
+    expect(
+      pluginManifestSchema.safeParse({ ...valid, capabilities: [...ALL_CAPABILITIES] }).success,
+    ).toBe(true);
+    expect(pluginManifestSchema.safeParse({ ...valid, capabilities: ["fs.exec"] }).success).toBe(
+      false,
+    );
+    expect(pluginManifestSchema.safeParse({ ...valid, capabilities: ["FS.READ"] }).success).toBe(
+      false,
+    );
+    expect(pluginManifestSchema.safeParse({ ...valid, capabilities: "fs.read" }).success).toBe(
+      false,
+    );
   });
 
   it("rejects unknown top-level keys", () => {
@@ -82,8 +90,12 @@ describe("pluginManifestSchema", () => {
   });
 
   it("rejects hook names outside the four-hook surface", () => {
-    expect(pluginManifestSchema.safeParse({ ...valid, hooks: ["action.before"] }).success).toBe(true);
-    expect(pluginManifestSchema.safeParse({ ...valid, hooks: ["action.during"] }).success).toBe(false);
+    expect(pluginManifestSchema.safeParse({ ...valid, hooks: ["action.before"] }).success).toBe(
+      true,
+    );
+    expect(pluginManifestSchema.safeParse({ ...valid, hooks: ["action.during"] }).success).toBe(
+      false,
+    );
     expect(pluginManifestSchema.safeParse({ ...valid, hooks: ["tool.call"] }).success).toBe(false);
   });
 

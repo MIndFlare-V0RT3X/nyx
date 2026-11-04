@@ -25,19 +25,11 @@ const CAPABILITIES: readonly string[] = [
 ];
 const DECISIONS: readonly string[] = ["allow", "ask", "deny"];
 
-const MATCH_FIELDS = new Set([
-  "tool",
-  "capability",
-  "risk",
-  "path_prefix",
-  "host",
-  "owner_only",
-]);
+const MATCH_FIELDS = new Set(["tool", "capability", "risk", "path_prefix", "host", "owner_only"]);
 const RULE_FIELDS = new Set(["id", "match", "decision", "reason", "immutable"]);
 
 export type SafeParseResult =
-  | { success: true; data: PolicyRule }
-  | { success: false; error: string };
+  { success: true; data: PolicyRule } | { success: false; error: string };
 
 export interface PolicyRuleSchema {
   parse(value: unknown): PolicyRule;
@@ -53,7 +45,10 @@ function validate(value: unknown): PolicyRule {
 
   const unknownTop = Object.keys(value).filter((k) => !RULE_FIELDS.has(k));
   if (unknownTop.length > 0) {
-    throw new CodedError("validation_failed", `unknown policy rule field(s): ${unknownTop.join(", ")}`);
+    throw new CodedError(
+      "validation_failed",
+      `unknown policy rule field(s): ${unknownTop.join(", ")}`,
+    );
   }
 
   const { id, match, decision, reason, immutable } = value;
@@ -61,13 +56,19 @@ function validate(value: unknown): PolicyRule {
     throw new CodedError("validation_failed", "policy rule `id` must be a non-empty string");
   }
   if (typeof decision !== "string" || !DECISIONS.includes(decision)) {
-    throw new CodedError("validation_failed", `policy rule \`decision\` must be one of ${DECISIONS.join("|")}`);
+    throw new CodedError(
+      "validation_failed",
+      `policy rule \`decision\` must be one of ${DECISIONS.join("|")}`,
+    );
   }
   if (reason !== undefined && typeof reason !== "string") {
     throw new CodedError("validation_failed", "policy rule `reason` must be a string when present");
   }
   if (immutable !== undefined && typeof immutable !== "boolean") {
-    throw new CodedError("validation_failed", "policy rule `immutable` must be a boolean when present");
+    throw new CodedError(
+      "validation_failed",
+      "policy rule `immutable` must be a boolean when present",
+    );
   }
   if (!isObject(match)) {
     throw new CodedError("validation_failed", "policy rule `match` must be an object");
@@ -81,10 +82,7 @@ function validate(value: unknown): PolicyRule {
     throw new CodedError("validation_failed", "policy rule `match` must not be empty");
   }
 
-  const checkStringOrList = (
-    field: string,
-    allowed?: readonly string[],
-  ): void => {
+  const checkStringOrList = (field: string, allowed?: readonly string[]): void => {
     const v = match[field];
     if (v === undefined) return;
     const items = Array.isArray(v) ? v : [v];
@@ -93,7 +91,10 @@ function validate(value: unknown): PolicyRule {
     }
     for (const item of items) {
       if (typeof item !== "string" || item.length === 0) {
-        throw new CodedError("validation_failed", `match.${field} entries must be non-empty strings`);
+        throw new CodedError(
+          "validation_failed",
+          `match.${field} entries must be non-empty strings`,
+        );
       }
       if (allowed && !allowed.includes(item)) {
         throw new CodedError("validation_failed", `match.${field} has invalid value: ${item}`);

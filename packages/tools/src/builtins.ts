@@ -185,9 +185,11 @@ const webFetchHandler: ToolHandler = {
     const { body, truncated } = await readBodyCapped(res, cap);
 
     if (isTextualContentType(contentType)) {
-      const text =
-        body.toString("utf8") + (truncated ? `\n\n[truncated after ${cap} bytes]` : "");
-      return { kind: "text", text: `fetched ${input.url} [${res.status} ${contentType}]\n\n${text}` };
+      const text = body.toString("utf8") + (truncated ? `\n\n[truncated after ${cap} bytes]` : "");
+      return {
+        kind: "text",
+        text: `fetched ${input.url} [${res.status} ${contentType}]\n\n${text}`,
+      };
     }
 
     await ensureArtifactsDir(ctx.sandbox);
@@ -207,7 +209,7 @@ export function registerBuiltinTools(registry: ToolRegistry): void {
   registry.register(
     builtinDef(
       "fs.read",
-      'Read a file from the session sandbox. `path` is resolved against the sandbox working directory; paths that escape it are rejected before this tool runs. Text files come back as text; binary files come back as a file descriptor with path, size, and mime type.',
+      "Read a file from the session sandbox. `path` is resolved against the sandbox working directory; paths that escape it are rejected before this tool runs. Text files come back as text; binary files come back as a file descriptor with path, size, and mime type.",
       "R0",
       ["fs.read"],
     ),
@@ -243,7 +245,7 @@ export function registerBuiltinTools(registry: ToolRegistry): void {
   registry.register(
     builtinDef(
       "web.fetch",
-      "Fetch an HTTP(S) URL. Only http/https with no embedded userinfo is accepted, the target host must be inside the session's engagement scope, and every fetch passes the policy engine (an \"ask\" verdict pauses for operator approval). Text-like responses (text/*, JSON, XML, YAML) come back inline; binary responses are stored as an artifact file in the sandbox.",
+      'Fetch an HTTP(S) URL. Only http/https with no embedded userinfo is accepted, the target host must be inside the session\'s engagement scope, and every fetch passes the policy engine (an "ask" verdict pauses for operator approval). Text-like responses (text/*, JSON, XML, YAML) come back inline; binary responses are stored as an artifact file in the sandbox.',
       "R2",
       ["net.egress"],
       WEB_FETCH_TIMEOUT_MS,

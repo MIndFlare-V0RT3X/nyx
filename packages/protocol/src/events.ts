@@ -18,13 +18,47 @@ export type SessionEvent =
       ts: number;
     }
   | { type: "turn.started"; session_id: string; turn_id: string; ts: number }
-  | { type: "message.user"; session_id: string; turn_id: string; content: ContentBlock[]; ts: number }
-  | { type: "message.assistant"; session_id: string; turn_id: string; content: ContentBlock[]; ts: number }
+  | {
+      type: "message.user";
+      session_id: string;
+      turn_id: string;
+      content: ContentBlock[];
+      ts: number;
+    }
+  | {
+      type: "message.assistant";
+      session_id: string;
+      turn_id: string;
+      content: ContentBlock[];
+      ts: number;
+    }
   | { type: "text.delta"; session_id: string; turn_id: string; text: string; ts: number }
   | { type: "reasoning.delta"; session_id: string; turn_id: string; text: string; ts: number }
-  | { type: "tool.call"; session_id: string; turn_id: string; call_id: string; name: string; input: unknown; ts: number }
-  | { type: "tool.result"; session_id: string; turn_id: string; call_id: string; output: ToolOutput; ts: number }
-  | { type: "tool.error"; session_id: string; turn_id: string; call_id: string; error: SerializedError; ts: number }
+  | {
+      type: "tool.call";
+      session_id: string;
+      turn_id: string;
+      call_id: string;
+      name: string;
+      input: unknown;
+      ts: number;
+    }
+  | {
+      type: "tool.result";
+      session_id: string;
+      turn_id: string;
+      call_id: string;
+      output: ToolOutput;
+      ts: number;
+    }
+  | {
+      type: "tool.error";
+      session_id: string;
+      turn_id: string;
+      call_id: string;
+      error: SerializedError;
+      ts: number;
+    }
   | {
       type: "action.denied";
       session_id: string;
@@ -54,11 +88,30 @@ export type SessionEvent =
       decided_by: string;
       ts: number;
     }
-  | { type: "compaction.started"; session_id: string; turn_id: string; strategy: CompactionStrategy; ts: number }
-  | { type: "compaction.completed"; session_id: string; turn_id: string; strategy: CompactionStrategy; freed_tokens: number; ts: number }
+  | {
+      type: "compaction.started";
+      session_id: string;
+      turn_id: string;
+      strategy: CompactionStrategy;
+      ts: number;
+    }
+  | {
+      type: "compaction.completed";
+      session_id: string;
+      turn_id: string;
+      strategy: CompactionStrategy;
+      freed_tokens: number;
+      ts: number;
+    }
   | { type: "turn.completed"; session_id: string; turn_id: string; usage: Usage; ts: number }
   | { type: "turn.failed"; session_id: string; turn_id: string; error: SerializedError; ts: number }
-  | { type: "session.forked"; session_id: string; new_session_id: string; at_seq: number; ts: number };
+  | {
+      type: "session.forked";
+      session_id: string;
+      new_session_id: string;
+      at_seq: number;
+      ts: number;
+    };
 
 /** An event as stored: the caller's payload plus the store-assigned seq. */
 export type StoredEvent = SessionEvent & { seq: number };

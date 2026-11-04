@@ -70,8 +70,7 @@ export function appendAudit(
 ): void {
   ensureAuditTable(db);
   const prev = db.prepare("SELECT hash FROM audit ORDER BY id DESC LIMIT 1").get() as
-    | { hash: string }
-    | undefined;
+    { hash: string } | undefined;
   const prevHash = prev?.hash ?? ""; // genesis
   const createdAt = opts.now?.() ?? Date.now();
   const payloadJson = canonicalJson(entry.payload);
@@ -94,12 +93,20 @@ export function appendAudit(
 export function verifyAuditChain(db: Database.Database): AuditVerifyResult {
   ensureAuditTable(db);
   const rows = db
-    .prepare("SELECT id, prev_hash, hash, actor, action, payload_json, created_at FROM audit ORDER BY id ASC")
+    .prepare(
+      "SELECT id, prev_hash, hash, actor, action, payload_json, created_at FROM audit ORDER BY id ASC",
+    )
     .all() as AuditRow[];
   let prevHash = "";
   let checked = 0;
   for (const row of rows) {
-    const expected = computeHash(row.prev_hash, row.payload_json, row.actor, row.action, row.created_at);
+    const expected = computeHash(
+      row.prev_hash,
+      row.payload_json,
+      row.actor,
+      row.action,
+      row.created_at,
+    );
     if (row.hash !== expected || row.prev_hash !== prevHash) {
       return { ok: false, checked, first_bad_id: row.id };
     }

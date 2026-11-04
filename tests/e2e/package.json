@@ -8,18 +8,19 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@nyx/protocol": "workspace:*",
+    "@nyx/agent": "workspace:*",
     "@nyx/config": "workspace:*",
     "@nyx/kernel": "workspace:*",
-    "@nyx/session": "workspace:*",
-    "@nyx/model": "workspace:*",
-    "@nyx/scope": "workspace:*",
-    "@nyx/policy": "workspace:*",
-    "@nyx/sandbox": "workspace:*",
     "@nyx/memory": "workspace:*",
+    "@nyx/model": "workspace:*",
     "@nyx/persona": "workspace:*",
-    "@nyx/tools": "workspace:*",
-    "@nyx/agent": "workspace:*"
+    "@nyx/policy": "workspace:*",
+    "@nyx/protocol": "workspace:*",
+    "@nyx/sandbox": "workspace:*",
+    "@nyx/scope": "workspace:*",
+    "@nyx/server": "workspace:*",
+    "@nyx/session": "workspace:*",
+    "@nyx/tools": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^2.1.8",

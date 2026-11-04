@@ -45,10 +45,12 @@ describe("redactSecrets", () => {
     expect(redactSecrets(42)).toBe(42);
     expect(redactSecrets("plain")).toBe("plain");
     expect(redactSecrets([{ token: "t" }, "x"])).toEqual([{ token: REDACTED }, "x"]);
-    const map = redactSecrets(new Map<string, unknown>([["api_key", "k"], ["n", 1]])) as Map<
-      string,
-      unknown
-    >;
+    const map = redactSecrets(
+      new Map<string, unknown>([
+        ["api_key", "k"],
+        ["n", 1],
+      ]),
+    ) as Map<string, unknown>;
     expect(map.get("api_key")).toBe(REDACTED);
     expect(map.get("n")).toBe(1);
     const set = redactSecrets(new Set([1, "s"])) as Set<unknown>;
@@ -94,7 +96,12 @@ describe("toSafeSerializedError", () => {
       code: "server_error",
       retryable: true,
     });
-    expect(out).toMatchObject({ name: "ProviderError", message: "upstream is sad", code: "server_error", retryable: true });
+    expect(out).toMatchObject({
+      name: "ProviderError",
+      message: "upstream is sad",
+      code: "server_error",
+      retryable: true,
+    });
   });
 
   it("redacts structured secrets embedded in message text", () => {

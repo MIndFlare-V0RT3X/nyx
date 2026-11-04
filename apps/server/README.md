@@ -3,7 +3,7 @@
 > The NYX app server: REST + SSE + WebSocket surfaces over the single agent
 > loop. Local-first, loopback by default, bearer-token auth.
 
-The server is a *surface*, not a second runtime: it constructs the same
+The server is a _surface_, not a second runtime: it constructs the same
 `RunContext` every surface constructs and drives the same `AgentLoop`
 (`@nyx/agent`). It owns the wiring (stores, policy engine, sandbox provider,
 tool runtime, persona cache, model router), the serialized event sink, and the
@@ -14,19 +14,19 @@ turn runner — nothing else.
 The external contract is fixed in `docs/PROTOCOL.md` (route table, SSE
 framing, WS frames). Summary:
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| POST | `/v1/sessions` | create (optional engagement scope) |
-| GET | `/v1/sessions` | list |
-| GET | `/v1/sessions/:id` | meta + projection |
-| GET | `/v1/sessions/:id/events?from_seq=` | SSE stream (`Last-Event-ID` resume) |
-| POST | `/v1/sessions/:id/turns` | start a turn → `202 {turn_id}` |
-| POST | `/v1/sessions/:id/fork` | fork at seq |
-| GET | `/v1/approvals?session_id=` | pending approvals |
-| POST | `/v1/approvals/:id` | resolve (owner-only for R4) |
-| GET | `/v1/models` | registry |
-| GET | `/v1/health` | public health probe |
-| WS | `/v1/ws?token=` | multiplexed subscriptions |
+| Method | Path                                | Purpose                             |
+| ------ | ----------------------------------- | ----------------------------------- |
+| POST   | `/v1/sessions`                      | create (optional engagement scope)  |
+| GET    | `/v1/sessions`                      | list                                |
+| GET    | `/v1/sessions/:id`                  | meta + projection                   |
+| GET    | `/v1/sessions/:id/events?from_seq=` | SSE stream (`Last-Event-ID` resume) |
+| POST   | `/v1/sessions/:id/turns`            | start a turn → `202 {turn_id}`      |
+| POST   | `/v1/sessions/:id/fork`             | fork at seq                         |
+| GET    | `/v1/approvals?session_id=`         | pending approvals                   |
+| POST   | `/v1/approvals/:id`                 | resolve (owner-only for R4)         |
+| GET    | `/v1/models`                        | registry                            |
+| GET    | `/v1/health`                        | public health probe                 |
+| WS     | `/v1/ws?token=`                     | multiplexed subscriptions           |
 
 Exports: `createServer(deps) → NyxServer` (`app`, `start`, `close`, `auth`,
 `approvals`), plus the reusable modules (`createEventSink`, `createLogger`,

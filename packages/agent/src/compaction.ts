@@ -64,10 +64,15 @@ export function elideMessages(messages: Message[], targetTokens: number): Elisio
   });
 
   // Phase 2: drop reasoning blocks, oldest first.
-  current = runPass(current, targetTokens, (block) => block.type === "reasoning", (_block) => {
-    dropped += 1;
-    return null;
-  });
+  current = runPass(
+    current,
+    targetTokens,
+    (block) => block.type === "reasoning",
+    (_block) => {
+      dropped += 1;
+      return null;
+    },
+  );
 
   return {
     messages: current,
@@ -95,7 +100,7 @@ function runPass<B extends ContentBlock>(
   rewrite: (block: B) => Rewrite,
 ): Message[] {
   let current = messages;
-  for (let mi = 0; mi < current.length; ) {
+  for (let mi = 0; mi < current.length;) {
     let bi = 0;
     let changed = false;
     while (bi < current[mi]!.content.length) {

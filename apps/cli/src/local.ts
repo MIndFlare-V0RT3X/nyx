@@ -129,7 +129,9 @@ export function createLocalRuntime(deps: LocalRuntimeDeps): LocalRuntime {
 
   // ── wiring (order matters: sink → engine callbacks → kernel services) ──
   mkdirSync(deps.data_dir, { recursive: true });
-  const logger = createCliLogger(config.logging, { ...(deps.log_sink !== undefined ? { sink: deps.log_sink } : {}) });
+  const logger = createCliLogger(config.logging, {
+    ...(deps.log_sink !== undefined ? { sink: deps.log_sink } : {}),
+  });
   const store = openSessionStore(join(deps.data_dir, "nyx.db"));
   const sink = createEventSink(store);
 
@@ -273,7 +275,11 @@ export function createLocalRuntime(deps: LocalRuntimeDeps): LocalRuntime {
   ): Promise<TurnRunResult> => {
     const controller = new AbortController();
     turnControllers.set(input.session_id, controller);
-    const log = logger.child({ session_id: input.session_id, turn_id: input.turn_id, component: "turn" });
+    const log = logger.child({
+      session_id: input.session_id,
+      turn_id: input.turn_id,
+      component: "turn",
+    });
     const events: SessionEvent[] = [];
     let completed = false;
     let failed = false;
@@ -298,7 +304,11 @@ export function createLocalRuntime(deps: LocalRuntimeDeps): LocalRuntime {
         logger: log,
       };
       for await (const event of loop.run(
-        { session_id: input.session_id, turn_id: input.turn_id, user_message: { role: "user", content: input.content } },
+        {
+          session_id: input.session_id,
+          turn_id: input.turn_id,
+          user_message: { role: "user", content: input.content },
+        },
         ctx,
       )) {
         // The loop appended every event to the store through the sink before

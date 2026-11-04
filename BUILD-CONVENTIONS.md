@@ -40,7 +40,7 @@ blocker in your final message.
    `docker version` (or honor `NYX_SKIP_DOCKER=1`) and use `it.skip`
    otherwise. Never let them fail on a machine without Docker.
 10. **No secrets.** No real keys, no `sk-...` strings anywhere. Keys are env
-    var *names* referenced from config.
+    var _names_ referenced from config.
 11. **Comments explain the non-obvious only.** No filler comments.
 12. **Pino-style structured logging** where your spec asks for logs; never
     log secrets (see `@nyx/model` redaction conventions).
@@ -85,6 +85,7 @@ to a later phase.
 ## Report back
 
 Your final message must contain, in this order:
+
 1. **Built** — one line per module/feature.
 2. **Verification** — the exact commands you ran (`pnpm --filter ... build`,
    `... test`) and their outcome with test counts.

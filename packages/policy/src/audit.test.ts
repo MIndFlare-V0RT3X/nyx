@@ -27,9 +27,13 @@ function entries(n: number): Array<{ actor: string; action: string; payload: unk
 }
 
 describe("appendAudit", () => {
-  it("creates the table on demand and chains from a genesis prev_hash of \"\"", () => {
+  it('creates the table on demand and chains from a genesis prev_hash of ""', () => {
     const db = freshDb();
-    appendAudit(db, { actor: "owner", action: "genesis.test", payload: { a: 1 } }, { now: () => 1000 });
+    appendAudit(
+      db,
+      { actor: "owner", action: "genesis.test", payload: { a: 1 } },
+      { now: () => 1000 },
+    );
     const row = db.prepare("SELECT prev_hash, hash, payload_json, created_at FROM audit").get() as {
       prev_hash: string;
       hash: string;
@@ -108,7 +112,10 @@ describe("verifyAuditChain", () => {
     };
     const tampered = '{"seq":2,"note":"hacked"}';
     const hash = createHash("sha256")
-      .update(`${row3.prev_hash}\n${tampered}\n${row3.actor}\n${row3.action}\n${String(row3.created_at)}`, "utf8")
+      .update(
+        `${row3.prev_hash}\n${tampered}\n${row3.actor}\n${row3.action}\n${String(row3.created_at)}`,
+        "utf8",
+      )
       .digest("hex");
     db.prepare("UPDATE audit SET payload_json = ?, hash = ? WHERE id = 3").run(tampered, hash);
     const result = verifyAuditChain(db);

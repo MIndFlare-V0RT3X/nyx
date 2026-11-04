@@ -18,7 +18,10 @@ function describeOutput(output: ToolOutput): string {
   }
 }
 
-function Block(props: { block: ContentBlock; toolCards: Record<string, ToolCardView> }): React.ReactElement | null {
+function Block(props: {
+  block: ContentBlock;
+  toolCards: Record<string, ToolCardView>;
+}): React.ReactElement | null {
   const { block } = props;
   switch (block.type) {
     case "text":
@@ -38,10 +41,14 @@ function Block(props: { block: ContentBlock; toolCards: Record<string, ToolCardV
         <div className={`toolcard ${card?.status ?? "pending"}`}>
           <div className="toolcard-head">
             <span className="tool-name">⚙ {block.name}</span>
-            <span className={`status status-${card?.status ?? "pending"}`}>{card?.status ?? "pending"}</span>
+            <span className={`status status-${card?.status ?? "pending"}`}>
+              {card?.status ?? "pending"}
+            </span>
           </div>
           <pre className="tool-input">{JSON.stringify(block.input, null, 2)}</pre>
-          {card?.output !== undefined && <pre className="tool-output">{describeOutput(card.output)}</pre>}
+          {card?.output !== undefined && (
+            <pre className="tool-output">{describeOutput(card.output)}</pre>
+          )}
           {card?.error !== undefined && <pre className="tool-error">{card.error.message}</pre>}
         </div>
       );

@@ -86,7 +86,11 @@ export interface ToolExecContext {
 }
 
 export interface ToolRuntime {
-  execute(call: ToolCall, ctx: ToolExecContext, opts?: { force_ask?: boolean }): Promise<ToolOutput>;
+  execute(
+    call: ToolCall,
+    ctx: ToolExecContext,
+    opts?: { force_ask?: boolean },
+  ): Promise<ToolOutput>;
   /** Curated, model-facing specs for CompletionRequest.tools. */
   specsForModel(): ToolSchema[];
 }
@@ -130,7 +134,10 @@ type EgressExtraction = { ok: true; target: EgressTarget } | { ok: false; reason
  */
 function extractEgressTarget(input: unknown): EgressExtraction {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
-    return { ok: false, reason: "network egress requires an object input with a url or host field" };
+    return {
+      ok: false,
+      reason: "network egress requires an object input with a url or host field",
+    };
   }
   const obj = input as Record<string, unknown>;
 
@@ -148,15 +155,17 @@ function extractEgressTarget(input: unknown): EgressExtraction {
       };
     }
     if (url.username !== "" || url.password !== "") {
-      return { ok: false, reason: "urls with embedded userinfo are not allowed for network egress" };
+      return {
+        ok: false,
+        reason: "urls with embedded userinfo are not allowed for network egress",
+      };
     }
     // hostname keeps the [] wrapper for IPv6 literals; the scope checker's
     // normalizeHost unwraps it.
     if (url.hostname === "") {
       return { ok: false, reason: `url has no host: ${JSON.stringify(obj.url)}` };
     }
-    const port =
-      url.port !== "" ? Number(url.port) : url.protocol === "https:" ? 443 : 80;
+    const port = url.port !== "" ? Number(url.port) : url.protocol === "https:" ? 443 : 80;
     return { ok: true, target: { host: url.hostname, port } };
   }
 
@@ -164,7 +173,10 @@ function extractEgressTarget(input: unknown): EgressExtraction {
     const port = typeof obj.port === "number" ? obj.port : undefined;
     return { ok: true, target: { host: obj.host, port } };
   }
-  return { ok: false, reason: "network egress requires a url (http/https) or a host field in the tool input" };
+  return {
+    ok: false,
+    reason: "network egress requires a url (http/https) or a host field in the tool input",
+  };
 }
 
 /** Rejects with the controller's abort reason the moment it fires (or immediately if it already has). */
@@ -292,9 +304,10 @@ class ToolRuntimeImpl implements ToolRuntime {
           return { kind: "text", text: `denied by scope: ${detail}` };
         }
         const check = makeScopeChecker(ctx.engagement);
-        const query: ScopeTargetQuery = extraction.target.port !== undefined
-          ? { host: extraction.target.host, port: extraction.target.port }
-          : { host: extraction.target.host };
+        const query: ScopeTargetQuery =
+          extraction.target.port !== undefined
+            ? { host: extraction.target.host, port: extraction.target.port }
+            : { host: extraction.target.host };
         const verdict = check(query);
         if (!verdict.allowed) {
           this.emitDenied(ctx, call, "scope", verdict.reason);
@@ -365,7 +378,12 @@ class ToolRuntimeImpl implements ToolRuntime {
       try {
         output = await abortRace(entry.handler.execute(execCall, handlerCtx), controller);
       } catch (err) {
-        return this.handleHandlerFailure(ctx, call, err, { timedOut, timeoutReason, timeoutMs, controller });
+        return this.handleHandlerFailure(ctx, call, err, {
+          timedOut,
+          timeoutReason,
+          timeoutMs,
+          controller,
+        });
       }
 
       // 8. truncation + artifact spill
@@ -401,7 +419,12 @@ class ToolRuntimeImpl implements ToolRuntime {
     ctx: ToolExecContext,
     call: ToolCall,
     err: unknown,
-    state: { timedOut: boolean; timeoutReason: ToolTimeoutError; timeoutMs: number; controller: AbortController },
+    state: {
+      timedOut: boolean;
+      timeoutReason: ToolTimeoutError;
+      timeoutMs: number;
+      controller: AbortController;
+    },
   ): ToolOutput {
     const serr = toSerializedError(err);
 

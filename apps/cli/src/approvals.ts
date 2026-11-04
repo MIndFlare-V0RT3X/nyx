@@ -81,7 +81,10 @@ export interface ApprovalListRow {
  * Pending approvals for one session, or across every session in the store
  * when no session id is given (newest first).
  */
-export async function listApprovals(data_dir: string, session_id?: string): Promise<ApprovalListRow[]> {
+export async function listApprovals(
+  data_dir: string,
+  session_id?: string,
+): Promise<ApprovalListRow[]> {
   const surface = openApprovalSurface(data_dir);
   try {
     const ids =

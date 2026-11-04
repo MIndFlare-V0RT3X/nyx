@@ -6,9 +6,4 @@ export { PersonaSchema, loadPersona, PersonaLoadError } from "./persona.js";
 export type { PersonaConfig, LoadedPersona } from "./persona.js";
 export { PersonaRuntimeImpl, BASE_PREAMBLE, assemblePromptText } from "./runtime.js";
 export { SECTION_ORDER } from "@nyx/protocol";
-export type {
-  PersonaRuntime,
-  PromptAssemblyInput,
-  PromptSection,
-  SectionId,
-} from "@nyx/protocol";
+export type { PersonaRuntime, PromptAssemblyInput, PromptSection, SectionId } from "@nyx/protocol";

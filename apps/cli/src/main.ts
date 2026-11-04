@@ -19,11 +19,7 @@ import {
   renderSessionList,
   showSession,
 } from "./sessions.js";
-import {
-  listApprovals,
-  renderApprovalList,
-  resolveApproval,
-} from "./approvals.js";
+import { listApprovals, renderApprovalList, resolveApproval } from "./approvals.js";
 import { listDeclaredModels, renderModels } from "./models.js";
 import { validateConfigFile } from "./validate.js";
 import { doctorChecks, renderDoctorReport } from "./doctor.js";
@@ -53,7 +49,9 @@ async function main(): Promise<void> {
 
   program
     .command("init")
-    .description(`write a starter ${STARTER_CONFIG_NAME} in the current directory (offline defaults: mock provider, local sandbox)`)
+    .description(
+      `write a starter ${STARTER_CONFIG_NAME} in the current directory (offline defaults: mock provider, local sandbox)`,
+    )
     .option("--force", "overwrite an existing config file")
     .action(async (opts: { force?: boolean }) => {
       const result = await runInit(process.cwd(), { force: opts.force === true });
@@ -68,35 +66,46 @@ async function main(): Promise<void> {
 
   program
     .command("run")
-    .description("one-shot non-interactive turn: stream the reply to stdout, exit 0/1 (approvals auto-deny)")
+    .description(
+      "one-shot non-interactive turn: stream the reply to stdout, exit 0/1 (approvals auto-deny)",
+    )
     .argument("<message>", "the user message for the turn")
     .option("--persona <id>", "persona id for a new session")
     .option("--engagement <file>", "engagement JSON file bound at session creation")
     .option("--session <id>", "reuse an existing session")
-    .action(async (message: string, opts: { persona?: string; engagement?: string; session?: string }) => {
-      const { config } = await resolveCliConfig();
-      const engagement =
-        opts.engagement !== undefined ? await loadEngagementFile(opts.engagement) : undefined;
-      const result = await runOneShot({
-        config,
-        data_dir: resolveDataDir(),
-        message,
-        ...(opts.session !== undefined ? { session_id: opts.session } : {}),
-        ...(opts.persona !== undefined ? { persona_id: opts.persona } : {}),
-        ...(engagement !== undefined ? { engagement } : {}),
-      });
-      process.exitCode = result.exit_code;
-    });
+    .action(
+      async (
+        message: string,
+        opts: { persona?: string; engagement?: string; session?: string },
+      ) => {
+        const { config } = await resolveCliConfig();
+        const engagement =
+          opts.engagement !== undefined ? await loadEngagementFile(opts.engagement) : undefined;
+        const result = await runOneShot({
+          config,
+          data_dir: resolveDataDir(),
+          message,
+          ...(opts.session !== undefined ? { session_id: opts.session } : {}),
+          ...(opts.persona !== undefined ? { persona_id: opts.persona } : {}),
+          ...(engagement !== undefined ? { engagement } : {}),
+        });
+        process.exitCode = result.exit_code;
+      },
+    );
 
   program
     .command("chat")
-    .description("interactive TUI: streaming replies, tool transcript, approvals (y/n), usage footer")
+    .description(
+      "interactive TUI: streaming replies, tool transcript, approvals (y/n), usage footer",
+    )
     .option("--session <id>", "reuse an existing session (a new one is created by default)")
     .option("--persona <id>", "persona id for a new session")
     .option("--engagement <file>", "engagement JSON file bound at session creation")
     .action(async (opts: { session?: string; persona?: string; engagement?: string }) => {
       if (process.stdin.isTTY !== true) {
-        fatal("chat requires an interactive terminal (stdin is not a TTY); use `nyx run \"<message>\"` for one-shot turns");
+        fatal(
+          'chat requires an interactive terminal (stdin is not a TTY); use `nyx run "<message>"` for one-shot turns',
+        );
       }
       const { config } = await resolveCliConfig();
       const engagement =
@@ -113,13 +122,14 @@ async function main(): Promise<void> {
       try {
         const session =
           opts.session !== undefined
-            ? ((await runtime.meta(opts.session)) ??
-              fatal(`session ${opts.session} not found`))
+            ? ((await runtime.meta(opts.session)) ?? fatal(`session ${opts.session} not found`))
             : await runtime.createSession({
                 ...(opts.persona !== undefined ? { persona_id: opts.persona } : {}),
                 ...(engagement !== undefined ? { engagement } : {}),
               });
-        process.stdout.write(`nyx chat — session ${session.session_id} (persona ${session.persona_id})\n`);
+        process.stdout.write(
+          `nyx chat — session ${session.session_id} (persona ${session.persona_id})\n`,
+        );
         driver = createChatDriver({ runtime, session });
         const tui = startChatTui(driver, config.owner_id);
         process.on("SIGINT", () => driver?.requestExit());
@@ -137,23 +147,32 @@ async function main(): Promise<void> {
     .option("--limit <n>", "maximum sessions to show", "50")
     .action(async (opts: { limit: string }) => {
       const limit = Number.parseInt(opts.limit, 10);
-      const rows = await listSessions(resolveDataDir(), Number.isFinite(limit) && limit > 0 ? limit : 50);
+      const rows = await listSessions(
+        resolveDataDir(),
+        Number.isFinite(limit) && limit > 0 ? limit : 50,
+      );
       process.stdout.write(`${renderSessionList(rows)}\n`);
     });
   sessions
     .command("show")
-    .description("one session: messages, tool calls, approvals, usage (or --events for the raw log)")
+    .description(
+      "one session: messages, tool calls, approvals, usage (or --events for the raw log)",
+    )
     .argument("<id>", "session id")
     .option("--events", "render the raw event log instead of the projection")
     .action(async (id: string, opts: { events?: boolean }) => {
       const detail = await showSession(resolveDataDir(), id);
-      process.stdout.write(`${opts.events === true ? renderSessionEvents(detail) : renderSessionDetail(detail)}\n`);
+      process.stdout.write(
+        `${opts.events === true ? renderSessionEvents(detail) : renderSessionDetail(detail)}\n`,
+      );
     });
   sessions
     .command("fork")
     .description("fork a session at an inclusive seq boundary; prints the child id")
     .argument("<id>", "parent session id")
-    .argument("<at_seq>", "fork point (inclusive seq)", (value: string) => Number.parseInt(value, 10))
+    .argument("<at_seq>", "fork point (inclusive seq)", (value: string) =>
+      Number.parseInt(value, 10),
+    )
     .action(async (id: string, at_seq: number) => {
       const child = await forkSession(resolveDataDir(), id, at_seq);
       process.stdout.write(`${child.session_id}\n`);
@@ -184,7 +203,9 @@ async function main(): Promise<void> {
         decision,
         decided_by: config.owner_id,
       });
-      process.stdout.write(`approval ${record.id} → ${record.decision} (by ${record.decided_by})\n`);
+      process.stdout.write(
+        `approval ${record.id} → ${record.decision} (by ${record.decided_by})\n`,
+      );
     });
 
   const models = program.command("models").description("model catalog");

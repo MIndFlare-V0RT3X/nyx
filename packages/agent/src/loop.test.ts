@@ -7,13 +7,7 @@
 
 import { afterAll, describe, expect, it } from "vitest";
 import { SECTION_ORDER } from "@nyx/protocol";
-import type {
-  ContentBlock,
-  Message,
-  RunInput,
-  SessionEvent,
-  StoredEvent,
-} from "@nyx/protocol";
+import type { ContentBlock, Message, RunInput, SessionEvent, StoredEvent } from "@nyx/protocol";
 import { mockFailTurn, mockTextAndToolTurn, mockTextTurn, mockToolTurn } from "@nyx/model";
 import { AgentError } from "./errors.js";
 import { closeAllHarnesses, makeHarness } from "./harness.test.js";
@@ -320,17 +314,17 @@ describe("agent loop", () => {
 
     it("fails the turn on finish_reason error when no retry is offered", async () => {
       const h = await makeHarness({
-        script: [[{ type: "text.delta", text: "partial" }, { type: "done", finish_reason: "error" }]],
+        script: [
+          [
+            { type: "text.delta", text: "partial" },
+            { type: "done", finish_reason: "error" },
+          ],
+        ],
       });
 
       const events = await h.run();
 
-      expect(types(events)).toEqual([
-        "turn.started",
-        "message.user",
-        "text.delta",
-        "turn.failed",
-      ]);
+      expect(types(events)).toEqual(["turn.started", "message.user", "text.delta", "turn.failed"]);
       const failed = byType(events, "turn.failed")[0]!;
       expect(failed.error.name).toBe("AgentError");
       expect(failed.error.code).toBe("provider_error");
@@ -547,7 +541,9 @@ describe("agent loop", () => {
       const outcome = h.run();
       await expect(outcome).rejects.toBeInstanceOf(AgentError);
       await expect(outcome).rejects.toMatchObject({ code: "not_implemented" });
-      await expect(outcome).rejects.toMatchObject({ message: expect.stringContaining("tools.runtime") });
+      await expect(outcome).rejects.toMatchObject({
+        message: expect.stringContaining("tools.runtime"),
+      });
 
       // nothing was appended: the failure predates the turn
       const stored = await h.store.read(h.session.session_id, 1);

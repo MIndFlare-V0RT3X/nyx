@@ -10,7 +10,12 @@ export { createLogger } from "./logger.js";
 export type { LogLevel, LoggingConfig, LoggerOptions } from "./logger.js";
 export { resolveAuth, authenticate, randomToken } from "./auth.js";
 export type { Actor, ResolvedAuth } from "./auth.js";
-export { buildProviders, ReusableMockProvider, ServerConfigError, MOCK_PROVIDER_MESSAGE } from "./providers.js";
+export {
+  buildProviders,
+  ReusableMockProvider,
+  ServerConfigError,
+  MOCK_PROVIDER_MESSAGE,
+} from "./providers.js";
 export { SERVER_ID, SERVER_VERSION } from "./version.js";
 export { injectWebSocketServer, WS_PATH } from "./ws.js";
 export type { WebSocketDeps, WebSocketHub } from "./ws.js";

@@ -59,13 +59,12 @@ export const webFetchInput = z.object({
  * runtime uses this map for validation; the schemas are also the source for
  * each builtin's model-facing input_schema.
  */
-export const builtinInputSchemas: ReadonlyMap<string, z.ZodTypeAny> = new Map<
-  string,
-  z.ZodTypeAny
->([
-  ["fs.read", fsReadInput],
-  ["fs.list", fsListInput],
-  ["fs.write", fsWriteInput],
-  ["shell.exec", shellExecInput],
-  ["web.fetch", webFetchInput],
-]);
+export const builtinInputSchemas: ReadonlyMap<string, z.ZodTypeAny> = new Map<string, z.ZodTypeAny>(
+  [
+    ["fs.read", fsReadInput],
+    ["fs.list", fsListInput],
+    ["fs.write", fsWriteInput],
+    ["shell.exec", shellExecInput],
+    ["web.fetch", webFetchInput],
+  ],
+);

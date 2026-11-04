@@ -73,10 +73,14 @@ export function formatConfigValidationMessage(
         const hint = isTopLevel
           ? " (not a known top-level section — typo? see nyx.config.example.yaml)"
           : "";
-        lines.push(`  at ${formatFieldPath([...issue.path, key])}: unrecognized key "${key}"${hint}`);
+        lines.push(
+          `  at ${formatFieldPath([...issue.path, key])}: unrecognized key "${key}"${hint}`,
+        );
       }
     } else {
-      lines.push(`  at ${formatFieldPath(issue.path)}: ${redactEnvValues(issue.message, envValues)}`);
+      lines.push(
+        `  at ${formatFieldPath(issue.path)}: ${redactEnvValues(issue.message, envValues)}`,
+      );
     }
   }
   return `Config validation failed for ${configPath}:\n${lines.join("\n")}`;

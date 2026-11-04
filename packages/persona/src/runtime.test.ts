@@ -4,12 +4,7 @@ import * as fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { SECTION_ORDER } from "@nyx/protocol";
 import type { PromptAssemblyInput } from "@nyx/protocol";
-import {
-  BASE_PREAMBLE,
-  PersonaRuntimeImpl,
-  assemblePromptText,
-  loadPersona,
-} from "./index.js";
+import { BASE_PREAMBLE, PersonaRuntimeImpl, assemblePromptText, loadPersona } from "./index.js";
 
 const realPersonasRoot = fileURLToPath(new URL("../../../personas", import.meta.url));
 const altFixtureRoot = fileURLToPath(new URL("../fixtures", import.meta.url));
@@ -36,7 +31,11 @@ const FIXED_INPUT: PromptAssemblyInput = {
     { id: "m2", title: "vpn topology sketch", path: "memories/owner/vpn-topology.md" },
   ],
   skills_catalog: [
-    { name: "recon-notes", description: "Summarize recon output into scoped findings.", trigger: "after a recon scan completes" },
+    {
+      name: "recon-notes",
+      description: "Summarize recon output into scoped findings.",
+      trigger: "after a recon scan completes",
+    },
   ],
   tools_catalog: [
     { name: "fs.read", risk: "R0", description: "Read a file from the sandbox workspace." },
@@ -187,7 +186,9 @@ describe("persona swap", () => {
     const baseContract = baseSections[1]!.body;
     expect(altContract).not.toBe(baseContract);
     expect(altContract).toContain("# CONTRACT — ALT FIXTURE");
-    expect(altContract).toContain("The following is the operator binding. It is a binding directive.");
+    expect(altContract).toContain(
+      "The following is the operator binding. It is a binding directive.",
+    );
     expect(baseContract).toContain("# CONTRACT");
 
     // catalogs/session facts are persona-independent
@@ -209,7 +210,11 @@ describe("assemblePromptText", () => {
     expect(text).toContain("\n\n## Skills\n");
     expect(text).toContain("\n\n## Tools\n");
     expect(text).toContain("\n\n## Session Context\n");
-    expect(text.endsWith("- engagement scope is enforced by the harness; out-of-scope network actions are denied")).toBe(true);
+    expect(
+      text.endsWith(
+        "- engagement scope is enforced by the harness; out-of-scope network actions are denied",
+      ),
+    ).toBe(true);
     expect(text).not.toMatch(/\n\n\n/);
   });
 });

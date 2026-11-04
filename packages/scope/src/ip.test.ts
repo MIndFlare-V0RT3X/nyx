@@ -93,9 +93,12 @@ describe("isIPLiteral", () => {
     },
   );
 
-  it.each(["example.com", "app.example.com", "[::1]:8080", "", "1.2.3.4.5"])("rejects %s", (host) => {
-    expect(isIPLiteral(host)).toBe(false);
-  });
+  it.each(["example.com", "app.example.com", "[::1]:8080", "", "1.2.3.4.5"])(
+    "rejects %s",
+    (host) => {
+      expect(isIPLiteral(host)).toBe(false);
+    },
+  );
 });
 
 describe("parseCidr", () => {

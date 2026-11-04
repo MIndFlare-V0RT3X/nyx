@@ -104,9 +104,7 @@ const chainStepSchema = z
   })
   .strict();
 
-export const chainSchema = z
-  .array(chainStepSchema)
-  .min(1, "chain must contain at least one step");
+export const chainSchema = z.array(chainStepSchema).min(1, "chain must contain at least one step");
 
 const routeRuleSchema = z
   .object({
@@ -167,18 +165,16 @@ const policyRuleSchema = z
 // Server
 // ---------------------------------------------------------------------------
 
-const tokensSchema = z
-  .record(z.string().min(1), z.string().min(1))
-  .superRefine((tokens, ctx) => {
-    if ("owner" in tokens) {
-      // The owner identity is fixed by owner_id; it cannot be shadowed here.
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["owner"],
-        message: 'actor name "owner" is reserved (the owner authenticates via owner_token)',
-      });
-    }
-  });
+const tokensSchema = z.record(z.string().min(1), z.string().min(1)).superRefine((tokens, ctx) => {
+  if ("owner" in tokens) {
+    // The owner identity is fixed by owner_id; it cannot be shadowed here.
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["owner"],
+      message: 'actor name "owner" is reserved (the owner authenticates via owner_token)',
+    });
+  }
+});
 
 const serverSchema = z
   .object({
@@ -246,7 +242,10 @@ export const configSchema = z
     providers: z.record(z.string().min(1), providerSchema).default({}),
     // The only required section: NYX cannot invent a default model route.
     router: routerSchema,
-    policy: z.object({ rules: z.array(policyRuleSchema).default([]) }).strict().default({}),
+    policy: z
+      .object({ rules: z.array(policyRuleSchema).default([]) })
+      .strict()
+      .default({}),
     sandbox: sandboxSchema.default({}),
     memory: memorySchema.default({}),
     persona: personaSchema.default({}),

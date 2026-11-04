@@ -72,13 +72,15 @@ export function createChatDriver(deps: ChatDriverDeps): ChatDriver {
         // Surface-level failures (missing persona, broken service) never
         // reach the event stream; render them as the turn's error line.
         if (result.error !== null) {
-          update(applyEventToChat(state, {
-            type: "turn.failed",
-            session_id: state.session_id,
-            turn_id,
-            error: result.error,
-            ts: Date.now(),
-          }));
+          update(
+            applyEventToChat(state, {
+              type: "turn.failed",
+              session_id: state.session_id,
+              turn_id,
+              error: result.error,
+              ts: Date.now(),
+            }),
+          );
         }
       })
       .finally(() => {
@@ -121,16 +123,14 @@ export function createChatDriver(deps: ChatDriverDeps): ChatDriver {
         return;
       }
       update(result.state);
-      void runtime
-        .resolveApproval(result.resolve.id, result.resolve.decision)
-        .catch((err) => {
-          update({
-            ...state,
-            notice: `approval ${result.resolve?.id ?? "?"} could not be resolved: ${
-              err instanceof Error ? err.message : String(err)
-            }`,
-          });
+      void runtime.resolveApproval(result.resolve.id, result.resolve.decision).catch((err) => {
+        update({
+          ...state,
+          notice: `approval ${result.resolve?.id ?? "?"} could not be resolved: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
         });
+      });
     },
     moveSelection: (delta) => update(moveApprovalSelection(state, delta)),
     onApprovalEvent(event, record) {

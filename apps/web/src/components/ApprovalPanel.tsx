@@ -68,7 +68,11 @@ export function ApprovalPanel(props: {
             <button disabled={busy !== null} onClick={() => void resolve(a.id, "allow")}>
               allow
             </button>
-            <button className="deny" disabled={busy !== null} onClick={() => void resolve(a.id, "deny")}>
+            <button
+              className="deny"
+              disabled={busy !== null}
+              onClick={() => void resolve(a.id, "deny")}
+            >
               deny
             </button>
           </div>

@@ -7,7 +7,11 @@ export function renderTable(headers: readonly string[], rows: readonly string[][
     Math.max(h.length, ...rows.map((row) => (row[i] ?? "").length)),
   );
   const line = (cells: readonly string[]): string =>
-    cells.map((cell, i) => (i === cells.length - 1 ? (cell ?? "") : (cell ?? "").padEnd(widths[i] ?? 0))).join("  ");
+    cells
+      .map((cell, i) =>
+        i === cells.length - 1 ? (cell ?? "") : (cell ?? "").padEnd(widths[i] ?? 0),
+      )
+      .join("  ");
   const out = [line(headers)];
   if (rows.length === 0) {
     out.push(`(no rows)`);

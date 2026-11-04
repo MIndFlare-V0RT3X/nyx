@@ -96,7 +96,9 @@ function cardFromRecord(record: ToolCallRecord): ToolCardView {
     name: record.name,
     input: record.input,
     status: record.status,
-    ...(record.output !== null && record.output !== undefined ? { output: record.output as ToolOutput } : {}),
+    ...(record.output !== null && record.output !== undefined
+      ? { output: record.output as ToolOutput }
+      : {}),
     ts: record.ts,
   };
 }
@@ -113,7 +115,10 @@ function cardFromBlock(block: Extract<ContentBlock, { type: "tool_use" }>): Tool
  * Approval history has no message anchor, so it lands at the end of the
  * timeline (live approvals are placed exactly as they arrive).
  */
-export function stateFromProjection(sessionId: string, projection: Projection): SessionEventViewState {
+export function stateFromProjection(
+  sessionId: string,
+  projection: Projection,
+): SessionEventViewState {
   const state = initialViewState();
   state.sessionId = sessionId;
   state.lastSeq = projection.last_seq;
@@ -197,7 +202,13 @@ export function foldEvent(state: SessionEventViewState, event: StoredEvent): Ses
     case "message.user":
       next.items = [
         ...state.items,
-        { kind: "message", id: `e${event.seq}`, role: "user", content: event.content, ts: event.ts },
+        {
+          kind: "message",
+          id: `e${event.seq}`,
+          role: "user",
+          content: event.content,
+          ts: event.ts,
+        },
       ];
       return next;
     case "message.assistant": {
@@ -250,12 +261,18 @@ export function foldEvent(state: SessionEventViewState, event: StoredEvent): Ses
           ts: event.ts,
         },
       };
-      next.items = [...state.items, { kind: "tool", id: `e${event.seq}`, callId: event.call_id, ts: event.ts }];
+      next.items = [
+        ...state.items,
+        { kind: "tool", id: `e${event.seq}`, callId: event.call_id, ts: event.ts },
+      ];
       return next;
     case "tool.result": {
       const card = state.toolCards[event.call_id];
       if (card !== undefined) {
-        next.toolCards = { ...state.toolCards, [event.call_id]: { ...card, status: "ok", output: event.output } };
+        next.toolCards = {
+          ...state.toolCards,
+          [event.call_id]: { ...card, status: "ok", output: event.output },
+        };
         return next;
       }
       next.toolCards = {
@@ -269,13 +286,19 @@ export function foldEvent(state: SessionEventViewState, event: StoredEvent): Ses
           ts: event.ts,
         },
       };
-      next.items = [...state.items, { kind: "tool", id: `e${event.seq}`, callId: event.call_id, ts: event.ts }];
+      next.items = [
+        ...state.items,
+        { kind: "tool", id: `e${event.seq}`, callId: event.call_id, ts: event.ts },
+      ];
       return next;
     }
     case "tool.error": {
       const card = state.toolCards[event.call_id];
       if (card !== undefined) {
-        next.toolCards = { ...state.toolCards, [event.call_id]: { ...card, status: "error", error: event.error } };
+        next.toolCards = {
+          ...state.toolCards,
+          [event.call_id]: { ...card, status: "error", error: event.error },
+        };
         return next;
       }
       next.items = [
@@ -343,7 +366,11 @@ export function foldEvent(state: SessionEventViewState, event: StoredEvent): Ses
           ? state.approvals
           : {
               ...state.approvals,
-              [event.approval_id]: { ...existing, decision: event.decision, decidedBy: event.decided_by },
+              [event.approval_id]: {
+                ...existing,
+                decision: event.decision,
+                decidedBy: event.decided_by,
+              },
             };
       next.pendingApprovals = state.pendingApprovals.filter((id) => id !== event.approval_id);
       return next;
@@ -360,7 +387,10 @@ export function foldEvent(state: SessionEventViewState, event: StoredEvent): Ses
  * pending ones) into the state. A resolved approval in the state is never
  * downgraded back to pending by an older snapshot.
  */
-export function foldApprovals(state: SessionEventViewState, records: ApprovalRecord[]): SessionEventViewState {
+export function foldApprovals(
+  state: SessionEventViewState,
+  records: ApprovalRecord[],
+): SessionEventViewState {
   if (records.length === 0) return state;
   const approvals = { ...state.approvals };
   let pending = [...state.pendingApprovals];
@@ -372,7 +402,9 @@ export function foldApprovals(state: SessionEventViewState, records: ApprovalRec
       continue;
     }
     const decision =
-      existing.decision === "pending" && record.decision !== "pending" ? record.decision : existing.decision;
+      existing.decision === "pending" && record.decision !== "pending"
+        ? record.decision
+        : existing.decision;
     approvals[record.id] = {
       ...existing,
       createdAt: record.created_at,

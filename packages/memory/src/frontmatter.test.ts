@@ -78,7 +78,18 @@ describe("malformed frontmatter", () => {
   });
 
   it("bad scope enum is rejected with path and line", () => {
-    const md = ["---", "id: abc123", "scope: everywhere", "kind: fact", "tags: []", "source: {}", "created_at: 1", "updated_at: 1", "---", "c"].join("\n");
+    const md = [
+      "---",
+      "id: abc123",
+      "scope: everywhere",
+      "kind: fact",
+      "tags: []",
+      "source: {}",
+      "created_at: 1",
+      "updated_at: 1",
+      "---",
+      "c",
+    ].join("\n");
     expect(() => parseMemoryFile("/tmp/m/persona/bad4.md", md)).toThrowError(
       /bad4\.md.*scope.*\(line 3\)/,
     );

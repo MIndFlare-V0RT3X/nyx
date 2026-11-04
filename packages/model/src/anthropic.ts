@@ -170,7 +170,8 @@ export class AnthropicProvider implements ModelProvider {
   async *complete(req: CompletionRequest): AsyncGenerator<ModelChunk, void, void> {
     const { system, messages } = toAnthropicConversation(req.messages);
     // tool_choice "none" is expressed by not offering tools at all.
-    const offerTools = req.tools !== undefined && req.tools.length > 0 && req.tool_choice !== "none";
+    const offerTools =
+      req.tools !== undefined && req.tools.length > 0 && req.tool_choice !== "none";
     const params: Anthropic.MessageStreamParams = {
       model: req.model,
       messages,
@@ -184,10 +185,10 @@ export class AnthropicProvider implements ModelProvider {
               ? {
                   tool_choice:
                     typeof req.tool_choice === "string"
-                  ? ({ type: "auto" } as const)
-                  : ({ type: "tool", name: req.tool_choice.name } as const),
-              }
-            : {}),
+                      ? ({ type: "auto" } as const)
+                      : ({ type: "tool", name: req.tool_choice.name } as const),
+                }
+              : {}),
           }
         : {}),
       ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),

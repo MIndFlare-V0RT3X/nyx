@@ -15,11 +15,16 @@ type PersonaConfig = z.infer<typeof PersonaSchema>;
 
 interface LoadedPersona {
   config: PersonaConfig;
-  soul_md: string; contract_md: string; user_md: string; memory_md: string;
+  soul_md: string;
+  contract_md: string;
+  user_md: string;
+  memory_md: string;
 }
 
 function loadPersona(personasRoot: string, id: string): Promise<LoadedPersona>;
-class PersonaLoadError extends Error { code: "validation_failed" }
+class PersonaLoadError extends Error {
+  code: "validation_failed";
+}
 
 const BASE_PREAMBLE: string; // the harness identity block (~48 lines)
 
@@ -53,16 +58,16 @@ console.log(assemblePromptText(sections)); // debugging aid
 
 ## Assembly order (fixed, golden-tested)
 
-| # | id | title | body |
-|---|----|-------|------|
-| 1 | `BASE_PREAMBLE` | Harness | the `BASE_PREAMBLE` const — harness identity and non-negotiable rules |
-| 2 | `CONTRACT` | Contract | one operator-binding line, then `CONTRACT.md` verbatim |
-| 3 | `SOUL` | Soul | `SOUL.md` verbatim |
-| 4 | `USER` | Operator Profile | `USER.md` verbatim |
-| 5 | `MEMORY_CATALOG` | Memory | `- {title} ({path})` per memory, or "No memories indexed yet." |
-| 6 | `SKILLS_CATALOG` | Skills | `- {name}: {description}[ — trigger: {trigger}]`, or "No skills installed." |
-| 7 | `TOOLS_CATALOG` | Tools | `- {name} [risk {risk}] — {description}` |
-| 8 | `SESSION_CONTEXT` | Session Context | `- {key}: {value}` per fact, keys sorted; the engagement block last |
+| #   | id                | title            | body                                                                        |
+| --- | ----------------- | ---------------- | --------------------------------------------------------------------------- |
+| 1   | `BASE_PREAMBLE`   | Harness          | the `BASE_PREAMBLE` const — harness identity and non-negotiable rules       |
+| 2   | `CONTRACT`        | Contract         | one operator-binding line, then `CONTRACT.md` verbatim                      |
+| 3   | `SOUL`            | Soul             | `SOUL.md` verbatim                                                          |
+| 4   | `USER`            | Operator Profile | `USER.md` verbatim                                                          |
+| 5   | `MEMORY_CATALOG`  | Memory           | `- {title} ({path})` per memory, or "No memories indexed yet."              |
+| 6   | `SKILLS_CATALOG`  | Skills           | `- {name}: {description}[ — trigger: {trigger}]`, or "No skills installed." |
+| 7   | `TOOLS_CATALOG`   | Tools            | `- {name} [risk {risk}] — {description}`                                    |
+| 8   | `SESSION_CONTEXT` | Session Context  | `- {key}: {value}` per fact, keys sorted; the engagement block last         |
 
 The order comes from `SECTION_ORDER` in `@nyx/protocol` — the runtime maps
 builders over it, so the two cannot drift apart silently (a test asserts the

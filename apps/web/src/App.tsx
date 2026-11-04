@@ -47,7 +47,11 @@ function AppShell(): React.ReactElement {
         {activeSession === null ? (
           <SessionListView client={client} hasToken={token !== ""} onOpen={setActiveSession} />
         ) : (
-          <SessionView client={client} sessionId={activeSession} onBack={() => setActiveSession(null)} />
+          <SessionView
+            client={client}
+            sessionId={activeSession}
+            onBack={() => setActiveSession(null)}
+          />
         )}
       </main>
       <footer className="app-footer">

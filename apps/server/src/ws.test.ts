@@ -68,7 +68,10 @@ function makeQueuingClient(ws: WebSocket): {
       const queued = queue.shift();
       if (queued !== undefined) return queued;
       return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(`ws message timeout (${label})`)), timeoutMs);
+        const timer = setTimeout(
+          () => reject(new Error(`ws message timeout (${label})`)),
+          timeoutMs,
+        );
         waiters.push((m) => {
           clearTimeout(timer);
           resolve(m);
@@ -95,7 +98,10 @@ function nextOpen(ws: WebSocket, timeoutMs = 5000): Promise<void> {
 /** A rejected upgrade surfaces as a client error followed by close. */
 function expectUpgradeFailure(ws: WebSocket, timeoutMs = 3000): Promise<void> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("expected upgrade failure timeout")), timeoutMs);
+    const timer = setTimeout(
+      () => reject(new Error("expected upgrade failure timeout")),
+      timeoutMs,
+    );
     ws.once("error", () => undefined);
     ws.once("close", () => {
       clearTimeout(timer);

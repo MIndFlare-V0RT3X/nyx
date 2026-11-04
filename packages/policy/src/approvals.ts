@@ -122,7 +122,16 @@ export class ApprovalEngineImpl implements ApprovalEngine {
              (id, session_id, turn_id, action_digest, summary, risk, decision, decided_by, created_at, expires_at, used_at)
            VALUES (?, ?, ?, ?, ?, ?, 'pending', NULL, ?, ?, NULL)`,
         )
-        .run(id, ctx.session_id, ctx.turn_id, v.action_digest, v.summary, risk, createdAt, expiresAt);
+        .run(
+          id,
+          ctx.session_id,
+          ctx.turn_id,
+          v.action_digest,
+          v.summary,
+          risk,
+          createdAt,
+          expiresAt,
+        );
       appendAudit(this.db, {
         actor: ctx.actor_id,
         action: "approval.requested",
@@ -160,12 +169,18 @@ export class ApprovalEngineImpl implements ApprovalEngine {
       if (this.now() >= expiresAt) {
         this.db.transaction(() => {
           this.db
-            .prepare("UPDATE approvals SET decision = 'deny', decided_by = 'system:expiry' WHERE id = ? AND decision = 'pending'")
+            .prepare(
+              "UPDATE approvals SET decision = 'deny', decided_by = 'system:expiry' WHERE id = ? AND decision = 'pending'",
+            )
             .run(id);
           appendAudit(this.db, {
             actor: "system:expiry",
             action: "approval.expired",
-            payload: { approval_id: id, session_id: ctx.session_id, action_digest: v.action_digest },
+            payload: {
+              approval_id: id,
+              session_id: ctx.session_id,
+              action_digest: v.action_digest,
+            },
           });
         })();
         this.onResolved?.({
@@ -187,25 +202,40 @@ export class ApprovalEngineImpl implements ApprovalEngine {
     }
   }
 
-  async resolve(id: string, decision: "allow" | "deny", decidedBy: string): Promise<ApprovalRecord> {
+  async resolve(
+    id: string,
+    decision: "allow" | "deny",
+    decidedBy: string,
+  ): Promise<ApprovalRecord> {
     const updated = this.db.transaction((): ApprovalRecord => {
       const row = this.getRow(id);
       if (!row) throw new CodedError("approval_denied", `approval ${id} not found`);
       if (row.decision !== "pending") {
-        throw new CodedError("approval_denied", `approval ${id} already resolved (${row.decision})`);
+        throw new CodedError(
+          "approval_denied",
+          `approval ${id} already resolved (${row.decision})`,
+        );
       }
       if (this.now() >= row.expires_at) {
         throw new CodedError("approval_expired", `approval ${id} expired`);
       }
-      this.db.prepare("UPDATE approvals SET decision = ?, decided_by = ? WHERE id = ?").run(decision, decidedBy, id);
+      this.db
+        .prepare("UPDATE approvals SET decision = ?, decided_by = ? WHERE id = ?")
+        .run(decision, decidedBy, id);
       // Same transaction as the update: commits or rolls back together.
       appendAudit(this.db, {
         actor: decidedBy,
         action: "approval.resolved",
-        payload: { approval_id: id, decision, session_id: row.session_id, action_digest: row.action_digest },
+        payload: {
+          approval_id: id,
+          decision,
+          session_id: row.session_id,
+          action_digest: row.action_digest,
+        },
       });
       const updated = this.getRow(id);
-      if (!updated) throw new CodedError("approval_denied", `approval ${id} disappeared mid-transaction`);
+      if (!updated)
+        throw new CodedError("approval_denied", `approval ${id} disappeared mid-transaction`);
       return toRecord(updated);
     })();
     this.onResolved?.(updated);
@@ -236,7 +266,8 @@ export class ApprovalEngineImpl implements ApprovalEngine {
         payload: { approval_id: id, action_digest: actionDigest, session_id: row.session_id },
       });
       const updated = this.getRow(id);
-      if (!updated) throw new CodedError("approval_denied", `approval ${id} disappeared mid-transaction`);
+      if (!updated)
+        throw new CodedError("approval_denied", `approval ${id} disappeared mid-transaction`);
       return toRecord(updated);
     })();
   }
@@ -258,7 +289,8 @@ export class ApprovalEngineImpl implements ApprovalEngine {
   }
 
   private getRow(id: string): ApprovalRow | undefined {
-    return this.db.prepare("SELECT * FROM approvals WHERE id = ?").get(id) as ApprovalRow | undefined;
+    return this.db.prepare("SELECT * FROM approvals WHERE id = ?").get(id) as
+      ApprovalRow | undefined;
   }
 }
 

@@ -8,8 +8,7 @@ import { loadConfig, type NyxConfig } from "@nyx/config";
 import { ConfigError } from "@nyx/config";
 
 export type ValidateConfigResult =
-  | { ok: true; config: NyxConfig; path: string }
-  | { ok: false; path: string; message: string };
+  { ok: true; config: NyxConfig; path: string } | { ok: false; path: string; message: string };
 
 /**
  * Validate one config file (default ./nyx.config.yaml, or the given path).

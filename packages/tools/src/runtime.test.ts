@@ -25,7 +25,7 @@ import type {
   ToolCall,
   ToolContext,
   ToolDefinition,
-    ToolOutput,
+  ToolOutput,
 } from "@nyx/protocol";
 
 type ToolErrorEvent = Extract<SessionEvent, { type: "tool.error" }>;
@@ -66,7 +66,10 @@ function noopLogger(): Logger {
   return logger;
 }
 
-function captureLogger(): { logger: Logger; errors: Array<{ msg: string; ctx?: Record<string, unknown> }> } {
+function captureLogger(): {
+  logger: Logger;
+  errors: Array<{ msg: string; ctx?: Record<string, unknown> }>;
+} {
   const errors: Array<{ msg: string; ctx?: Record<string, unknown> }> = [];
   const logger: Logger = {
     debug: () => undefined,
@@ -79,7 +82,6 @@ function captureLogger(): { logger: Logger; errors: Array<{ msg: string; ctx?: R
   };
   return { logger, errors };
 }
-
 
 function fakeDef(name: string, extra?: Partial<ToolDefinition>): ToolDefinition {
   return {
@@ -228,12 +230,10 @@ describe("tool runtime pipeline", () => {
   });
 
   it("path escape → tool.error path_escape and the handler NEVER ran; contained paths are rewritten", async () => {
-    const spy = vi.fn(
-      async (c: ToolCall, _ctx: ToolContext): Promise<ToolOutput> => ({
-        kind: "text",
-        text: `ran ${JSON.stringify(c.input)}`,
-      }),
-    );
+    const spy = vi.fn(async (c: ToolCall, _ctx: ToolContext): Promise<ToolOutput> => ({
+      kind: "text",
+      text: `ran ${JSON.stringify(c.input)}`,
+    }));
     const h = await makeHarness({
       rules: [{ id: "allow-fs-read", match: { tool: "fs.read" }, decision: "allow" }],
       register: (r) => {
@@ -244,7 +244,10 @@ describe("tool runtime pipeline", () => {
       },
     });
 
-    const escape = await h.runtime.execute(call("fs.read", { path: "../../etc/passwd" }), h.execCtx());
+    const escape = await h.runtime.execute(
+      call("fs.read", { path: "../../etc/passwd" }),
+      h.execCtx(),
+    );
     expect(escape).toEqual({ kind: "text", text: "error: path escapes the sandbox workdir" });
     expect(toolErrors(h.events)[0]!.error.code).toBe("path_escape");
     expect(results(h.events)).toEqual([]);
@@ -262,9 +265,7 @@ describe("tool runtime pipeline", () => {
     expect(ok.kind).toBe("text");
     expect(spy).toHaveBeenCalledTimes(1);
     const seen = spy.mock.calls[0]![0];
-    expect((seen.input as { path: string }).path).toBe(
-      path.join(h.sandbox.workdir, "inside.txt"),
-    );
+    expect((seen.input as { path: string }).path).toBe(path.join(h.sandbox.workdir, "inside.txt"));
     const toolCalls = h.events.filter(
       (e): e is Extract<SessionEvent, { type: "tool.call" }> => e.type === "tool.call",
     );
@@ -311,9 +312,7 @@ describe("tool runtime pipeline", () => {
   });
 
   it("force_ask triggers an approval even under an allow rule (allow verdict → executes)", async () => {
-    const spy = vi.fn(
-      async (): Promise<ToolOutput> => ({ kind: "text", text: "echo ran" }),
-    );
+    const spy = vi.fn(async (): Promise<ToolOutput> => ({ kind: "text", text: "echo ran" }));
     const h = await makeHarness({
       rules: [{ id: "allow-echo", match: { tool: "test.echo" }, decision: "allow" }],
       approval: "allow",
@@ -341,9 +340,7 @@ describe("tool runtime pipeline", () => {
   });
 
   it("ask flow denied by the operator → action.denied reason approval; handler never ran", async () => {
-    const spy = vi.fn(
-      async (): Promise<ToolOutput> => ({ kind: "text", text: "should not run" }),
-    );
+    const spy = vi.fn(async (): Promise<ToolOutput> => ({ kind: "text", text: "should not run" }));
     const h = await makeHarness({
       approval: "deny",
       register: (r) => r.register(fakeDef("test.echo"), { execute: spy }),
@@ -364,10 +361,7 @@ describe("tool runtime pipeline", () => {
     const h = await makeHarness({
       rules: [{ id: "allow-big", match: { tool: "test.big" }, decision: "allow" }],
       register: (r) =>
-        r.register(
-          fakeDef("test.big"),
-          { execute: async () => ({ kind: "text", text: big }) },
-        ),
+        r.register(fakeDef("test.big"), { execute: async () => ({ kind: "text", text: big }) }),
     });
 
     const out = await h.runtime.execute(call("test.big", {}, "call-big"), h.execCtx());
@@ -390,10 +384,12 @@ describe("tool runtime pipeline", () => {
     const h = await makeHarness({
       rules: [{ id: "allow-size", match: { tool: "test.size" }, decision: "allow" }],
       register: (r) =>
-        r.register(
-          fakeDef("test.size"),
-          { execute: async (c) => ({ kind: "text", text: "y".repeat(Number((c.input as { n: number }).n)) }) },
-        ),
+        r.register(fakeDef("test.size"), {
+          execute: async (c) => ({
+            kind: "text",
+            text: "y".repeat(Number((c.input as { n: number }).n)),
+          }),
+        }),
     });
 
     const exact = await h.runtime.execute(call("test.size", { n: 65536 }), h.execCtx());
@@ -412,14 +408,11 @@ describe("tool runtime pipeline", () => {
     const h = await makeHarness({
       rules: [{ id: "allow-throw", match: { tool: "test.throw" }, decision: "allow" }],
       register: (r) =>
-        r.register(
-          fakeDef("test.throw"),
-          {
-            execute: async () => {
-              throw new Error("boom");
-            },
+        r.register(fakeDef("test.throw"), {
+          execute: async () => {
+            throw new Error("boom");
           },
-        ),
+        }),
     });
 
     const out = await h.runtime.execute(call("test.throw", {}), h.execCtx({ logger: log.logger }));
@@ -437,10 +430,9 @@ describe("tool runtime pipeline", () => {
     const h = await makeHarness({
       rules: [{ id: "allow-sleep", match: { tool: "test.sleep" }, decision: "allow" }],
       register: (r) =>
-        r.register(
-          fakeDef("test.sleep", { timeout_ms: 60 }),
-          { execute: () => new Promise<ToolOutput>(() => undefined) },
-        ),
+        r.register(fakeDef("test.sleep", { timeout_ms: 60 }), {
+          execute: () => new Promise<ToolOutput>(() => undefined),
+        }),
     });
 
     const out = await h.runtime.execute(call("test.sleep", {}), h.execCtx());
@@ -455,10 +447,9 @@ describe("tool runtime pipeline", () => {
       rules: [{ id: "allow-hang", match: { tool: "test.hang" }, decision: "allow" }],
       runtimeOpts: { default_timeout_ms: 60 },
       register: (r) =>
-        r.register(
-          fakeDef("test.hang"),
-          { execute: () => new Promise<ToolOutput>(() => undefined) },
-        ),
+        r.register(fakeDef("test.hang"), {
+          execute: () => new Promise<ToolOutput>(() => undefined),
+        }),
     });
 
     const out = await h.runtime.execute(call("test.hang", {}), h.execCtx());
@@ -470,10 +461,9 @@ describe("tool runtime pipeline", () => {
     const h = await makeHarness({
       rules: [{ id: "allow-hang", match: { tool: "test.hang" }, decision: "allow" }],
       register: (r) =>
-        r.register(
-          fakeDef("test.hang"),
-          { execute: () => new Promise<ToolOutput>(() => undefined) },
-        ),
+        r.register(fakeDef("test.hang"), {
+          execute: () => new Promise<ToolOutput>(() => undefined),
+        }),
     });
     const ac = new AbortController();
     ac.abort();

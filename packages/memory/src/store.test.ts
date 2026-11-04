@@ -20,7 +20,10 @@ afterAll(() => {
   for (const root of roots) fs.rmSync(root, { recursive: true, force: true });
 });
 
-function makeStore(opts: { episode_expiry_days?: number } = {}): { store: MemoryStoreImpl; root: string } {
+function makeStore(opts: { episode_expiry_days?: number } = {}): {
+  store: MemoryStoreImpl;
+  root: string;
+} {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "nyx-memory-test-"));
   roots.push(root);
   const store = new MemoryStoreImpl(root, opts);
@@ -147,9 +150,27 @@ describe("search", () => {
 
   it("filters by scope list", async () => {
     const { store } = makeStore();
-    await store.write({ scope: "persona", kind: "fact", content: "likes the dracula theme", tags: [], source: {} });
-    await store.write({ scope: "global", kind: "fact", content: "likes the dracula theme", tags: [], source: {} });
-    await store.write({ scope: "session", kind: "fact", content: "likes the dracula theme", tags: [], source: {} });
+    await store.write({
+      scope: "persona",
+      kind: "fact",
+      content: "likes the dracula theme",
+      tags: [],
+      source: {},
+    });
+    await store.write({
+      scope: "global",
+      kind: "fact",
+      content: "likes the dracula theme",
+      tags: [],
+      source: {},
+    });
+    await store.write({
+      scope: "session",
+      kind: "fact",
+      content: "likes the dracula theme",
+      tags: [],
+      source: {},
+    });
     const personaOnly = await store.search("dracula", { scope: ["persona"] });
     expect(personaOnly.length).toBe(1);
     expect(personaOnly[0]!.scope).toBe("persona");
@@ -160,7 +181,13 @@ describe("search", () => {
 
   it("applies min_score", async () => {
     const { store } = makeStore();
-    await store.write({ scope: "global", kind: "fact", content: "kubernetes cluster runs three control plane nodes", tags: [], source: {} });
+    await store.write({
+      scope: "global",
+      kind: "fact",
+      content: "kubernetes cluster runs three control plane nodes",
+      tags: [],
+      source: {},
+    });
     const all = await store.search("control plane");
     expect(all.length).toBe(1);
     const none = await store.search("control plane", { min_score: 1e9 });
@@ -170,7 +197,13 @@ describe("search", () => {
   it("ANDs multiple terms and honors limit", async () => {
     const { store } = makeStore();
     for (let i = 0; i < 5; i++) {
-      await store.write({ scope: "global", kind: "fact", content: `release artifact number ${i} is signed`, tags: [], source: {} });
+      await store.write({
+        scope: "global",
+        kind: "fact",
+        content: `release artifact number ${i} is signed`,
+        tags: [],
+        source: {},
+      });
     }
     expect((await store.search("release signed")).length).toBe(5);
     expect((await store.search("release signed", { limit: 2 })).length).toBe(2);
@@ -179,7 +212,13 @@ describe("search", () => {
 
   it("FTS injection attempts do not throw", async () => {
     const { store } = makeStore();
-    await store.write({ scope: "global", kind: "fact", content: "some ordinary memory content", tags: [], source: {} });
+    await store.write({
+      scope: "global",
+      kind: "fact",
+      content: "some ordinary memory content",
+      tags: [],
+      source: {},
+    });
     await expect(store.search('query)"')).resolves.toEqual([]);
     await expect(store.search('foo"bar')).resolves.toEqual([]);
     await expect(store.search("NEAR(a b)")).resolves.toEqual([]);
@@ -206,7 +245,13 @@ describe("get", () => {
     });
     const file = entryPath(root, written);
     await sleep(5);
-    fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace("the vault seal is quarterly", "the vault seal is annual and audited"), "utf8");
+    fs.writeFileSync(
+      file,
+      fs
+        .readFileSync(file, "utf8")
+        .replace("the vault seal is quarterly", "the vault seal is annual and audited"),
+      "utf8",
+    );
 
     const got = await store.get(written.id);
     expect(got?.content).toBe("the vault seal is annual and audited");
@@ -266,11 +311,29 @@ describe("get", () => {
 describe("list", () => {
   it("filters by scope and kind, orders by updated_at desc", async () => {
     const { store } = makeStore();
-    const a = await store.write({ scope: "global", kind: "fact", content: "fact one", tags: [], source: {} });
+    const a = await store.write({
+      scope: "global",
+      kind: "fact",
+      content: "fact one",
+      tags: [],
+      source: {},
+    });
     await sleep(10);
-    const b = await store.write({ scope: "persona", kind: "preference", content: "pref two", tags: [], source: {} });
+    const b = await store.write({
+      scope: "persona",
+      kind: "preference",
+      content: "pref two",
+      tags: [],
+      source: {},
+    });
     await sleep(10);
-    const c = await store.write({ scope: "global", kind: "episode", content: "episode three", tags: [], source: {} });
+    const c = await store.write({
+      scope: "global",
+      kind: "episode",
+      content: "episode three",
+      tags: [],
+      source: {},
+    });
 
     const all = await store.list();
     expect(all.map((e) => e.id)).toEqual([c.id, b.id, a.id]);
@@ -323,9 +386,27 @@ describe("compact", () => {
 
   it("does not merge facts across scopes or kinds", async () => {
     const { store } = makeStore();
-    await store.write({ scope: "persona", kind: "fact", content: "identical wording", tags: [], source: {} });
-    await store.write({ scope: "global", kind: "fact", content: "identical wording", tags: [], source: {} });
-    await store.write({ scope: "persona", kind: "preference", content: "identical wording", tags: [], source: {} });
+    await store.write({
+      scope: "persona",
+      kind: "fact",
+      content: "identical wording",
+      tags: [],
+      source: {},
+    });
+    await store.write({
+      scope: "global",
+      kind: "fact",
+      content: "identical wording",
+      tags: [],
+      source: {},
+    });
+    await store.write({
+      scope: "persona",
+      kind: "preference",
+      content: "identical wording",
+      tags: [],
+      source: {},
+    });
     const result = await store.compact();
     expect(result.merged).toBe(0);
     expect((await store.list()).length).toBe(3);
@@ -377,7 +458,9 @@ describe("compact", () => {
     expect(fs.existsSync(expiredPath)).toBe(true);
     expect(fs.existsSync(file)).toBe(false);
     expect(await store.get(episode.id)).toBeNull();
-    expect((await store.list()).map((e) => e.id).sort()).toEqual([freshFact.id, freshEpisode.id].sort());
+    expect((await store.list()).map((e) => e.id).sort()).toEqual(
+      [freshFact.id, freshEpisode.id].sort(),
+    );
   });
 });
 
@@ -387,7 +470,13 @@ describe("embedder seam", () => {
     roots.push(root);
     const store = new MemoryStoreImpl(root, { embedder: { embed: async () => [0.1, 0.2] } });
     stores.push(store);
-    await store.write({ scope: "global", kind: "fact", content: "embedding seam content", tags: [], source: {} });
+    await store.write({
+      scope: "global",
+      kind: "fact",
+      content: "embedding seam content",
+      tags: [],
+      source: {},
+    });
     expect((await store.search("seam")).length).toBe(1);
     store.close();
   });

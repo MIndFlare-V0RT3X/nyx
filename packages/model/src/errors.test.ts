@@ -49,7 +49,10 @@ describe("classifyProviderError", () => {
   });
 
   it("maps user aborts to aborted non-retryable", () => {
-    for (const err of [new APIUserAbortError(), Object.assign(new Error("aborted op"), { name: "AbortError" })]) {
+    for (const err of [
+      new APIUserAbortError(),
+      Object.assign(new Error("aborted op"), { name: "AbortError" }),
+    ]) {
       const out = classifyProviderError(err);
       expect(out.code).toBe("aborted");
       expect(out.retryable).toBe(false);
@@ -69,7 +72,9 @@ describe("classifyProviderError", () => {
     expect(out.code).toBe("provider_error");
     expect(out.retryable).toBe(false);
 
-    const rl = classifyProviderError(new ProviderError("slow down", { code: "rate_limit", retryable: true }));
+    const rl = classifyProviderError(
+      new ProviderError("slow down", { code: "rate_limit", retryable: true }),
+    );
     expect(rl).toMatchObject({ code: "rate_limit", retryable: true });
   });
 });

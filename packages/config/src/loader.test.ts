@@ -253,12 +253,7 @@ describe("loadConfig — invalid configs", () => {
 
   it("rejects a chain step missing provider at the spec's example path", async () => {
     const err = await loadExpectInvalid(
-      [
-        "router:",
-        "  default:",
-        "    chain:",
-        "      - model: only-model",
-      ].join("\n"),
+      ["router:", "  default:", "    chain:", "      - model: only-model"].join("\n"),
     );
     expect(err.message).toContain("nyx.config.yaml");
     expect(err.message).toContain("router.default.chain[0].provider");
@@ -280,9 +275,7 @@ describe("loadConfig — invalid configs", () => {
   });
 
   it("rejects an empty default chain", async () => {
-    const err = await loadExpectInvalid(
-      ["router:", "  default:", "    chain: []"].join("\n"),
-    );
+    const err = await loadExpectInvalid(["router:", "  default:", "    chain: []"].join("\n"));
     expect(err.message).toContain("router.default.chain");
   });
 
@@ -403,15 +396,11 @@ describe("loadConfig — env interpolation", () => {
     vi.stubEnv("TEST_OWNER_TOKEN", "from-process-env");
     const file = await tempConfig(ENV_CONFIG);
     // TEST_OWNER_TOKEN exists in process.env but not in the provided env.
-    await expect(loadConfig(file, { env: { TEST_HOST: "h" } })).rejects.toThrow(
-      /TEST_OWNER_TOKEN/,
-    );
+    await expect(loadConfig(file, { env: { TEST_HOST: "h" } })).rejects.toThrow(/TEST_OWNER_TOKEN/);
   });
 
   it("keeps env-resolved values out of validation error messages", async () => {
-    const file = await tempConfig(
-      ["logging:", "  level: ${SECRET_LEVEL}", ROUTER].join("\n"),
-    );
+    const file = await tempConfig(["logging:", "  level: ${SECRET_LEVEL}", ROUTER].join("\n"));
     let err: unknown;
     try {
       await loadConfig(file, { env: { SECRET_LEVEL: "super-secret-choice" } });

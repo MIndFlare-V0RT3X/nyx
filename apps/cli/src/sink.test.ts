@@ -57,7 +57,9 @@ describe("createEventSink", () => {
     await withStore(async (store) => {
       const session = await store.create({ owner_id: "owner", persona_id: "default" });
       const sink = createEventSink(store);
-      await expect(sink.append("no-such-session", [delta("no-such-session", "t1", "x")])).rejects.toThrow();
+      await expect(
+        sink.append("no-such-session", [delta("no-such-session", "t1", "x")]),
+      ).rejects.toThrow();
       const stored = await sink.append(session.session_id, [delta(session.session_id, "t1", "ok")]);
       expect(stored).toHaveLength(1);
     });

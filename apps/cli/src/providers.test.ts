@@ -7,7 +7,12 @@ import { describe, expect, it } from "vitest";
 import type { Logger, ModelChunk } from "@nyx/protocol";
 import { configSchema, type NyxConfig } from "@nyx/config";
 import { mockTextTurn, mockToolTurn } from "@nyx/model";
-import { buildProviders, MOCK_PROVIDER_MESSAGE, ProviderConfigError, ReusableMockProvider } from "./providers.js";
+import {
+  buildProviders,
+  MOCK_PROVIDER_MESSAGE,
+  ProviderConfigError,
+  ReusableMockProvider,
+} from "./providers.js";
 
 const silentLogger: Logger = {
   debug: () => undefined,

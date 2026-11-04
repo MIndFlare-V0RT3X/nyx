@@ -10,19 +10,28 @@ import type { Engagement } from "@nyx/protocol";
 import { validateTargets } from "@nyx/scope";
 import { CliError } from "./errors.js";
 
-export async function loadEngagementFile(path: string, now: () => number = Date.now): Promise<Engagement> {
+export async function loadEngagementFile(
+  path: string,
+  now: () => number = Date.now,
+): Promise<Engagement> {
   let text: string;
   try {
     text = await readFile(path, "utf8");
   } catch (err) {
-    throw new CliError("validation_failed", `cannot read engagement file ${path}: ${err instanceof Error ? err.message : String(err)}`);
+    throw new CliError(
+      "validation_failed",
+      `cannot read engagement file ${path}: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
   let raw: unknown;
   try {
     raw = JSON.parse(text);
   } catch (err) {
-    throw new CliError("validation_failed", `engagement file ${path} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`);
+    throw new CliError(
+      "validation_failed",
+      `engagement file ${path} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
   const parsed = EngagementSchema.safeParse(raw);
@@ -35,7 +44,10 @@ export async function loadEngagementFile(path: string, now: () => number = Date.
 
   const problems = validateTargets(parsed.data.targets);
   if (problems.length > 0) {
-    throw new CliError("validation_failed", `invalid engagement targets in ${path}: ${problems.join("; ")}`);
+    throw new CliError(
+      "validation_failed",
+      `invalid engagement targets in ${path}: ${problems.join("; ")}`,
+    );
   }
 
   if (parsed.data.expires_at <= now()) {

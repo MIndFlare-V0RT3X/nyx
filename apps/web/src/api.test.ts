@@ -32,7 +32,11 @@ describe("createClient error mapping", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
-        envelopeResponse(400, "validation_failed", "invalid engagement targets: bad cidr 10.0.0.0/08"),
+        envelopeResponse(
+          400,
+          "validation_failed",
+          "invalid engagement targets: bad cidr 10.0.0.0/08",
+        ),
       ),
     );
     const client = createClient({ baseUrl: "http://127.0.0.1:8787", token: "tok" });
@@ -52,7 +56,10 @@ describe("createClient error mapping", () => {
       [409, "validation_failed", "a turn is already in progress for this session"],
     ];
     for (const [status, code, message] of cases) {
-      vi.stubGlobal("fetch", vi.fn(async () => envelopeResponse(status, code, message)));
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => envelopeResponse(status, code, message)),
+      );
       const client = createClient({ baseUrl: "http://127.0.0.1:8787", token: "tok" });
       const err = (await client.getSession("s1").catch((e: unknown) => e)) as ApiError;
       expect(err).toBeInstanceOf(ApiError);
@@ -107,7 +114,9 @@ describe("createClient requests", () => {
   });
 
   it("omits the bearer header when the token is empty", async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ status: "ok", version: "0" }), { status: 200 }));
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ status: "ok", version: "0" }), { status: 200 }),
+    );
     vi.stubGlobal("fetch", fetchMock);
     const client = createClient({ baseUrl: "", token: "" });
 
@@ -144,8 +153,9 @@ describe("createClient requests", () => {
   });
 
   it("posts a turn with the text shorthand and parses the 202 body", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(JSON.stringify({ turn_id: "t1", session_id: "s1" }), { status: 202 }),
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ turn_id: "t1", session_id: "s1" }), { status: 202 }),
     );
     vi.stubGlobal("fetch", fetchMock);
     const client = createClient({ baseUrl: "http://127.0.0.1:8787", token: "tok" });
@@ -159,7 +169,9 @@ describe("createClient requests", () => {
   });
 
   it("resolves an approval with the decision in the body", async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    );
     vi.stubGlobal("fetch", fetchMock);
     const client = createClient({ baseUrl: "http://127.0.0.1:8787", token: "tok" });
 

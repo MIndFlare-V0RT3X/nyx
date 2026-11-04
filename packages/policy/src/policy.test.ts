@@ -68,7 +68,9 @@ describe("decision resolution", () => {
   });
 
   it("unknown actions escalate to ask with the default rule id", async () => {
-    const engine = new PolicyEngineImpl([{ id: "allow-reads", match: { tool: "fs.read" }, decision: "allow" }]);
+    const engine = new PolicyEngineImpl([
+      { id: "allow-reads", match: { tool: "fs.read" }, decision: "allow" },
+    ]);
     const v = await engine.evaluate(action({ tool: "net.egress", capabilities: ["net.egress"] }));
     expect(v).toMatchObject({ decision: "ask", rule_id: "default:unknown-action" });
   });
@@ -82,7 +84,9 @@ describe("decision resolution", () => {
 
 describe("immutable invariants", () => {
   it("a config allow on risk R4 still yields ask", async () => {
-    const engine = new PolicyEngineImpl([{ id: "allow-r4", match: { risk: ["R4"] }, decision: "allow" }]);
+    const engine = new PolicyEngineImpl([
+      { id: "allow-r4", match: { risk: ["R4"] }, decision: "allow" },
+    ]);
     const v = await engine.evaluate(action({ risk: "R4", input: { path: "/home/me/secret" } }));
     expect(v.decision).toBe("ask");
     expect(v.rule_id).toBe("invariant:r4-owner-approval");
@@ -99,7 +103,9 @@ describe("immutable invariants", () => {
     const engine = new PolicyEngineImpl([
       { id: "push-ok", match: { capability: "git.push" }, decision: "allow" },
     ]);
-    const v = await engine.evaluate(action({ tool: "git.push", capabilities: ["fs.write", "git.push"] }));
+    const v = await engine.evaluate(
+      action({ tool: "git.push", capabilities: ["fs.write", "git.push"] }),
+    );
     expect(v.decision).toBe("ask");
     expect(v.rule_id).toBe("invariant:dangerous-capability");
   });
@@ -107,7 +113,9 @@ describe("immutable invariants", () => {
   it.each(["host.access", "credential.use", "git.push", "deploy"] as const)(
     "capability %s forces at least ask",
     async (cap) => {
-      const engine = new PolicyEngineImpl([{ id: "allow-all", match: { risk: ["R1"] }, decision: "allow" }]);
+      const engine = new PolicyEngineImpl([
+        { id: "allow-all", match: { risk: ["R1"] }, decision: "allow" },
+      ]);
       const v = await engine.evaluate(action({ risk: "R1", capabilities: [cap] }));
       expect(v.decision).toBe("ask");
       expect(v.rule_id).toBe("invariant:dangerous-capability");
@@ -115,7 +123,9 @@ describe("immutable invariants", () => {
   );
 
   it("invariants only raise: a config deny still denies R4", async () => {
-    const engine = new PolicyEngineImpl([{ id: "deny-r4", match: { risk: ["R4"] }, decision: "deny" }]);
+    const engine = new PolicyEngineImpl([
+      { id: "deny-r4", match: { risk: ["R4"] }, decision: "deny" },
+    ]);
     const v = await engine.evaluate(action({ risk: "R4" }));
     expect(v).toMatchObject({ decision: "deny", rule_id: "deny-r4" });
   });
@@ -159,8 +169,12 @@ describe("rule matching", () => {
     const engine = new PolicyEngineImpl([
       { id: "lan-allow", match: { host: "192.168." }, decision: "allow" },
     ]);
-    expect((await engine.evaluate(action({ input: { host: "192.168.1.10" } }))).decision).toBe("allow");
-    expect((await engine.evaluate(action({ input: { host: "example.com" } }))).decision).toBe("ask");
+    expect((await engine.evaluate(action({ input: { host: "192.168.1.10" } }))).decision).toBe(
+      "allow",
+    );
+    expect((await engine.evaluate(action({ input: { host: "example.com" } }))).decision).toBe(
+      "ask",
+    );
   });
 });
 
@@ -197,7 +211,9 @@ describe("computeActionDigest", () => {
 describe("summary", () => {
   it("contains the tool name, key params, and the risk tier", async () => {
     const engine = new PolicyEngineImpl([]);
-    const v = await engine.evaluate(action({ input: { path: "/tmp/notes.txt", host: "example.com" } }));
+    const v = await engine.evaluate(
+      action({ input: { path: "/tmp/notes.txt", host: "example.com" } }),
+    );
     expect(v.summary).toContain('"fs.read"');
     expect(v.summary).toContain("/tmp/notes.txt");
     expect(v.summary).toContain("example.com");

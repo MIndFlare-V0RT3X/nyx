@@ -151,7 +151,9 @@ async function checkDockerAvailable(
   const available = await checkDocker();
   return {
     status: available ? "ok" : "warn",
-    detail: available ? "docker CLI reachable" : "docker CLI not reachable (docker sandbox would fail)",
+    detail: available
+      ? "docker CLI reachable"
+      : "docker CLI not reachable (docker sandbox would fail)",
     available,
     skipped: false,
   };
@@ -170,7 +172,12 @@ async function checkProviders(
   for (const [id, entry] of entries) {
     if (entry.kind === "mock") {
       okCount += 1;
-      checks.push({ name: `provider ${id}`, status: "ok", detail: "mock (offline)", critical: false });
+      checks.push({
+        name: `provider ${id}`,
+        status: "ok",
+        detail: "mock (offline)",
+        critical: false,
+      });
       continue;
     }
     let provider: ModelProvider | undefined;
@@ -253,7 +260,12 @@ function checkSandbox(
     };
   }
   if (docker.skipped) {
-    return { name: "sandbox", status: "skip", detail: 'provider "docker" (docker check skipped)', critical: true };
+    return {
+      name: "sandbox",
+      status: "skip",
+      detail: 'provider "docker" (docker check skipped)',
+      critical: true,
+    };
   }
   return {
     name: "sandbox",

@@ -84,10 +84,7 @@ async function realpathAllowMissing(p: string, follows: number): Promise<string>
  * points outside). Returns the verified real path — callers should perform
  * the actual fs operation on the returned value, not on their original input.
  */
-export async function assertRealpathContained(
-  workdir: string,
-  target: string,
-): Promise<string> {
+export async function assertRealpathContained(workdir: string, target: string): Promise<string> {
   const base = path.resolve(workdir);
   const resolved = resolveContained(base, target);
   const realBase = await fsp.realpath(base);

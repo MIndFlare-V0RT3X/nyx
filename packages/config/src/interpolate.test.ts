@@ -82,9 +82,9 @@ describe("interpolateEnvVars", () => {
   });
 
   it("throws ConfigError naming var, file, and field path for a missing var", () => {
-    expect(() => interpolateEnvVars({ server: { auth: { owner_token: "${NOPE}" } } }, {}, FILE)).toThrow(
-      ConfigError,
-    );
+    expect(() =>
+      interpolateEnvVars({ server: { auth: { owner_token: "${NOPE}" } } }, {}, FILE),
+    ).toThrow(ConfigError);
     try {
       interpolateEnvVars({ server: { auth: { owner_token: "${NOPE}" } } }, {}, FILE);
       expect.unreachable("must throw");

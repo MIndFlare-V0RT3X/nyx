@@ -15,7 +15,12 @@ import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
 import { z } from "zod";
-import { toSerializedError, type ApprovalRecord, type Logger, type SessionStore } from "@nyx/protocol";
+import {
+  toSerializedError,
+  type ApprovalRecord,
+  type Logger,
+  type SessionStore,
+} from "@nyx/protocol";
 import { authenticate, type ResolvedAuth } from "./auth.js";
 
 export const WS_PATH = "/v1/ws";
@@ -55,7 +60,11 @@ interface ConnectionState {
   subscriptions: Map<string, Subscription>;
 }
 
-type RawEvent = { type: "event"; event: unknown } | { type: "approvals"; session_id: string; records: ApprovalRecord[] } | { type: "pong" } | { type: "error"; message: string };
+type RawEvent =
+  | { type: "event"; event: unknown }
+  | { type: "approvals"; session_id: string; records: ApprovalRecord[] }
+  | { type: "pong" }
+  | { type: "error"; message: string };
 
 function send(conn: ConnectionState, frame: RawEvent): void {
   if (conn.ws.readyState === WebSocket.OPEN) conn.ws.send(JSON.stringify(frame));
@@ -143,16 +152,14 @@ export function injectWebSocketServer(server: Server, deps: WebSocketDeps): WebS
           void pump(conn, msg.session_id, msg.from_seq ?? 0);
           // Push the current pending approvals so a late subscriber can
           // render an approval prompt immediately.
-          void deps
-            .pendingApprovals(msg.session_id)
-            .then(
-              (records) => {
-                if (records.length > 0) {
-                  send(conn, { type: "approvals", session_id: msg.session_id, records });
-                }
-              },
-              (err) => log.warn("ws.pending_approvals_failed", { error: toSerializedError(err) }),
-            );
+          void deps.pendingApprovals(msg.session_id).then(
+            (records) => {
+              if (records.length > 0) {
+                send(conn, { type: "approvals", session_id: msg.session_id, records });
+              }
+            },
+            (err) => log.warn("ws.pending_approvals_failed", { error: toSerializedError(err) }),
+          );
         })
         .catch((err) => log.warn("ws.subscribe_failed", { error: toSerializedError(err) }));
     });

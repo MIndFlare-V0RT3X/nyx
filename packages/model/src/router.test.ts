@@ -97,7 +97,12 @@ describe("ModelRouterImpl", () => {
   it("falls back to the second provider on a retryable rate_limit error", async () => {
     const first = new FakeProvider(
       "first",
-      throwObject({ name: "ProviderError", message: "slow down", code: "rate_limit", retryable: true }),
+      throwObject({
+        name: "ProviderError",
+        message: "slow down",
+        code: "rate_limit",
+        retryable: true,
+      }),
     );
     const second = new FakeProvider("second", () => textStream("from second"));
     const registry = new ProviderRegistryImpl();
@@ -106,7 +111,14 @@ describe("ModelRouterImpl", () => {
     const { logger, lines } = capturingLogger();
     const router = new ModelRouterImpl(
       registry,
-      { default: { chain: [{ provider: "first", model: "m1" }, { provider: "second", model: "m2" }] } },
+      {
+        default: {
+          chain: [
+            { provider: "first", model: "m1" },
+            { provider: "second", model: "m2" },
+          ],
+        },
+      },
       logger,
     );
 
@@ -121,8 +133,18 @@ describe("ModelRouterImpl", () => {
 
     const selected = lines.filter((l) => l.msg === "route.selected");
     expect(selected).toHaveLength(2);
-    expect(selected[0]?.ctx).toMatchObject({ task: "default", provider: "first", model: "m1", attempt: 1 });
-    expect(selected[1]?.ctx).toMatchObject({ task: "default", provider: "second", model: "m2", attempt: 2 });
+    expect(selected[0]?.ctx).toMatchObject({
+      task: "default",
+      provider: "first",
+      model: "m1",
+      attempt: 1,
+    });
+    expect(selected[1]?.ctx).toMatchObject({
+      task: "default",
+      provider: "second",
+      model: "m2",
+      attempt: 2,
+    });
     const fallbacks = lines.filter((l) => l.msg === "route.fallback");
     expect(fallbacks).toHaveLength(1);
     expect(fallbacks[0]?.ctx).toMatchObject({ from: "first", to: "second", code: "rate_limit" });
@@ -131,7 +153,12 @@ describe("ModelRouterImpl", () => {
   it("propagates the error when fallback_on excludes the failure code", async () => {
     const first = new FakeProvider(
       "first",
-      throwObject({ name: "ProviderError", message: "slow down", code: "rate_limit", retryable: true }),
+      throwObject({
+        name: "ProviderError",
+        message: "slow down",
+        code: "rate_limit",
+        retryable: true,
+      }),
     );
     const second = new FakeProvider("second", () => textStream("unused"));
     const registry = new ProviderRegistryImpl();
@@ -139,7 +166,10 @@ describe("ModelRouterImpl", () => {
     registry.register(second);
     const router = new ModelRouterImpl(registry, {
       default: {
-        chain: [{ provider: "first", model: "m1" }, { provider: "second", model: "m2" }],
+        chain: [
+          { provider: "first", model: "m1" },
+          { provider: "second", model: "m2" },
+        ],
         fallback_on: ["server_error", "timeout"],
       },
     });
@@ -161,7 +191,12 @@ describe("ModelRouterImpl", () => {
     registry.register(first);
     registry.register(second);
     const router = new ModelRouterImpl(registry, {
-      default: { chain: [{ provider: "first", model: "m1" }, { provider: "second", model: "m2" }] },
+      default: {
+        chain: [
+          { provider: "first", model: "m1" },
+          { provider: "second", model: "m2" },
+        ],
+      },
     });
 
     await expect(collect(router.complete(req))).rejects.toMatchObject({ code: "auth" });
@@ -181,7 +216,12 @@ describe("ModelRouterImpl", () => {
     registry.register(first);
     registry.register(second);
     const router = new ModelRouterImpl(registry, {
-      default: { chain: [{ provider: "first", model: "m1" }, { provider: "second", model: "m2" }] },
+      default: {
+        chain: [
+          { provider: "first", model: "m1" },
+          { provider: "second", model: "m2" },
+        ],
+      },
     });
     await expect(collect(router.complete(req))).rejects.toMatchObject({ message: "two" });
   });
@@ -193,12 +233,21 @@ describe("ModelRouterImpl", () => {
     const { logger, lines } = capturingLogger();
     const router = new ModelRouterImpl(
       registry,
-      { default: { chain: [{ provider: "ghost", model: "m0" }, { provider: "real", model: "m1" }] } },
+      {
+        default: {
+          chain: [
+            { provider: "ghost", model: "m0" },
+            { provider: "real", model: "m1" },
+          ],
+        },
+      },
       logger,
     );
     const chunks = await collect(router.complete(req));
     expect(chunks[0]).toEqual({ type: "text.delta", text: "made it" });
-    expect(lines.some((l) => l.msg === "route.fallback" && l.ctx?.code === "provider_missing")).toBe(true);
+    expect(
+      lines.some((l) => l.msg === "route.fallback" && l.ctx?.code === "provider_missing"),
+    ).toBe(true);
   });
 
   it("applies step overrides (model, max_tokens, reasoning_effort, tool_choice) to the request", async () => {
@@ -255,15 +304,22 @@ describe("ModelRouterImpl", () => {
     const router = new ModelRouterImpl(registry, { default: { chain: [] } }, logger);
     const models = await router.listModels();
     expect(models.map((m) => m.id)).toEqual(["a1", "b1"]);
-    expect(lines.some((l) => l.msg === "route.list_models_failed" && l.ctx?.provider === "bad")).toBe(true);
+    expect(
+      lines.some((l) => l.msg === "route.list_models_failed" && l.ctx?.provider === "bad"),
+    ).toBe(true);
   });
 
   it("accumulates usage per session and checkBudget flips to exceeded", () => {
-    const router = new ModelRouterImpl(new ProviderRegistryImpl(), { default: { chain: [] } }, undefined, {
-      per_turn_tokens: 500,
-      per_session_tokens: 1000,
-      on_exceed: "ask",
-    });
+    const router = new ModelRouterImpl(
+      new ProviderRegistryImpl(),
+      { default: { chain: [] } },
+      undefined,
+      {
+        per_turn_tokens: 500,
+        per_session_tokens: 1000,
+        on_exceed: "ask",
+      },
+    );
     const initial = router.checkBudget("s1");
     expect(initial).toMatchObject({ exceeded: false, used: 0, limit: 1000, on_exceed: "ask" });
 
@@ -281,7 +337,10 @@ describe("ModelRouterImpl", () => {
 
   it("never exceeds an unconfigured budget", () => {
     const router = new ModelRouterImpl(new ProviderRegistryImpl(), { default: { chain: [] } });
-    router.recordUsage("s", { input_tokens: Number.MAX_SAFE_INTEGER, output_tokens: Number.MAX_SAFE_INTEGER });
+    router.recordUsage("s", {
+      input_tokens: Number.MAX_SAFE_INTEGER,
+      output_tokens: Number.MAX_SAFE_INTEGER,
+    });
     expect(router.checkBudget("s").exceeded).toBe(false);
   });
 });

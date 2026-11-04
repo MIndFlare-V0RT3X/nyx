@@ -11,21 +11,35 @@ a tag boost); the embedding path exists only as a seam.
 
 ```ts
 class MemoryStoreImpl implements MemoryStore {
-  constructor(rootDir: string, opts?: {
-    episode_expiry_days?: number; // default 30
-    embedder?: Embedder;          // Phase 0 seam, not consumed by search
-  })
-  write(entry: Omit<MemoryEntry, "id" | "created_at" | "updated_at">): Promise<MemoryEntry>
-  search(query: string, opts?: MemorySearchOptions): Promise<Array<MemoryEntry & { score: number }>>
-  get(id: string): Promise<MemoryEntry | null>
-  list(opts?: { scope?: MemoryScope[]; kind?: MemoryEntry["kind"]; limit?: number }): Promise<MemoryEntry[]>
-  compact(): Promise<{ merged: number; dropped: number }>
-  close(): void
+  constructor(
+    rootDir: string,
+    opts?: {
+      episode_expiry_days?: number; // default 30
+      embedder?: Embedder; // Phase 0 seam, not consumed by search
+    },
+  );
+  write(entry: Omit<MemoryEntry, "id" | "created_at" | "updated_at">): Promise<MemoryEntry>;
+  search(
+    query: string,
+    opts?: MemorySearchOptions,
+  ): Promise<Array<MemoryEntry & { score: number }>>;
+  get(id: string): Promise<MemoryEntry | null>;
+  list(opts?: {
+    scope?: MemoryScope[];
+    kind?: MemoryEntry["kind"];
+    limit?: number;
+  }): Promise<MemoryEntry[]>;
+  compact(): Promise<{ merged: number; dropped: number }>;
+  close(): void;
 }
 
-class NoopEmbedder implements Embedder { embed(text: string): Promise<number[]> } // → []
-class MemoryValidationError extends Error { code: "validation_failed" }
-function sanitizeFtsQuery(query: string): string
+class NoopEmbedder implements Embedder {
+  embed(text: string): Promise<number[]>;
+} // → []
+class MemoryValidationError extends Error {
+  code: "validation_failed";
+}
+function sanitizeFtsQuery(query: string): string;
 ```
 
 `MemoryEntry`, `MemoryStore`, `MemorySearchOptions`, `MemoryScope`, and
@@ -61,6 +75,7 @@ source:
 created_at: 1700000000000
 updated_at: 1700000000000
 ---
+
 primary db runs postgres 16 with streaming replication
 ```
 
@@ -111,7 +126,7 @@ line 2). CRLF input is normalized to LF on parse.
 - A memory body containing a line that is exactly `---` would terminate the
   frontmatter early and fail validation. Don't write horizontal rules as the
   first body line of a memory.
-- `compact` groups duplicates on *indexed* content; a file hand-edited after
+- `compact` groups duplicates on _indexed_ content; a file hand-edited after
   indexing without any intervening read participates in grouping with its
   stale content (the survivor selection still refreshes through `get`).
 

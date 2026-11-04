@@ -41,14 +41,29 @@ export const SerializedErrorSchema = z.object({
 export const ToolOutputSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), text: z.string() }),
   z.object({ kind: z.literal("json"), json: z.unknown() }),
-  z.object({ kind: z.literal("file"), path: z.string(), bytes: z.number().int().nonnegative(), mime: z.string() }),
-  z.object({ kind: z.literal("artifact"), artifact_id: z.string(), path: z.string(), bytes: z.number().int().nonnegative() }),
+  z.object({
+    kind: z.literal("file"),
+    path: z.string(),
+    bytes: z.number().int().nonnegative(),
+    mime: z.string(),
+  }),
+  z.object({
+    kind: z.literal("artifact"),
+    artifact_id: z.string(),
+    path: z.string(),
+    bytes: z.number().int().nonnegative(),
+  }),
 ]);
 
 export const ContentBlockSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("text"), text: z.string() }),
   z.object({ type: z.literal("image"), mime: z.string(), data_base64: z.string() }),
-  z.object({ type: z.literal("tool_use"), call_id: z.string(), name: z.string(), input: z.unknown() }),
+  z.object({
+    type: z.literal("tool_use"),
+    call_id: z.string(),
+    name: z.string(),
+    input: z.unknown(),
+  }),
   z.object({ type: z.literal("tool_result"), call_id: z.string(), output: ToolOutputSchema }),
   z.object({ type: z.literal("reasoning"), text: z.string(), encrypted: z.string().optional() }),
 ]);
@@ -69,7 +84,10 @@ export const ScopeTargetsSchema = z.object({
   cidrs: z.array(z.string()),
   domains: z.array(z.string()),
   ports: z
-    .object({ allow: z.array(z.number().int()).optional(), deny: z.array(z.number().int()).optional() })
+    .object({
+      allow: z.array(z.number().int()).optional(),
+      deny: z.array(z.number().int()).optional(),
+    })
     .optional(),
   exclude: z
     .object({ cidrs: z.array(z.string()).optional(), domains: z.array(z.string()).optional() })
@@ -86,7 +104,11 @@ export const EngagementSchema = z.object({
   rules: z.array(z.string()).optional(),
 });
 
-const SessionRef = { session_id: z.string(), turn_id: z.string(), ts: z.number().int().nonnegative() };
+const SessionRef = {
+  session_id: z.string(),
+  turn_id: z.string(),
+  ts: z.number().int().nonnegative(),
+};
 
 export const SessionEventSchema = z.discriminatedUnion("type", [
   z.object({
@@ -99,13 +121,37 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
     ts: z.number().int().nonnegative(),
   }),
   z.object({ type: z.literal("turn.started"), ...SessionRef }),
-  z.object({ type: z.literal("message.user"), ...SessionRef, content: z.array(ContentBlockSchema) }),
-  z.object({ type: z.literal("message.assistant"), ...SessionRef, content: z.array(ContentBlockSchema) }),
+  z.object({
+    type: z.literal("message.user"),
+    ...SessionRef,
+    content: z.array(ContentBlockSchema),
+  }),
+  z.object({
+    type: z.literal("message.assistant"),
+    ...SessionRef,
+    content: z.array(ContentBlockSchema),
+  }),
   z.object({ type: z.literal("text.delta"), ...SessionRef, text: z.string() }),
   z.object({ type: z.literal("reasoning.delta"), ...SessionRef, text: z.string() }),
-  z.object({ type: z.literal("tool.call"), ...SessionRef, call_id: z.string(), name: z.string(), input: z.unknown() }),
-  z.object({ type: z.literal("tool.result"), ...SessionRef, call_id: z.string(), output: ToolOutputSchema }),
-  z.object({ type: z.literal("tool.error"), ...SessionRef, call_id: z.string(), error: SerializedErrorSchema }),
+  z.object({
+    type: z.literal("tool.call"),
+    ...SessionRef,
+    call_id: z.string(),
+    name: z.string(),
+    input: z.unknown(),
+  }),
+  z.object({
+    type: z.literal("tool.result"),
+    ...SessionRef,
+    call_id: z.string(),
+    output: ToolOutputSchema,
+  }),
+  z.object({
+    type: z.literal("tool.error"),
+    ...SessionRef,
+    call_id: z.string(),
+    error: SerializedErrorSchema,
+  }),
   z.object({
     type: z.literal("action.denied"),
     ...SessionRef,
@@ -142,7 +188,13 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("turn.completed"), ...SessionRef, usage: UsageSchema }),
   z.object({ type: z.literal("turn.failed"), ...SessionRef, error: SerializedErrorSchema }),
-  z.object({ type: z.literal("session.forked"), session_id: z.string(), new_session_id: z.string(), at_seq: z.number().int().nonnegative(), ts: z.number().int().nonnegative() }),
+  z.object({
+    type: z.literal("session.forked"),
+    session_id: z.string(),
+    new_session_id: z.string(),
+    at_seq: z.number().int().nonnegative(),
+    ts: z.number().int().nonnegative(),
+  }),
 ]);
 
 export const StoredEventSchema = z.intersection(

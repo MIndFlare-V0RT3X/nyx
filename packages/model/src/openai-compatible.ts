@@ -203,9 +203,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     }
     try {
       const page = await this.client.models.list();
-      const ids = page.data
-        .map((m) => m.id)
-        .filter((id): id is string => typeof id === "string");
+      const ids = page.data.map((m) => m.id).filter((id): id is string => typeof id === "string");
       // Conservative defaults for unknown remote models.
       return ids.map((id) => ({
         id,

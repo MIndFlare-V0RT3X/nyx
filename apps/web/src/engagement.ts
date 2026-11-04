@@ -58,7 +58,9 @@ export function parseEngagementForm(input: EngagementFormInput, now: number): En
     authorized_at: now,
     expires_at: now + Math.round(expiryHours * HOUR_MS),
     targets: { cidrs, domains },
-    ...(input.title !== undefined && input.title.trim().length > 0 ? { title: input.title.trim() } : {}),
+    ...(input.title !== undefined && input.title.trim().length > 0
+      ? { title: input.title.trim() }
+      : {}),
   };
   return { engagement, problems: [] };
 }

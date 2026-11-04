@@ -17,7 +17,9 @@ function engagement(overrides: Partial<Engagement> = {}): Engagement {
 }
 
 describe("checkTarget — CIDR scope for IP literals", () => {
-  const eng = engagement({ targets: { cidrs: ["10.0.0.0/8", "192.168.1.0/24", "2001:db8::/32"], domains: [] } });
+  const eng = engagement({
+    targets: { cidrs: ["10.0.0.0/8", "192.168.1.0/24", "2001:db8::/32"], domains: [] },
+  });
 
   it("allows IPs inside a CIDR and reports the matching CIDR", () => {
     const r = checkTarget(eng, { host: "10.255.0.1", port: 443 }, NOW);
@@ -174,7 +176,10 @@ describe("checkTarget — expiry", () => {
 describe("makeScopeChecker", () => {
   it("closes over the engagement and uses Date.now by default", () => {
     // Far-future expiry so the real wall clock (the default `now`) is in scope.
-    const eng = engagement({ expires_at: Date.now() + 3_600_000, targets: { cidrs: [], domains: ["example.com"] } });
+    const eng = engagement({
+      expires_at: Date.now() + 3_600_000,
+      targets: { cidrs: [], domains: ["example.com"] },
+    });
     const checker = makeScopeChecker(eng);
     expect(checker({ host: "app.example.com", port: 443 })).toEqual({
       allowed: true,
@@ -214,7 +219,10 @@ describe("validateTargets", () => {
   });
 
   it("rejects bad CIDR syntax and out-of-range prefixes", () => {
-    const problems = validateTargets({ cidrs: ["10.0.0.0/8", "banana", "10.0.0.0/33", "2001:db8::/129"], domains: [] });
+    const problems = validateTargets({
+      cidrs: ["10.0.0.0/8", "banana", "10.0.0.0/33", "2001:db8::/129"],
+      domains: [],
+    });
     expect(problems).toContain('invalid CIDR: "banana"');
     expect(problems).toContain('invalid CIDR: "10.0.0.0/33"');
     expect(problems).toContain('invalid CIDR: "2001:db8::/129"');
@@ -224,7 +232,15 @@ describe("validateTargets", () => {
   it("rejects non-registrable domain syntax", () => {
     const problems = validateTargets({
       cidrs: [],
-      domains: ["example.com", "localhost", "-bad.com", "a..b", "example.com.", "exa mple.com", "x"],
+      domains: [
+        "example.com",
+        "localhost",
+        "-bad.com",
+        "a..b",
+        "example.com.",
+        "exa mple.com",
+        "x",
+      ],
     });
     expect(problems).toContain('invalid domain: "localhost"');
     expect(problems).toContain('invalid domain: "-bad.com"');

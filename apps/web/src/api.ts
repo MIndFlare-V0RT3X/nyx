@@ -3,13 +3,7 @@
 // normalized into an ApiError carrying the error envelope's {code, message}
 // plus the HTTP status; network failures get code "network" and status 0.
 
-import type {
-  ApprovalRecord,
-  ContentBlock,
-  Engagement,
-  Projection,
-  SessionMeta,
-} from "./types.js";
+import type { ApprovalRecord, ContentBlock, Engagement, Projection, SessionMeta } from "./types.js";
 
 export class ApiError extends Error {
   readonly code: string;
@@ -50,7 +44,9 @@ export interface ModelInfo {
   id: string;
   context_window: number;
   max_output: number;
-  supports: Array<"tools" | "vision" | "reasoning" | "reasoning_retained" | "json_schema" | "streaming_tools">;
+  supports: Array<
+    "tools" | "vision" | "reasoning" | "reasoning_retained" | "json_schema" | "streaming_tools"
+  >;
 }
 
 export interface HealthInfo {
@@ -68,7 +64,11 @@ export interface ApiClient {
   createSession(input: CreateSessionInput): Promise<SessionMeta>;
   getSession(id: string): Promise<SessionDetail>;
   forkSession(id: string, atSeq: number): Promise<SessionMeta>;
-  postTurn(id: string, content: { text: string } | ContentBlock[], task?: string): Promise<TurnAccepted>;
+  postTurn(
+    id: string,
+    content: { text: string } | ContentBlock[],
+    task?: string,
+  ): Promise<TurnAccepted>;
   listApprovals(sessionId: string): Promise<ApprovalRecord[]>;
   resolveApproval(id: string, decision: "allow" | "deny"): Promise<ApprovalRecord>;
   listModels(): Promise<ModelInfo[]>;
@@ -99,18 +99,25 @@ export function createClient(options: ApiClientOptions): ApiClient {
 
   const query = (params: Record<string, string | number | undefined>): string => {
     const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== "");
-    return entries.length === 0 ? "" : `?${entries.map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join("&")}`;
+    return entries.length === 0
+      ? ""
+      : `?${entries.map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join("&")}`;
   };
 
   return {
     baseUrl: base,
     token,
     listSessions: (opts) =>
-      request<SessionMeta[]>("GET", `/v1/sessions${query({ limit: opts?.limit, owner_id: opts?.owner_id })}`),
+      request<SessionMeta[]>(
+        "GET",
+        `/v1/sessions${query({ limit: opts?.limit, owner_id: opts?.owner_id })}`,
+      ),
     createSession: (input) => request<SessionMeta>("POST", "/v1/sessions", input),
     getSession: (id) => request<SessionDetail>("GET", `/v1/sessions/${encodeURIComponent(id)}`),
     forkSession: (id, atSeq) =>
-      request<SessionMeta>("POST", `/v1/sessions/${encodeURIComponent(id)}/fork`, { at_seq: atSeq }),
+      request<SessionMeta>("POST", `/v1/sessions/${encodeURIComponent(id)}/fork`, {
+        at_seq: atSeq,
+      }),
     postTurn: (id, content, task) =>
       request<TurnAccepted>(
         "POST",

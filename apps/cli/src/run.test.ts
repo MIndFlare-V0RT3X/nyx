@@ -121,7 +121,9 @@ describe("runOneShot", () => {
       expect(out.stdout.toString()).toContain("turn finished after the denial");
       const stderr = out.stderr.toString();
       expect(stderr).toContain("⏸ approval required:");
-      expect(stderr).toContain("approval required in non-interactive mode — denied; use `nyx chat`");
+      expect(stderr).toContain(
+        "approval required in non-interactive mode — denied; use `nyx chat`",
+      );
       expect(stderr).toContain("✗ web.fetch: denied (approval)");
       // The denial path must actually have waited for the grace period, and
       // must not have hung: comfortably between 2s and a 10s sanity bound.
@@ -183,7 +185,9 @@ describe("runOneShot", () => {
       config: rig.config,
       data_dir: rig.dirs.data,
       message: "fail please",
-      providers: [scriptedMock([{ fail: { name: "ProviderError", message: "mock provider exploded" } }])],
+      providers: [
+        scriptedMock([{ fail: { name: "ProviderError", message: "mock provider exploded" } }]),
+      ],
       stdout: out.stdout,
       stderr: out.stderr,
     });

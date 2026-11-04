@@ -152,7 +152,11 @@ describe("configSchema", () => {
     const result = configSchema.safeParse({
       ...MINIMAL,
       providers: {
-        local: { kind: "openai", base_url: "http://127.0.0.1:8080/v1", models: [{ id: "m", context_window: 8, max_output: 4 }] },
+        local: {
+          kind: "openai",
+          base_url: "http://127.0.0.1:8080/v1",
+          models: [{ id: "m", context_window: 8, max_output: 4 }],
+        },
       },
     });
     expect(result.success).toBe(true);
@@ -166,9 +170,7 @@ describe("configSchema", () => {
 describe("chainSchema", () => {
   it("requires at least one step", () => {
     expect(chainSchema.safeParse([]).success).toBe(false);
-    expect(
-      chainSchema.safeParse([{ provider: "mock", model: "m" }]).success,
-    ).toBe(true);
+    expect(chainSchema.safeParse([{ provider: "mock", model: "m" }]).success).toBe(true);
   });
 
   it("rejects unknown keys inside a chain step", () => {
@@ -178,9 +180,7 @@ describe("chainSchema", () => {
     expect(
       result.error.issues.some(
         (i) =>
-          i.code === "unrecognized_keys" &&
-          i.path.join(".") === "0" &&
-          i.keys.includes("modle"),
+          i.code === "unrecognized_keys" && i.path.join(".") === "0" && i.keys.includes("modle"),
       ),
     ).toBe(true);
   });
@@ -203,7 +203,14 @@ describe("policy rule mirror", () => {
   it("accepts a full PolicyRule and infers the protocol-compatible shape", () => {
     const rule: PolicyRule = {
       id: "allow-r0",
-      match: { risk: "R0", capability: ["fs.read"], tool: ["fs.read", "fs.list"], owner_only: false, path_prefix: "/tmp", host: "example.test" },
+      match: {
+        risk: "R0",
+        capability: ["fs.read"],
+        tool: ["fs.read", "fs.list"],
+        owner_only: false,
+        path_prefix: "/tmp",
+        host: "example.test",
+      },
       decision: "allow",
       reason: "read-only",
       immutable: true,

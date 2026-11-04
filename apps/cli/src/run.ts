@@ -73,13 +73,17 @@ function renderEvent(
       stderr.write(`→ ${event.name} ${truncate(compactJson(event.input), 120)}\n`);
       return "";
     case "tool.result":
-      stderr.write(`✓ ${callNames.get(event.call_id) ?? event.call_id} ${describeToolOutput(event.output)}\n`);
+      stderr.write(
+        `✓ ${callNames.get(event.call_id) ?? event.call_id} ${describeToolOutput(event.output)}\n`,
+      );
       return "";
     case "tool.error":
       stderr.write(`✗ ${callNames.get(event.call_id) ?? event.call_id}: ${event.error.message}\n`);
       return "";
     case "action.denied":
-      stderr.write(`✗ ${callNames.get(event.call_id) ?? event.call_id}: denied (${event.reason}) ${truncate(event.detail, 100)}\n`);
+      stderr.write(
+        `✗ ${callNames.get(event.call_id) ?? event.call_id}: denied (${event.reason}) ${truncate(event.detail, 100)}\n`,
+      );
       return "";
     default:
       return "";
@@ -161,7 +165,10 @@ export async function runOneShot(opts: RunOneShotOptions): Promise<RunOneShotRes
     }
     if (result.failed) {
       const failed = result.events.find((e) => e.type === "turn.failed");
-      const message = failed !== undefined && failed.type === "turn.failed" ? failed.error.message : "unknown error";
+      const message =
+        failed !== undefined && failed.type === "turn.failed"
+          ? failed.error.message
+          : "unknown error";
       stderr.write(`✗ turn failed: ${message}\n`);
       return { exit_code: 1, session_id, turn_id, assistant_text: assistantText, usage: null };
     }

@@ -48,7 +48,11 @@ interface Rig {
   runtime: ToolRuntime;
   events: SessionEvent[];
   sandbox: Sandbox;
-  exec: (name: string, input: unknown, call_id?: string) => Promise<ReturnType<ToolRuntime["execute"]>>;
+  exec: (
+    name: string,
+    input: unknown,
+    call_id?: string,
+  ) => Promise<ReturnType<ToolRuntime["execute"]>>;
 }
 
 async function makeRig(): Promise<Rig> {
@@ -87,7 +91,15 @@ async function makeRig(): Promise<Rig> {
   return { runtime, events, sandbox, exec };
 }
 
-type ToolOutputLike = { kind: string; text?: string; json?: unknown; path?: string; bytes?: number; mime?: string; artifact_id?: string };
+type ToolOutputLike = {
+  kind: string;
+  text?: string;
+  json?: unknown;
+  path?: string;
+  bytes?: number;
+  mime?: string;
+  artifact_id?: string;
+};
 
 function newDb(): { close(): void } {
   const db: { close(): void } = new Database(":memory:") as { close(): void };
@@ -119,8 +131,7 @@ describe("builtin tools", () => {
     const out = await rig.exec("fs.read", { path: "nope.txt" });
     expect(out.kind).toBe("text");
     const err = rig.events.find((e) => e.type === "tool.error") as
-      | { error: { code?: string } }
-      | undefined;
+      { error: { code?: string } } | undefined;
     expect(err?.error.code).toBe("tool_failed");
   });
 
@@ -158,7 +169,10 @@ describe("builtin tools", () => {
 
   it("fs.write writes the file and reports path + utf-8 byte count", async () => {
     const rig = await makeRig();
-    const out = await rig.exec("fs.write", { path: "out/note.txt".replace("out/", ""), content: "héllo" });
+    const out = await rig.exec("fs.write", {
+      path: "out/note.txt".replace("out/", ""),
+      content: "héllo",
+    });
     expect(out).toEqual({
       kind: "json",
       json: { path: path.join(rig.sandbox.workdir, "note.txt"), bytes: 6 },
@@ -171,8 +185,7 @@ describe("builtin tools", () => {
     const out = await rig.exec("fs.write", { path: "../../evil.txt", content: "nope" });
     expect(out).toEqual({ kind: "text", text: "error: path escapes the sandbox workdir" });
     const err = rig.events.find((e) => e.type === "tool.error") as
-      | { error: { code?: string } }
-      | undefined;
+      { error: { code?: string } } | undefined;
     expect(err?.error.code).toBe("path_escape");
     const entries = await rig.sandbox.list(".");
     expect(entries).toEqual([]);
@@ -203,9 +216,7 @@ describe("builtin tools", () => {
     const out = await rig.exec("shell.exec", { cmd: "sleep 5", timeout_ms: 250 }, "call-sleep");
     expect(out.kind).toBe("text");
     expect((out as { text: string }).text.startsWith("exit 137")).toBe(true);
-    const toolCall = rig.events.find((e) => e.type === "tool.call") as
-      | { name: string }
-      | undefined;
+    const toolCall = rig.events.find((e) => e.type === "tool.call") as { name: string } | undefined;
     expect(toolCall?.name).toBe("shell.exec");
   });
 

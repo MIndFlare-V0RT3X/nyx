@@ -18,10 +18,7 @@ function spec(extra: Partial<SandboxSpec> = {}): SandboxSpec {
   return { provider: "local", workdir: "", network: "none", ...extra };
 }
 
-async function withSandbox(
-  s: SandboxSpec,
-  fn: (sb: Sandbox) => Promise<void>,
-): Promise<void> {
+async function withSandbox(s: SandboxSpec, fn: (sb: Sandbox) => Promise<void>): Promise<void> {
   const sb = await provider.provision(s);
   try {
     await fn(sb);
@@ -98,7 +95,7 @@ describe("LocalSandboxProvider", () => {
       expect(res.exit_code).toBe(0);
       expect(res.stdout.trim()).toBe(path.join(sb.workdir, "sub"));
       // cwd that escapes the workdir is refused before spawning.
-      await expect(sb.exec("pwd", { cwd: "../..", })).rejects.toThrowError(PathEscapeError);
+      await expect(sb.exec("pwd", { cwd: "../.." })).rejects.toThrowError(PathEscapeError);
     });
   });
 
@@ -129,18 +126,15 @@ describe("LocalSandboxProvider", () => {
   });
 
   it("merges spec env and per-exec env", async () => {
-    await withSandbox(
-      spec({ env: { NYX_BASE_VAR: "from-spec" } }),
-      async (sb) => {
-        expect((await sb.exec("echo $NYX_BASE_VAR")).stdout).toBe("from-spec\n");
-        expect((await sb.exec("echo $FOO", { env: { FOO: "bar" } })).stdout).toBe("bar\n");
-        // per-exec env wins over the spec env
-        const res = await sb.exec("echo $NYX_BASE_VAR", {
-          env: { NYX_BASE_VAR: "override" },
-        });
-        expect(res.stdout).toBe("override\n");
-      },
-    );
+    await withSandbox(spec({ env: { NYX_BASE_VAR: "from-spec" } }), async (sb) => {
+      expect((await sb.exec("echo $NYX_BASE_VAR")).stdout).toBe("from-spec\n");
+      expect((await sb.exec("echo $FOO", { env: { FOO: "bar" } })).stdout).toBe("bar\n");
+      // per-exec env wins over the spec env
+      const res = await sb.exec("echo $NYX_BASE_VAR", {
+        env: { NYX_BASE_VAR: "override" },
+      });
+      expect(res.stdout).toBe("override\n");
+    });
   });
 
   it("caps captured output at 1 MB and flags truncation", async () => {

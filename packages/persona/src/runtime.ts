@@ -111,7 +111,10 @@ export class PersonaRuntimeImpl implements PersonaRuntime {
           "SKILLS_CATALOG",
           input.skills_catalog.length > 0
             ? input.skills_catalog
-                .map((s) => `- ${s.name}: ${s.description}${s.trigger ? ` — trigger: ${s.trigger}` : ""}`)
+                .map(
+                  (s) =>
+                    `- ${s.name}: ${s.description}${s.trigger ? ` — trigger: ${s.trigger}` : ""}`,
+                )
                 .join("\n")
             : "No skills installed.",
         ),
@@ -119,7 +122,9 @@ export class PersonaRuntimeImpl implements PersonaRuntime {
         section(
           "TOOLS_CATALOG",
           input.tools_catalog.length > 0
-            ? input.tools_catalog.map((t) => `- ${t.name} [risk ${t.risk}] — ${t.description}`).join("\n")
+            ? input.tools_catalog
+                .map((t) => `- ${t.name} [risk ${t.risk}] — ${t.description}`)
+                .join("\n")
             : "No tools installed.",
         ),
       SESSION_CONTEXT: () => section("SESSION_CONTEXT", renderSessionContext(input.session_facts)),

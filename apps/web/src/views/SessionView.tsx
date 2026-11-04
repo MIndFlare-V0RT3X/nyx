@@ -128,7 +128,12 @@ export function SessionView(props: {
           switch (item.kind) {
             case "message":
               return (
-                <MessageBubble key={item.id} role={item.role} content={item.content} toolCards={state.toolCards} />
+                <MessageBubble
+                  key={item.id}
+                  role={item.role}
+                  content={item.content}
+                  toolCards={state.toolCards}
+                />
               );
             case "streaming":
               return (
@@ -142,7 +147,9 @@ export function SessionView(props: {
               return (
                 <div key={item.id} className={`toolcard slim ${card?.status ?? "pending"}`}>
                   <span className="tool-name">⚙ {card?.name ?? item.callId}</span>
-                  <span className={`status status-${card?.status ?? "pending"}`}>{card?.status ?? "pending"}</span>
+                  <span className={`status status-${card?.status ?? "pending"}`}>
+                    {card?.status ?? "pending"}
+                  </span>
                 </div>
               );
             }
@@ -155,13 +162,13 @@ export function SessionView(props: {
             case "approval": {
               const approval = state.approvals[item.approvalId];
               if (approval === undefined) return null;
-                return (
-                  <p key={item.id} className="approval-line">
-                    approval {approval.risk} — {approval.decision}
-                    {approval.decidedBy !== null && <> by {approval.decidedBy}</>}
-                  </p>
-                );
-              }
+              return (
+                <p key={item.id} className="approval-line">
+                  approval {approval.risk} — {approval.decision}
+                  {approval.decidedBy !== null && <> by {approval.decidedBy}</>}
+                </p>
+              );
+            }
             case "turn-error":
               return (
                 <p key={item.id} className="inline-error">
@@ -175,7 +182,11 @@ export function SessionView(props: {
         <div ref={bottomRef} />
       </div>
 
-      <ApprovalPanel client={props.client} approvals={pendingApprovals} onResolved={() => undefined} />
+      <ApprovalPanel
+        client={props.client}
+        approvals={pendingApprovals}
+        onResolved={() => undefined}
+      />
       <UsageFooter usage={state.usage} turnActive={state.turnActive} />
 
       <form

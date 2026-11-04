@@ -52,7 +52,9 @@ describe("ApprovalEngineImpl", () => {
     const db = freshDb();
     new ApprovalEngineImpl(db, { now: () => 0 });
     const tables = db
-      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('approvals','audit')")
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('approvals','audit')",
+      )
       .all() as Array<{ name: string }>;
     expect(tables.map((t) => t.name).sort()).toEqual(["approvals", "audit"]);
   });
@@ -129,7 +131,9 @@ describe("ApprovalEngineImpl", () => {
     await engine.resolve(rec!.id, "deny", "owner");
     await p;
 
-    const row = db.prepare("SELECT actor, payload_json FROM audit WHERE action = 'approval.requested'").get() as {
+    const row = db
+      .prepare("SELECT actor, payload_json FROM audit WHERE action = 'approval.requested'")
+      .get() as {
       actor: string;
       payload_json: string;
     };
@@ -186,7 +190,9 @@ describe("ApprovalEngineImpl", () => {
     await expect(engine.consume(rec!.id, rec!.action_digest)).rejects.toMatchObject({
       code: "approval_denied",
     });
-    await expect(engine.consume("missing-id", "x")).rejects.toMatchObject({ code: "approval_denied" });
+    await expect(engine.consume("missing-id", "x")).rejects.toMatchObject({
+      code: "approval_denied",
+    });
   });
 
   it("resolve throws on double resolution", async () => {
@@ -312,7 +318,11 @@ describe("ApprovalEngineImpl", () => {
   it("openApprovalEngine opens a file-backed engine and close() shuts it down", async () => {
     const dir = await mkdtemp(tmpdir() + "/nyx-approval-");
     const path = dir + "/policy.db";
-    const { engine, close } = openApprovalEngine(path, { now: () => 9000, ttl_ms: 60_000, poll_ms: 2 });
+    const { engine, close } = openApprovalEngine(path, {
+      now: () => 9000,
+      ttl_ms: 60_000,
+      poll_ms: 2,
+    });
     const v = verdict();
     const p = engine.request(v, CTX);
     await until(async () => (await engine.pending("s1")).length === 1);

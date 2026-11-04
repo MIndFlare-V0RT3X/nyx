@@ -49,7 +49,13 @@ describe("zodToJsonSchema", () => {
 
 describe("jsonSchemaToZod", () => {
   it("accepts what the builtin schemas accept and rejects what they reject (round trip)", () => {
-    for (const original of [fsReadInput, fsListInput, fsWriteInput, shellExecInput, webFetchInput]) {
+    for (const original of [
+      fsReadInput,
+      fsListInput,
+      fsWriteInput,
+      shellExecInput,
+      webFetchInput,
+    ]) {
       const roundTripped = jsonSchemaToZod(zodToJsonSchema(original));
       expect(roundTripped.safeParse({ path: "a.txt" }).success).toBe(
         original.safeParse({ path: "a.txt" }).success,

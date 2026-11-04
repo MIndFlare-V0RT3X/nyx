@@ -22,7 +22,8 @@ import {
 } from "@nyx/model";
 
 /** What the built-in mock provider answers on every turn. */
-export const MOCK_PROVIDER_MESSAGE = "mock provider active — configure real providers in nyx.config.yaml";
+export const MOCK_PROVIDER_MESSAGE =
+  "mock provider active — configure real providers in nyx.config.yaml";
 
 /** Typed error for config-derived provider wiring failures. */
 export class ProviderConfigError extends Error {

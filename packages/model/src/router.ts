@@ -111,9 +111,7 @@ export class ModelRouterImpl implements ModelRouter {
       const effective: CompletionRequest = {
         ...req,
         model: step.model,
-        ...(step.reasoning_effort !== undefined
-          ? { reasoning_effort: step.reasoning_effort }
-          : {}),
+        ...(step.reasoning_effort !== undefined ? { reasoning_effort: step.reasoning_effort } : {}),
         ...(step.max_tokens !== undefined ? { max_tokens: step.max_tokens } : {}),
         ...(step.tool_choice !== undefined ? { tool_choice: step.tool_choice } : {}),
       };
@@ -178,7 +176,11 @@ export class ModelRouterImpl implements ModelRouter {
   }
 
   checkBudget(session_id: string): BudgetStatus {
-    const used = this.sessionUsage.get(session_id) ?? { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
+    const used = this.sessionUsage.get(session_id) ?? {
+      input_tokens: 0,
+      output_tokens: 0,
+      total_tokens: 0,
+    };
     const total =
       used.total_tokens ?? used.input_tokens + used.output_tokens + (used.reasoning_tokens ?? 0);
     return {
@@ -190,8 +192,7 @@ export class ModelRouterImpl implements ModelRouter {
   }
 
   private resolveRoute(task: string | undefined): ResolvedRoute {
-    const rule =
-      task !== undefined ? this.config.rules?.find((r) => r.task === task) : undefined;
+    const rule = task !== undefined ? this.config.rules?.find((r) => r.task === task) : undefined;
     const chosen = rule ?? this.config.default;
     return {
       chain: chosen.chain,

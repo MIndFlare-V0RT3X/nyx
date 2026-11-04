@@ -152,9 +152,7 @@ class LocalSandbox implements Sandbox {
     return fsp.writeFile(real, data);
   }
 
-  async list(
-    p: string,
-  ): Promise<Array<{ name: string; type: "file" | "dir"; size: number }>> {
+  async list(p: string): Promise<Array<{ name: string; type: "file" | "dir"; size: number }>> {
     const real = await assertRealpathContained(this.workdir, p);
     const names = (await fsp.readdir(real)).sort();
     const entries: Array<{ name: string; type: "file" | "dir"; size: number }> = [];
@@ -193,9 +191,7 @@ export class LocalSandboxProvider implements SandboxProvider {
 
   async provision(spec: SandboxSpec): Promise<Sandbox> {
     if (this.forceProd || process.env.NYX_ENV === "production") {
-      throw notImplemented(
-        "local sandbox is not allowed in production; use the docker provider",
-      );
+      throw notImplemented("local sandbox is not allowed in production; use the docker provider");
     }
     await fsp.mkdir(this.root, { recursive: true });
     const workdir = await fsp.mkdtemp(join(this.root, "nyx-sbx-"));

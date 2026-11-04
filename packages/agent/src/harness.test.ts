@@ -252,7 +252,10 @@ export class FakeMemoryStore implements MemoryStore {
     return full;
   }
 
-  async search(query: string, opts?: MemorySearchOptions): Promise<Array<MemoryEntry & { score: number }>> {
+  async search(
+    query: string,
+    opts?: MemorySearchOptions,
+  ): Promise<Array<MemoryEntry & { score: number }>> {
     const hits = (await this.list(opts)).filter((m) => m.content.includes(query));
     return hits.map((m) => ({ ...m, score: 1 }));
   }

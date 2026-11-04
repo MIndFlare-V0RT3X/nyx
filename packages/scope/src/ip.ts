@@ -33,11 +33,7 @@ export function parseIPv6(s: string): bigint | null {
   // Only hex digits, colons, and dots (dots only ever legal inside the
   // trailing embedded-IPv4 group, enforced below) are acceptable.
   for (const ch of str) {
-    const ok =
-      (ch >= "0" && ch <= "9") ||
-      (ch >= "a" && ch <= "f") ||
-      ch === ":" ||
-      ch === ".";
+    const ok = (ch >= "0" && ch <= "9") || (ch >= "a" && ch <= "f") || ch === ":" || ch === ".";
     if (!ok) return null;
   }
 

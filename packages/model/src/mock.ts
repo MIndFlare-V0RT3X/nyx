@@ -69,7 +69,10 @@ export class MockProvider implements ModelProvider {
   async *complete(_req: CompletionRequest): AsyncGenerator<ModelChunk, void, void> {
     const turn = this.turns.shift();
     if (turn === undefined) {
-      throw new ProviderError("mock script exhausted", { code: "provider_error", retryable: false });
+      throw new ProviderError("mock script exhausted", {
+        code: "provider_error",
+        retryable: false,
+      });
     }
     if (isFailTurn(turn)) {
       const safe = toSafeSerializedError(turn.fail);

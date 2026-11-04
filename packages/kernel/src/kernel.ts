@@ -47,9 +47,7 @@ export interface KernelOptions {
   tools?: ToolRegistry;
 }
 
-type EnforcementState =
-  | { plugin: string; manifest?: PluginManifest }
-  | { plugin: null };
+type EnforcementState = { plugin: string; manifest?: PluginManifest } | { plugin: null };
 
 interface LoadedPlugin {
   plugin: Plugin;
@@ -159,7 +157,10 @@ export class KernelImpl implements Kernel {
     this.#toolOwners.clear();
     this.#backingServices.clear();
     if (failures.length > 0) {
-      throw new AggregateError(failures, `kernel close: ${failures.length} plugin teardown(s) failed`);
+      throw new AggregateError(
+        failures,
+        `kernel close: ${failures.length} plugin teardown(s) failed`,
+      );
     }
   }
 
@@ -255,9 +256,8 @@ export class KernelImpl implements Kernel {
     const teardown = loaded.plugin.teardown;
     if (!teardown) return;
     try {
-      await this.#als.run(
-        { plugin: loaded.manifest.name, manifest: loaded.manifest },
-        () => teardown.call(loaded.plugin),
+      await this.#als.run({ plugin: loaded.manifest.name, manifest: loaded.manifest }, () =>
+        teardown.call(loaded.plugin),
       );
     } catch (err) {
       throw new PluginTeardownError(loaded.manifest.name, err);

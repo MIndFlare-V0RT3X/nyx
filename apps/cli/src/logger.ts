@@ -33,10 +33,7 @@ const LEVELS: ReadonlyArray<LogLevel> = ["debug", "info", "warn", "error"];
  * substring masking): every configured `redact` substring becomes `***`
  * anywhere it appears in the serialized line — keys or values.
  */
-export function createCliLogger(
-  logging: LoggingConfig,
-  options: CliLoggerOptions = {},
-): Logger {
+export function createCliLogger(logging: LoggingConfig, options: CliLoggerOptions = {}): Logger {
   const sink = options.sink ?? process.stderr;
   const needles = logging.redact.filter((needle) => needle.length > 0);
 
