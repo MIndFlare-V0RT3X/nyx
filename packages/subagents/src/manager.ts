@@ -41,6 +41,7 @@ import { toSerializedError } from "@nyx/protocol";
 import { createAgentLoop } from "@nyx/agent";
 import { ARTIFACTS_DIR, ensureArtifactsDir, forkSandbox } from "@nyx/sandbox";
 import {
+  MAX_ARTIFACT_BYTES,
   artifactNameOf,
   auditArtifactRead,
   lastWrittenHash,
@@ -86,11 +87,14 @@ export interface SubagentManager {
   /**
    * Phase 4 §4: the verified artifact handoff — copy a child's published
    * artifact into the parent's sandbox after matching the audited sha256.
+   * `reader_session_id` is the requesting session (the tool path's
+   * ToolContext): the read is parentage-checked against it.
    */
   readChildArtifact(
     subagent_session_id: string,
     path: string,
     dest: string | undefined,
+    reader_session_id: string,
     parent_ctx: RunContext,
   ): Promise<{ dest: string; bytes: number; sha256: string }>;
 }
@@ -147,7 +151,10 @@ export class SubagentManagerImpl implements SubagentManager {
   /** child session id → controller of a running subagent. */
   private readonly running = new Map<string, RunningChild>();
   /** Phase 4 §4: settled child session id → its (forked) sandbox, for reads. */
-  private readonly childSandboxes = new Map<string, { sandbox: Sandbox; at: number }>();
+  private readonly childSandboxes = new Map<
+    string,
+    { sandbox: Sandbox; parent_session_id: string; at: number }
+  >();
 
   constructor(private readonly deps: SubagentManagerDeps) {
     this.cfg = resolveSubagentsConfig(deps.config);
@@ -224,11 +231,27 @@ export class SubagentManagerImpl implements SubagentManager {
     //    that cannot fork is a CONFIGURATION error, not a child failure:
     //    spawn() rejects with not_supported before anything is created, and
     //    there is never a half-built child for it. forkSandbox never falls
-    //    back to sharing — the refusal is the point.
+    //    back to sharing — the refusal is the point. Any failure between the
+    //    fork and the child's existence (fork itself, the artifacts dir, the
+    //    session create) destroys the forked sandbox and rolls the turn's
+    //    budget allocation back — a subagent that never existed is never
+    //    charged, and an untracked sandbox is never orphaned (§6.2 R4-2/4).
     let childSandbox: Sandbox | undefined;
     if (this.cfg.sandbox_sharing === "fork") {
-      childSandbox = await forkSandbox(parent_ctx.sandbox);
-      await ensureArtifactsDir(childSandbox);
+      try {
+        childSandbox = await forkSandbox(parent_ctx.sandbox);
+        await ensureArtifactsDir(childSandbox);
+      } catch (err) {
+        this.turnSpend.set(spendKey, spent);
+        // R4-2: if the fork itself succeeded but a later step here threw, the
+        // forked sandbox is real and untracked — destroy it BEFORE the
+        // rethrow so no orphan ever escapes the retention bound. (If
+        // forkSandbox threw, childSandbox is undefined and this is a no-op.)
+        if (childSandbox !== undefined) {
+          await childSandbox.destroy().catch(() => undefined);
+        }
+        throw err;
+      }
     }
 
     // ── child session (§2.4c): kind subagent, parent lineage, persona +
@@ -247,12 +270,16 @@ export class SubagentManagerImpl implements SubagentManager {
     } catch (err) {
       this.turnSpend.set(spendKey, spent);
       if (childSandbox !== undefined) {
-        void childSandbox.destroy().catch(() => undefined); // the fork is now orphaned
+        await childSandbox.destroy().catch(() => undefined); // the fork is now orphaned
       }
       throw err;
     }
     if (childSandbox !== undefined) {
-      this.childSandboxes.set(child.session_id, { sandbox: childSandbox, at: this.now() });
+      this.childSandboxes.set(child.session_id, {
+        sandbox: childSandbox,
+        parent_session_id: parent.session_id,
+        at: this.now(),
+      });
       this.reapChildSandboxes();
     }
 
@@ -423,65 +450,89 @@ export class SubagentManagerImpl implements SubagentManager {
     const durationMs = Math.max(0, this.now() - startedAt);
     const externalAbort = runningChild.externalAbort;
 
-    // ── terminal state + mirrored terminal event (§2.4h–j).
+    // ── terminal state + mirrored terminal event (§2.4h–j). The whole
+    //    section is failure-finalized (§6.2 R4-6): a throw in a terminal
+    //    append must not escape spawn() raw — that would leave the child
+    //    "running" forever in list(), skip onSettled, and hand the parent a
+    //    tool.error instead of a SubagentResult. A failed terminal mirror
+    //    degrades the result to state="failed" with the append error.
     let state: SubagentResult["state"];
     let error: SerializedError | undefined;
-    if (parentAborted || externalAbort) {
-      state = "aborted";
-      await this.mirror(parent_ctx, parent.session_id, child.session_id, {
-        type: "subagent.aborted",
-        session_id: child.session_id,
-        subagent_session_id: child.session_id,
-        parent_session_id: parent.session_id,
-        reason: parentAborted ? "parent turn aborted" : runningChild.abortReason,
-        ts: this.now(),
-      });
-      error = {
-        name: "AbortError",
-        message: parentAborted ? "parent turn aborted" : "abort requested",
-        code: "aborted",
-      };
-    } else if (budgetExceeded) {
-      state = "budget_exceeded";
-      error = {
-        name: "BudgetExceededError",
-        message: `subagent budget of ${budget} tokens exceeded (${budgetRouter?.tokensCounted ?? 0} counted)`,
-        code: "budget_exceeded",
-      };
-      await this.mirror(parent_ctx, parent.session_id, child.session_id, {
-        type: "subagent.failed",
-        session_id: child.session_id,
-        subagent_session_id: child.session_id,
-        parent_session_id: parent.session_id,
-        error,
-        ts: this.now(),
-      });
-    } else if (turnFailure !== undefined) {
+    try {
+      if (parentAborted || externalAbort) {
+        state = "aborted";
+        await this.mirror(parent_ctx, parent.session_id, child.session_id, {
+          type: "subagent.aborted",
+          session_id: child.session_id,
+          subagent_session_id: child.session_id,
+          parent_session_id: parent.session_id,
+          reason: parentAborted ? "parent turn aborted" : runningChild.abortReason,
+          ts: this.now(),
+        });
+        error = {
+          name: "AbortError",
+          message: parentAborted ? "parent turn aborted" : "abort requested",
+          code: "aborted",
+        };
+      } else if (budgetExceeded) {
+        state = "budget_exceeded";
+        error = {
+          name: "BudgetExceededError",
+          message: `subagent budget of ${budget} tokens exceeded (${budgetRouter?.tokensCounted ?? 0} counted)`,
+          code: "budget_exceeded",
+        };
+        await this.mirror(parent_ctx, parent.session_id, child.session_id, {
+          type: "subagent.failed",
+          session_id: child.session_id,
+          subagent_session_id: child.session_id,
+          parent_session_id: parent.session_id,
+          error,
+          ts: this.now(),
+        });
+      } else if (turnFailure !== undefined) {
+        state = "failed";
+        error = turnFailure;
+        await this.mirror(parent_ctx, parent.session_id, child.session_id, {
+          type: "subagent.failed",
+          session_id: child.session_id,
+          subagent_session_id: child.session_id,
+          parent_session_id: parent.session_id,
+          error: turnFailure,
+          ts: this.now(),
+        });
+      } else {
+        state = "completed";
+        await this.mirror(parent_ctx, parent.session_id, child.session_id, {
+          type: "subagent.completed",
+          session_id: child.session_id,
+          subagent_session_id: child.session_id,
+          parent_session_id: parent.session_id,
+          summary,
+          tokens_used: tokensUsed,
+          duration_ms: durationMs,
+          ts: this.now(),
+        });
+      }
+    } catch (err) {
       state = "failed";
-      error = turnFailure;
-      await this.mirror(parent_ctx, parent.session_id, child.session_id, {
-        type: "subagent.failed",
-        session_id: child.session_id,
-        subagent_session_id: child.session_id,
-        parent_session_id: parent.session_id,
-        error: turnFailure,
-        ts: this.now(),
-      });
-    } else {
-      state = "completed";
-      await this.mirror(parent_ctx, parent.session_id, child.session_id, {
-        type: "subagent.completed",
-        session_id: child.session_id,
-        subagent_session_id: child.session_id,
-        parent_session_id: parent.session_id,
-        summary,
-        tokens_used: tokensUsed,
-        duration_ms: durationMs,
-        ts: this.now(),
-      });
+      error =
+        error !== undefined
+          ? error
+          : toSerializedError(
+              new SubagentError(
+                "spawn_failed",
+                `terminal event append failed for subagent ${child.session_id}: ${
+                  err instanceof Error ? err.message : String(err)
+                }`,
+              ),
+            );
     }
 
-    this.deps.onSettled?.(child.session_id, state);
+    try {
+      this.deps.onSettled?.(child.session_id, state);
+    } catch {
+      // A hook failure never masks the child's own result.
+    }
     // Phase 4 §4: what the child published — the artifact listing rides on
     // the result (path + bytes; the sha256s live on the audit chain and are
     // re-verified on every read). In inherit mode there is no artifacts/
@@ -595,12 +646,15 @@ export class SubagentManagerImpl implements SubagentManager {
    * artifact into the PARENT's sandbox, but only after recomputing the
    * content hash and matching it against the one recorded at the write
    * source on the audit chain. Tampered, corrupted, evicted or unverifiable
-   * artifacts are refused — never silently passed through.
+   * artifacts are refused — never silently passed through. Only the child's
+   * OWN parent may read (§6.2 R5-1: the map is process-global; parentage is
+   * checked per read, mirroring list()'s scoping).
    */
   async readChildArtifact(
     subagent_session_id: string,
     path: string,
     dest: string | undefined,
+    reader_session_id: string,
     parent_ctx: RunContext,
   ): Promise<{ dest: string; bytes: number; sha256: string }> {
     const name = artifactNameOf(path);
@@ -611,6 +665,12 @@ export class SubagentManagerImpl implements SubagentManager {
         `no readable sandbox for subagent ${subagent_session_id} (unknown session or its sandbox was reaped past the retention cap)`,
       );
     }
+    if (retained.parent_session_id !== reader_session_id) {
+      throw new SubagentError(
+        "not_found",
+        `subagent ${subagent_session_id} is not a child of the requesting session — refusing the cross-session artifact read`,
+      );
+    }
     const written = lastWrittenHash(this.deps.db, subagent_session_id, name);
     if (written === undefined) {
       throw new SubagentError(
@@ -619,6 +679,12 @@ export class SubagentManagerImpl implements SubagentManager {
       );
     }
     const content = await retained.sandbox.readFile(`${ARTIFACTS_DIR}/${name}`);
+    if (content.length > MAX_ARTIFACT_BYTES) {
+      throw new SubagentError(
+        "validation_failed",
+        `artifact "${name}" is ${content.length} bytes — above the ${MAX_ARTIFACT_BYTES}-byte handoff cap`,
+      );
+    }
     const sha256 = createHash("sha256").update(content).digest("hex");
     if (sha256 !== written.sha256) {
       throw new SubagentError(
@@ -627,15 +693,19 @@ export class SubagentManagerImpl implements SubagentManager {
           `(audited ${written.sha256.slice(0, 12)}…, read ${sha256.slice(0, 12)}…): refusing the handoff`,
       );
     }
+    // The full session id in the default dest — an 8-char prefix could
+    // collide and silently overwrite an earlier child's copy (§6.2 R5-6).
     const target =
       dest !== undefined && dest.length > 0
         ? dest
-        : `${ARTIFACTS_DIR}/${subagent_session_id.slice(0, 8)}/${name}`;
-    await parent_ctx.sandbox.writeFile(target, content);
+        : `${ARTIFACTS_DIR}/${subagent_session_id}/${name}`;
+    // Audit BEFORE the bytes move (§6.2 R5-10): if the append fails, no
+    // handoff happened — fail-closed, like the write side.
     if (this.deps.db !== undefined) {
       auditArtifactRead(
         this.deps.db,
         {
+          reader_session_id,
           child_session_id: subagent_session_id,
           path: name,
           dest: target,
@@ -645,21 +715,28 @@ export class SubagentManagerImpl implements SubagentManager {
         () => this.now(),
       );
     }
+    await parent_ctx.sandbox.writeFile(target, content);
     return { dest: target, bytes: content.length, sha256 };
   }
 
-  /** Leak bound: destroy the oldest retained child sandboxes past the cap. */
+  /**
+   * Leak bound: destroy the oldest retained child sandboxes past the cap —
+   * but NEVER a sandbox whose child is still running (§6.2 R4-1: the map is
+   * populated at spawn time, before the child turn runs; evicting a running
+   * child's sandbox would destroy its work mid-flight).
+   */
   private reapChildSandboxes(): void {
     while (this.childSandboxes.size > MAX_RETAINED_CHILD_SANDBOXES) {
       let oldestKey: string | undefined;
       let oldestAt = Infinity;
       for (const [key, entry] of this.childSandboxes) {
+        if (this.running.has(key)) continue; // live work is untouchable
         if (entry.at < oldestAt) {
           oldestAt = entry.at;
           oldestKey = key;
         }
       }
-      if (oldestKey === undefined) break;
+      if (oldestKey === undefined) break; // only running children remain — over cap, by design bounded by concurrency
       const evicted = this.childSandboxes.get(oldestKey)!;
       this.childSandboxes.delete(oldestKey);
       void evicted.sandbox.destroy().catch(() => {

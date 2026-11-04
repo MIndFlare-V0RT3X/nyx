@@ -12,11 +12,14 @@ import { verifyAuditChain } from "@nyx/policy";
 import type { Sandbox, ToolContext } from "@nyx/protocol";
 import { LocalSandboxProvider } from "@nyx/sandbox";
 import {
+  MAX_ARTIFACT_BYTES,
   SUBAGENT_ARTIFACT_TOOL,
   SUBAGENT_READ_ARTIFACT_TOOL,
   registerSubagentArtifactTools,
+  subagentArtifactTool,
 } from "./artifacts.js";
 import { makeSubagentHarness, type SubagentHarness } from "./harness.test.js";
+import type { SubagentManagerImpl } from "./manager.js";
 import { mockTextTurn } from "@nyx/model";
 
 /** The parent's pre-fork seed — what the forked children inherit and publish. */
@@ -328,5 +331,170 @@ describe("fork-per-child (§4.4)", () => {
     const childEvents = await h.store.read(result.session_id);
     expect(childEvents.some((e) => e.type === "tool.error")).toBe(true);
     expect(result.artifacts).toEqual([]);
+  });
+});
+
+describe("§6.2 fan-out hardening (fork isolation + artifact security)", () => {
+  it("R4-1: the LRU reap NEVER destroys a still-running child's sandbox", async () => {
+    const { h } = await makeForkHarness(true, { max_total_per_turn: 2_000_000 });
+    // Child #1 publishes, then HOLDS (a real duration) — it stays running.
+    h.provider.script("slow-kid", artifactTurn("slow.txt"), 500);
+    const slow = h.manager.spawn(
+      { task: "slow-kid" },
+      h.parentCtx,
+      { session_id: h.parent.session_id, turn_id: "t1" },
+    );
+    // Wait until it is provably running, then bury the map with 8 settled
+    // siblings — the oldest settled entry (not the running one) is evicted.
+    await new Promise((r) => setTimeout(r, 80));
+    expect((await h.manager.list(h.parent.session_id))[0]!.state).toBe("running");
+    for (let i = 0; i < 8; i++) {
+      h.provider.script(`fill-${i}`, artifactTurn(`fill-${i}.txt`));
+      const r = await h.manager.spawn(
+        { task: `fill-${i}` },
+        h.parentCtx,
+        { session_id: h.parent.session_id, turn_id: "t1" },
+      );
+      expect(r.state).toBe("completed");
+    }
+    const settled = await slow; // the running child survives the storm
+    expect(settled.state).toBe("completed");
+    expect(settled.artifacts).toEqual([{ path: "artifacts/slow.txt", bytes: SEED.length }]);
+
+    // And its artifact is STILL readable — the sandbox was never destroyed.
+    h.manager.bindTurn(h.parent.session_id, "read-turn", h.parentCtx);
+    const handler = h.toolRegistry.get(SUBAGENT_READ_ARTIFACT_TOOL)!.handler;
+    const out = await handler.execute(
+      {
+        call_id: "r",
+        name: SUBAGENT_READ_ARTIFACT_TOOL,
+        input: { subagent_session_id: settled.session_id, path: "slow.txt" },
+      },
+      fakeCtx(h, "read-turn"),
+    );
+    expect((out as { json: { bytes: number } }).json.bytes).toBe(SEED.length);
+  });
+
+  it("R4-2/R4-4: a fork/artifacts-dir failure destroys the sandbox and rolls the budget back", async () => {
+    const { h } = await makeForkHarness();
+    let brokenDestroyed = false;
+    const brokenChild: Sandbox = {
+      id: "broken-fork",
+      workdir: "/tmp/broken",
+      exec: async () => ({ exit_code: 1, stdout: "", stderr: "nope", duration_ms: 0, truncated: false }),
+      readFile: async () => Buffer.alloc(0),
+      writeFile: async () => undefined,
+      list: async () => [],
+      destroy: async () => {
+        brokenDestroyed = true;
+      },
+    };
+    // A forkable-but-broken parent: fork() yields a child whose exec fails,
+    // so ensureArtifactsDir throws — the R4-2/R4-4 rollback path.
+    const fakeParent = {
+      id: "fake-parent",
+      workdir: "/tmp/fake",
+      exec: async () => ({ exit_code: 0, stdout: "", stderr: "", duration_ms: 0, truncated: false }),
+      readFile: async () => Buffer.alloc(0),
+      writeFile: async () => undefined,
+      list: async () => [] as Array<{ name: string; type: "file" | "dir"; size: number }>,
+      destroy: async () => undefined,
+      fork: async (): Promise<Sandbox> => brokenChild,
+    } as unknown as Sandbox;
+    const parentCtx = { ...h.parentCtx, sandbox: fakeParent };
+    h.manager.bindTurn(h.parent.session_id, "t2", parentCtx);
+    const turn = "t2";
+    const budgetBefore = (h.manager as SubagentManagerImpl).turnSpendOf(h.parent.session_id, turn);
+
+    await expect(
+      h.manager.spawn({ task: "doomed" }, parentCtx, {
+        session_id: h.parent.session_id,
+        turn_id: turn,
+      }),
+    ).rejects.toMatchObject({ code: "provider_error" });
+    // The broken fork was destroyed (no orphan), and the turn's budget
+    // allocation was rolled back — a subagent that never existed is never
+    // charged.
+    expect(brokenDestroyed).toBe(true);
+    expect((h.manager as SubagentManagerImpl).turnSpendOf(h.parent.session_id, turn)).toBe(budgetBefore);
+  });
+
+  it("R5-1: a cross-session artifact read is refused (parentage check)", async () => {
+    const { h } = await makeForkHarness();
+    h.provider.script("parentage", artifactTurn("secret.txt"));
+    const result = await h.manager.spawn(
+      { task: "parentage" },
+      h.parentCtx,
+      { session_id: h.parent.session_id, turn_id: "t1" },
+    );
+    // A DIFFERENT session tries to read the child's artifact: refused even
+    // though the reader has its own live bound turn.
+    const otherCtx = h.makeParentCtx();
+    await expect(
+      h.manager.readChildArtifact(result.session_id, "secret.txt", undefined, "someone-elses-session", otherCtx),
+    ).rejects.toMatchObject({ code: "not_found" });
+    // The legitimate parent still reads fine.
+    await expect(
+      h.manager.readChildArtifact(result.session_id, "secret.txt", undefined, h.parent.session_id, h.parentCtx),
+    ).resolves.toMatchObject({ bytes: SEED.length });
+  });
+
+  it("R5-8: control characters and traversal in artifact names are refused", async () => {
+    const { h } = await makeForkHarness();
+    // One real tool action so the child's RunContext is captured; the bad
+    // names are exercised through direct tool-handler invocations below.
+    h.provider.script("bad-names", artifactTurn("ok.txt"));
+    const result = await h.manager.spawn(
+      { task: "bad-names" },
+      h.parentCtx,
+      { session_id: h.parent.session_id, turn_id: "t1" },
+    );
+    const childCtx = h.capturedContexts.get(result.session_id)!;
+    const artifact = subagentArtifactTool({
+      sandbox: childCtx.sandbox,
+      child_session_id: result.session_id,
+      db: undefined,
+      now: () => 0,
+    });
+    for (const bad of ["bad\nname", "bad\u0000name", "..", ".", "bad/name", "", " ".repeat(200)]) {
+      await expect(
+        artifact.handler.execute(
+          { call_id: "c", name: SUBAGENT_ARTIFACT_TOOL, input: { path: "seed.txt", name: bad } },
+          fakeCtx(h),
+        ),
+      ).rejects.toMatchObject({ code: "validation_failed" });
+    }
+  });
+
+  it("R5-3: artifacts above the hard size cap are refused at publish", async () => {
+    const { h } = await makeForkHarness();
+    // A real tool action captures the child's RunContext (the huge file is
+    // written into the captured sandbox below).
+    h.provider.script("big-file", artifactTurn("small.txt"));
+    const result = await h.manager.spawn(
+      { task: "big-file" },
+      h.parentCtx,
+      { session_id: h.parent.session_id, turn_id: "t1" },
+    );
+    const childCtx = h.capturedContexts.get(result.session_id)!;
+    await childCtx.sandbox.writeFile(
+      "huge.bin",
+      Buffer.alloc(MAX_ARTIFACT_BYTES + 1),
+    );
+    const artifact = subagentArtifactTool({
+      sandbox: childCtx.sandbox,
+      child_session_id: result.session_id,
+      db: undefined,
+      now: () => 0,
+    });
+    await expect(
+      artifact.handler.execute(
+        { call_id: "c", name: SUBAGENT_ARTIFACT_TOOL, input: { path: "huge.bin" } },
+        fakeCtx(h),
+      ),
+    ).rejects.toMatchObject({ code: "validation_failed" });
+    // The oversized publish never landed — only the small capture-turn
+    // artifact is in the channel.
+    expect((await childCtx.sandbox.list("artifacts")).map((e) => e.name)).toEqual(["small.txt"]);
   });
 });

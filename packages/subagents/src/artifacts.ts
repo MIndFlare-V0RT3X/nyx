@@ -42,11 +42,23 @@ const ARTIFACT_TIMEOUT_MS = 60_000;
 /** Max artifact name length (a basename, not a path traversal vector). */
 const MAX_NAME_LEN = 128;
 
+/**
+ * The hard artifact size cap (both publish and read): the handoff buffers
+ * whole files in memory, so the cap is the DoS bound (§6.2 R5-3).
+ */
+export const MAX_ARTIFACT_BYTES = 64 * 1024 * 1024;
+
+/** Printable, single-line filename charset — control characters and bidi
+ * overrides break transport line protocols and spoof listings (§6.2 R5-8).
+ * (Square brackets deliberately excluded: a `]` inside a character class is
+ * a foot-gun that silently truncates it.) */
+const NAME_CHARSET = /^[A-Za-z0-9][A-Za-z0-9._+@ (),-]*$/;
+
 function sha256Hex(buf: Buffer): string {
   return createHash("sha256").update(buf).digest("hex");
 }
 
-/** A safe artifact name: a single path segment, no traversal, no empties. */
+/** A safe artifact name: a single printable path segment, no traversal. */
 function safeArtifactName(name: string): string {
   if (
     name.length === 0 ||
@@ -54,11 +66,14 @@ function safeArtifactName(name: string): string {
     name.includes("/") ||
     name.includes("\\") ||
     name === "." ||
-    name === ".."
+    name === ".." ||
+    !NAME_CHARSET.test(name) ||
+    name.endsWith(".")
   ) {
     throw new SubagentError(
       "validation_failed",
-      `artifact name must be a single path segment (1–${MAX_NAME_LEN} chars, no separators): got ${JSON.stringify(name)}`,
+      `artifact name must be a single printable path segment ` +
+        `(letters, digits, . _ + @ space -; 1–${MAX_NAME_LEN} chars, no separators or control characters): got ${JSON.stringify(name)}`,
     );
   }
   return name;
@@ -106,16 +121,19 @@ export function lastWrittenHash(
 ): ArtifactWriteRecord | undefined {
   if (db === undefined) return undefined;
   ensureAuditTable(db); // idempotent — a bare handle may never have audited yet
+  // SQL-side filter on the JSON payload (indexed — see ensureAuditTable's
+  // expression index): the audit table is append-only and cross-process, a
+  // full scan per read would grow without bound (§6.2 R5-4). Latest row for
+  // the exact (child, path) pair wins — re-publishes append, never rewrite.
   const rows = db
     .prepare(
-      "SELECT payload_json FROM audit WHERE action = 'subagent.artifact_written' ORDER BY id DESC",
+      "SELECT payload_json FROM audit WHERE action = 'subagent.artifact_written' " +
+        "AND json_extract(payload_json, '$.child_session_id') = ? " +
+        "AND json_extract(payload_json, '$.path') = ? ORDER BY id DESC LIMIT 1",
     )
-    .all() as Array<{ payload_json: string }>;
+    .all(child_session_id, name) as Array<{ payload_json: string }>;
   for (const row of rows) {
-    const payload = JSON.parse(row.payload_json) as ArtifactWriteRecord;
-    if (payload.child_session_id === child_session_id && payload.path === name) {
-      return payload;
-    }
+    return JSON.parse(row.payload_json) as ArtifactWriteRecord;
   }
   return undefined;
 }
@@ -123,7 +141,14 @@ export function lastWrittenHash(
 /** Append the read-side audit row (the verified handoff). */
 export function auditArtifactRead(
   db: Database.Database,
-  rec: { child_session_id: string; path: string; dest: string; sha256: string; bytes: number },
+  rec: {
+    reader_session_id: string;
+    child_session_id: string;
+    path: string;
+    dest: string;
+    sha256: string;
+    bytes: number;
+  },
   now: () => number,
 ): void {
   appendAudit(
@@ -189,8 +214,16 @@ export function subagentArtifactTool(deps: {
         throw new SubagentError("validation_failed", "subagent_artifact: path has no basename");
       }
       // Read from the child's own sandbox (containment enforced by the
-      // sandbox's own path checks) and write the copy into artifacts/.
+      // sandbox's own path checks) and write the copy into artifacts/ —
+      // bounded by the hard artifact cap: the handoff buffers whole files
+      // in memory (§6.2 R5-3).
       const content = await deps.sandbox.readFile(input.path);
+      if (content.length > MAX_ARTIFACT_BYTES) {
+        throw new SubagentError(
+          "validation_failed",
+          `artifact "${input.path}" is ${content.length} bytes — above the ${MAX_ARTIFACT_BYTES}-byte handoff cap`,
+        );
+      }
       const dest = `${ARTIFACTS_DIR}/${name}`;
       await deps.sandbox.writeFile(dest, content);
       const rec: ArtifactWriteRecord = {
@@ -253,8 +286,9 @@ export class ArtifactToolRegistry extends ExtraToolsRegistry {
 /**
  * Register the PARENT-side subagent_read_artifact tool (fork mode only — in
  * inherit mode there is no child sandbox to read from, and the tool's
- * absence is the honest catalog). No-op when max_depth is 0 (no subagents,
- * no handoff).
+ * absence is the honest catalog). Surfaces gate the call on
+ * sandbox_sharing; the read itself is parentage-checked per call in the
+ * manager (§6.2 R5-1).
  */
 export function registerSubagentArtifactTools(
   registry: ToolRegistry,
@@ -318,6 +352,7 @@ export function registerSubagentArtifactTools(
         input.subagent_session_id,
         input.path,
         input.dest,
+        ctx.session_id,
         bound.ctx,
       );
       return { kind: "json", json: out };

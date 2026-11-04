@@ -49,6 +49,15 @@ export function ensureAuditTable(db: Database.Database): void {
     db.exec("ALTER TABLE audit ADD COLUMN event_seq INTEGER");
   }
   db.exec("CREATE INDEX IF NOT EXISTS audit_event_seq ON audit(event_seq)");
+  // Phase 4 §4 (§6.2 R5-4): expression indexes for the artifact-handoff
+  // lookups — the audit table is append-only and cross-process; the reads
+  // filter SQL-side on the JSON payload, and these keep that O(log n).
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS audit_artifact_child ON audit(" +
+      "json_extract(payload_json, '$.child_session_id'), " +
+      "json_extract(payload_json, '$.path')) " +
+      "WHERE action = 'subagent.artifact_written'",
+  );
 }
 
 function computeHash(

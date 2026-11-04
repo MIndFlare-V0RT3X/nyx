@@ -195,6 +195,14 @@ class DockerSandbox implements ForkableSandbox {
     private readonly baseEnv: Record<string, string>,
     private readonly wallMs: number | undefined,
     private readonly live: Set<string>,
+    /** Resource limits mirrored into forked children (§6.2 R4-5). */
+    private readonly limits: { memory_mb?: number; cpu?: number } | undefined = undefined,
+    /**
+     * The temp image a fork committed for THIS container (§6.2 R4-3):
+     * destroy() removes it AFTER the container is gone, else every fork
+     * leaks a dangling image on the daemon.
+     */
+    private readonly forkImageId: string | undefined = undefined,
   ) {
     this.id = id;
   }
@@ -218,62 +226,72 @@ class DockerSandbox implements ForkableSandbox {
       timeout_ms: RUN_TIMEOUT_MS,
     });
     throwIfFailed("commit (fork)", commit);
+    // The image id (not the tag): destroy() removes it after the container,
+    // so a fork's committed layers never linger as a dangling image (§6.2
+    // R4-3 — rmi-ing the TAG while the child runs only untags it).
+    const forkImageId = commit.stdout.trim();
 
     try {
       await fsp.mkdir(childHostDir, { recursive: true });
-      const run = await cliRun(
-        this.dockerBin,
-        [
-          "run",
-          "-d",
-          "--name",
-          childName,
-          "--network",
-          "none",
-          "-v",
-          `${childHostDir}:${WORKSPACE}`,
-          "-w",
-          WORKSPACE,
-          tempImage,
-          "sleep",
-          "infinity",
-        ],
-        { timeout_ms: RUN_TIMEOUT_MS },
-      );
+      // Workspace copy BEFORE the container starts (§6.2 R4-10): the host
+      // bind is independent of the container, so populating it first leaves
+      // NO window in which the child runs against an empty /workspace.
+      // Permissions and symlinks preserved via cp -a.
+      const cpExit = await new Promise<number | null>((resolveP, rejectP) => {
+        const cp = spawn("cp", [
+          "-a",
+          `${this.hostDir}${path.sep}.`,
+          `${childHostDir}${path.sep}`,
+        ], { stdio: ["ignore", "ignore", "ignore"] });
+        cp.once("error", (e: Error) => rejectP(e));
+        cp.once("close", (code) => resolveP(code));
+      });
+      if (cpExit !== 0) {
+        throw Object.assign(
+          new Error(
+            `cp -a ${this.hostDir}/. ${childHostDir}/ exited ${String(cpExit)} (fork of ${this.id})`,
+          ),
+          { code: "provider_error" },
+        );
+      }
+      const args = [
+        "run",
+        "-d",
+        "--name",
+        childName,
+        "--network",
+        "none",
+        "-v",
+        `${childHostDir}:${WORKSPACE}`,
+        "-w",
+        WORKSPACE,
+      ];
+      // Resource isolation mirrors the parent's limits (§6.2 R4-5) — a
+      // forked child must never run with LESS constraint than its parent.
+      if (this.limits?.memory_mb !== undefined && this.limits.memory_mb > 0) {
+        args.push("--memory", `${this.limits.memory_mb}m`);
+      }
+      if (this.limits?.cpu !== undefined && this.limits.cpu > 0) {
+        args.push("--cpus", String(this.limits.cpu));
+      }
+      args.push(tempImage, "sleep", "infinity");
+      const run = await cliRun(this.dockerBin, args, { timeout_ms: RUN_TIMEOUT_MS });
       throwIfFailed("run (fork)", run);
     } catch (err) {
-      // Best-effort unwind: container may or may not exist; the temp image
-      // always does (commit succeeded to get here).
-      void cliRun(this.dockerBin, ["rm", "-f", childName]).catch(() => undefined);
-      void cliRun(this.dockerBin, ["rmi", "-f", tempImage]).catch(() => undefined);
+      // Best-effort unwind, ordered: container first, then the temp image
+      // (an rmi that beats the rm only untags while the container lives).
+      try {
+        await cliRun(this.dockerBin, ["rm", "-f", childName]);
+      } catch {
+        /* the container may never have been created */
+      }
+      try {
+        await cliRun(this.dockerBin, ["rmi", "-f", tempImage]);
+      } catch {
+        /* best-effort */
+      }
       throw err;
     }
-
-    // The workspace is a bind on BOTH sides — copy the parent's content
-    // across on the host (permissions and symlinks preserved via -a).
-    const cpExit = await new Promise<number | null>((resolveP, rejectP) => {
-      const cp = spawn("cp", [
-        "-a",
-        `${this.hostDir}${path.sep}.`,
-        `${childHostDir}${path.sep}`,
-      ], { stdio: ["ignore", "ignore", "ignore"] });
-      cp.once("error", (e: Error) => rejectP(e));
-      cp.once("close", (code) => resolveP(code));
-    });
-    if (cpExit !== 0) {
-      void cliRun(this.dockerBin, ["rm", "-f", childName]).catch(() => undefined);
-      void cliRun(this.dockerBin, ["rmi", "-f", tempImage]).catch(() => undefined);
-      const err = new Error(
-        `cp -a ${this.hostDir}/. ${childHostDir}/ exited ${String(cpExit)} (fork of ${this.id})`,
-      ) as Error & { code: string };
-      err.code = "provider_error";
-      throw err;
-    }
-
-    // The temp image's job is done: the child runs on its layers. Untag it —
-    // best-effort, never fatal (a leftover tag is clutter, not a leak of
-    // the parent's state).
-    void cliRun(this.dockerBin, ["rmi", "-f", tempImage]).catch(() => undefined);
 
     this.live.add(childName);
     return new DockerSandbox(
@@ -284,6 +302,8 @@ class DockerSandbox implements ForkableSandbox {
       this.baseEnv,
       this.wallMs,
       this.live,
+      this.limits,
+      forkImageId,
     );
   }
 
@@ -323,6 +343,11 @@ class DockerSandbox implements ForkableSandbox {
   }
 
   async readFile(p: string): Promise<Buffer> {
+    // Containment note (§6.2 R5-7): unlike the local provider's
+    // assertRealpathContained, this is a STRING check — a symlink inside
+    // /workspace can redirect within the CONTAINER. The container itself is
+    // the security boundary for the docker provider (exec reaches those
+    // paths anyway); the string check guards the CLI-injection surface.
     const target = resolveContained(WORKSPACE, p);
     const r = await cliRun(this.dockerBin, [
       "exec",
@@ -332,6 +357,17 @@ class DockerSandbox implements ForkableSandbox {
       `base64 ${shQuote(target)}`,
     ]);
     throwIfFailed("exec (readFile)", r);
+    // §6.2 R5-2: a truncated capture means the base64 was cut mid-stream —
+    // decoding it would silently corrupt the bytes (and every hash over
+    // them). Loud, never partial.
+    if (r.truncated) {
+      const err = new Error(
+        `readFile(${p}): output exceeded the ${MAX_CAPTURE_BYTES}-byte capture cap; ` +
+          `refusing to return truncated bytes`,
+      ) as Error & { code: string };
+      err.code = "provider_error";
+      throw err;
+    }
     // busybox base64 wraps output at 76 columns — strip all whitespace.
     return Buffer.from(r.stdout.replace(/\s+/g, ""), "base64");
   }
@@ -386,6 +422,16 @@ class DockerSandbox implements ForkableSandbox {
     if (this.createdHostDir) {
       // We created the host bind dir during provision — remove it again.
       await fsp.rm(this.hostDir, { recursive: true, force: true });
+    }
+    if (this.forkImageId !== undefined) {
+      // AFTER the container is gone: remove the committed fork image by id,
+      // else every fork leaks a dangling multi-layer snapshot of the parent
+      // on the daemon (§6.2 R4-3). Best-effort — a missing image is fine.
+      try {
+        await cliRun(this.dockerBin, ["rmi", this.forkImageId]);
+      } catch {
+        /* already gone / daemon refused — clutter, not a correctness issue */
+      }
     }
   }
 }
@@ -467,6 +513,7 @@ export class DockerSandboxProvider implements SandboxProvider {
       spec.env ?? {},
       spec.limits?.wall_ms,
       this.live,
+      { memory_mb: spec.limits?.memory_mb, cpu: spec.limits?.cpu },
     );
   }
 }

@@ -73,14 +73,32 @@ class LocalSandbox implements ForkableSandbox {
    */
   async fork(): Promise<Sandbox> {
     const childDir = join(this.root, `nyx-sbx-${nanoid()}`);
+    // Generous wall clock (§6.2 R4-7): the copy can legitimately be large,
+    // but a STUCK cp must not hang spawn() forever — the model path's 600s
+    // tool clock is the outer bound; this is the inner one.
+    const CP_TIMEOUT_MS = 300_000;
     const exitCode = await new Promise<number | null>((resolveP, rejectP) => {
       const cp = spawn("cp", ["-a", this.workdir, childDir], { stdio: ["ignore", "ignore", "ignore"] });
-      cp.once("error", (err: Error) => rejectP(err));
-      cp.once("close", (code) => resolveP(code));
+      const killer = setTimeout(() => {
+        cp.kill("SIGKILL");
+        resolveP(-1);
+      }, CP_TIMEOUT_MS);
+      cp.once("error", (err: Error) => {
+        clearTimeout(killer);
+        rejectP(err);
+      });
+      cp.once("close", (code) => {
+        clearTimeout(killer);
+        resolveP(code);
+      });
     });
     if (exitCode !== 0) {
+      // A failed copy leaves a partial child dir — remove it so failure
+      // modes don't accumulate garbage under the provider root (§6.2 R4-7).
+      await fsp.rm(childDir, { recursive: true, force: true }).catch(() => undefined);
       const err = new Error(
-        `cp -a ${this.workdir} ${childDir} exited ${String(exitCode)}`,
+        `cp -a ${this.workdir} ${childDir} exited ${String(exitCode)}` +
+          (exitCode === -1 ? ` (wall clock ${CP_TIMEOUT_MS}ms exceeded)` : ""),
       ) as Error & { code: string };
       err.code = "provider_error";
       throw err;

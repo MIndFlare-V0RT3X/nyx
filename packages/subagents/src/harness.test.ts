@@ -133,6 +133,7 @@ export class TaskDispatchProvider implements ModelProvider {
   readonly requests: CompletionRequest[] = [];
   private readonly byMarker = new Map<string, MockTurn[]>();
   private readonly fallback: MockTurn[] = [];
+  private readonly holds = new Map<string, number>();
 
   constructor(models?: ModelInfo[]) {
     this.models = models ?? [
@@ -142,9 +143,12 @@ export class TaskDispatchProvider implements ModelProvider {
 
   private models: ModelInfo[];
 
-  /** Script the turns for every request whose last user message contains `marker`. */
-  script(marker: string, turns: MockTurn[]): this {
+  /** Script the turns for every request whose last user message contains `marker`.
+   * `holdMs` sleeps before the marker's turn yields — gives a scripted child a
+   * real duration (parallel-window and running-eviction tests). */
+  script(marker: string, turns: MockTurn[], holdMs = 0): this {
     this.byMarker.set(marker, [...turns]);
+    if (holdMs > 0) this.holds.set(marker, holdMs);
     return this;
   }
 
@@ -160,26 +164,29 @@ export class TaskDispatchProvider implements ModelProvider {
 
   async *complete(req: CompletionRequest): AsyncGenerator<ModelChunk, void, void> {
     this.requests.push(req);
-    const turn = this.nextTurn(req);
+    const { turn, hold } = this.nextTurn(req);
     if (turn === undefined) {
       throw new Error("task-dispatch provider: script exhausted");
     }
     if (!Array.isArray(turn)) {
       throw Object.assign(new Error(turn.fail.message), { name: turn.fail.name });
     }
+    if (hold > 0) await new Promise((r) => setTimeout(r, hold));
     for (const chunk of turn) yield chunk;
   }
 
-  private nextTurn(req: CompletionRequest): MockTurn | undefined {
+  private nextTurn(req: CompletionRequest): { turn: MockTurn | undefined; hold: number } {
     const lastUser = [...req.messages].reverse().find((m) => m.role === "user");
     const text =
       lastUser?.content
         .map((b) => (b.type === "text" ? b.text : ""))
         .join("") ?? "";
     for (const marker of this.byMarker.keys()) {
-      if (text.includes(marker)) return this.byMarker.get(marker)!.shift();
+      if (text.includes(marker)) {
+        return { turn: this.byMarker.get(marker)!.shift(), hold: this.holds.get(marker) ?? 0 };
+      }
     }
-    return this.fallback.shift();
+    return { turn: this.fallback.shift(), hold: 0 };
   }
 }
 

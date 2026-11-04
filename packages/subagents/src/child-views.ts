@@ -68,10 +68,14 @@ export class FilteredToolRegistry implements ToolRegistry {
 }
 
 /**
- * The child's tool allowlist predicate. Three gates, in order:
+ * The child's tool allowlist predicate. Four gates, in order:
  *   1. spawn_subagent NEVER passes — hard rule #1, structural, not config;
- *   2. config.forbidden_tools never passes — cannot be overridden;
- *   3. the spec's allowlist (or the config default) must name the tool, and
+ *   2. subagent_read_artifact NEVER passes — children have no children
+ *      (gate 1), so the parent-side read tool is a dead surface for them
+ *      and is rejected structurally instead of failing no_parent_context
+ *      at runtime (§6.2 R5-11);
+ *   3. config.forbidden_tools never passes — cannot be overridden;
+ *   4. the spec's allowlist (or the config default) must name the tool, and
  *      it must exist in the parent's registry (an allowlist naming a tool
  *      the parent doesn't have grants nothing).
  */
@@ -83,8 +87,9 @@ export function childToolAllowlist(
   const requestedSet = new Set(requested);
   const forbidden = new Set(config.forbidden_tools);
   const parentHas = new Set(parentRegistry.list().map((d) => d.name));
+  const structural = new Set(["spawn_subagent", "subagent_read_artifact"]);
   return (name: string): boolean =>
-    name !== "spawn_subagent" &&
+    !structural.has(name) &&
     !forbidden.has(name) &&
     requestedSet.has(name) &&
     parentHas.has(name);
