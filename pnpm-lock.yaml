@@ -270,6 +270,37 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.5)
 
+  packages/db:
+    dependencies:
+      '@nyx/channels':
+        specifier: workspace:*
+        version: link:../channels
+      '@nyx/policy':
+        specifier: workspace:*
+        version: link:../policy
+      '@nyx/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@nyx/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      '@nyx/session':
+        specifier: workspace:*
+        version: link:../session
+      better-sqlite3:
+        specifier: ^11.8.1
+        version: 11.10.0
+    devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^7.6.12
+        version: 7.6.13
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.20.5
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.5)
+
   packages/kernel:
     dependencies:
       '@nyx/protocol':
