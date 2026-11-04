@@ -1,0 +1,16 @@
+{
+  "tier": "llm_summary",
+  "message_roles": [
+    "system",
+    "system",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "assistant",
+    "user"
+  ],
+  "summary_block_kind": "text"
+}

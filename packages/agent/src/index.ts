@@ -12,3 +12,23 @@ export type {
 } from "./tool-runtime.js";
 export { AgentError } from "./errors.js";
 export type { AgentErrorCode } from "./errors.js";
+
+// ── Phase 2 §2.2: the four-tier compaction pipeline ──
+export {
+  COMPACTION_SERVICE,
+  CompactionPipelineImpl,
+  createCompactionPipeline,
+  DEFAULT_COMPACTION_CONFIG,
+  emergencyTruncate,
+  recentlyReferencedPaths,
+} from "./compaction-pipeline.js";
+export type {
+  CompactionConfig,
+  CompactionContext,
+  CompactionModel,
+  CompactionPlan,
+  CompactionResult,
+  CompactionTier,
+  Compactor,
+  Pipeline,
+} from "./compaction-pipeline.js";

@@ -331,6 +331,27 @@ export const configSchema = z
       })
       .strict()
       .optional(),
+    // Optional (Phase 2 §2.2): the four-tier compaction pipeline. Absent →
+    // code defaults (documented in docs/COMPACTION.md).
+    context: z
+      .object({
+        compaction: z
+          .object({
+            elision_threshold_tokens: z.number().int().min(1).default(5000),
+            session_memory_threshold: z.number().min(0.1).max(1).default(0.6),
+            session_memory_min_turns: z.number().int().min(1).default(20),
+            llm_summary_threshold: z.number().min(0.1).max(1).default(0.8),
+            emergency_threshold: z.number().min(0.1).max(1).default(0.95),
+            post_compaction_reread_tokens: z.number().int().min(1).default(5000),
+            post_compaction_reread_files: z.number().int().min(1).default(5),
+            enabled: z.boolean().default(true),
+            verbose_events: z.boolean().default(false),
+          })
+          .strict()
+          .default({}),
+      })
+      .strict()
+      .optional(),
     owner_id: z.string().min(1).default("owner"),
   })
   .strict();

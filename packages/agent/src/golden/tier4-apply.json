@@ -1,0 +1,6 @@
+{
+  "tier": "emergency",
+  "kept_messages": 20,
+  "original_messages": 35,
+  "last_message_role": "user"
+}

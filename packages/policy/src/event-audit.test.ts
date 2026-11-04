@@ -273,3 +273,54 @@ describe("appendEventAudit no-ops and payload shapes", () => {
     expect(reconcileEventAudit(db, [lifecycleEvent(1)])).toEqual([]);
   });
 });
+
+// 2.2: emergency compaction truncations are auditable actions; ordinary
+// compaction (elision/summary/session-memory) stays event-log-only. append
+// and reconcile key on the same predicate.
+describe("emergency compaction audit (2.2)", () => {
+  const compactionCompleted = (strategy: string, _seq?: number): SessionEvent =>
+    ({
+      type: "compaction.completed",
+      session_id: SID,
+      turn_id: "t1",
+      strategy,
+      freed_tokens: 42,
+      ts: 1,
+    }) as SessionEvent;
+
+  it("an emergency-degrade compaction lands on the chain with its event_seq", () => {
+    const db = freshDb();
+    ensureAuditTable(db);
+    appendEventAudit(db, compactionCompleted("emergency-degrade", 0), 7);
+    const rows = db
+      .prepare("SELECT actor, action, payload_json, event_seq FROM audit")
+      .all() as Array<{ actor: string; action: string; payload_json: string; event_seq: number }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ actor: "system:compaction", action: "compaction.completed", event_seq: 7 });
+    const payload = JSON.parse(rows[0]!.payload_json) as {
+      strategy: string;
+      freed_tokens: number;
+    };
+    expect(payload).toEqual({ session_id: SID, turn_id: "t1", strategy: "emergency-degrade", freed_tokens: 42 });
+    expect(verifyAuditChain(db).ok).toBe(true);
+    // Reconcile is symmetric: the emergency event requires its row.
+    expect(
+      reconcileEventAudit(db, [{ ...compactionCompleted("emergency-degrade", 0), seq: 7 }]),
+    ).toEqual([]);
+  });
+
+  it("ordinary compaction strategies are NOT audited and NOT required by reconcile", () => {
+    const db = freshDb();
+    ensureAuditTable(db);
+    appendEventAudit(db, compactionCompleted("rule-elision", 0), 3);
+    appendEventAudit(db, compactionCompleted("llm-summary", 0), 4);
+    appendEventAudit(db, compactionCompleted("session-memory", 0), 5);
+    expect((db.prepare("SELECT COUNT(*) AS n FROM audit").get() as { n: number }).n).toBe(0);
+    expect(
+      reconcileEventAudit(db, [
+        { ...compactionCompleted("rule-elision", 0), seq: 3 },
+        { ...compactionCompleted("llm-summary", 0), seq: 4 },
+      ]),
+    ).toEqual([]);
+  });
+});

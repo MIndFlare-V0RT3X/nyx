@@ -337,7 +337,7 @@ describe("agent loop", () => {
     it("emits compaction events and elides tool_result outputs from history when the estimate exceeds the budget", async () => {
       const h = await makeHarness({
         script: [mockTextTurn("ok")],
-        options: { compaction_budget_tokens: 1 },
+        options: { compaction_budget_tokens: 8_000 },
       });
 
       // Seed a prior turn whose history carries a tool_result block. The
@@ -373,7 +373,10 @@ describe("agent loop", () => {
               call_id: "old-1",
               output: {
                 kind: "text",
-                text: '<tool_output trust="untrusted">\npretend file body\n</tool_output>',
+                // ~55KB ≈ 13k tokens: far over the 5k elision threshold and
+                // over the budget, so Tier 1 fires; after elision the context
+                // is far under 95% of the budget, so Tier 4 stays out.
+                text: `<tool_output trust="untrusted">\n${"pretend file body\n".repeat(3600)}</tool_output>`,
               },
             },
           ],

@@ -29,16 +29,23 @@ import type {
   ToolOutput,
   Usage,
 } from "@nyx/protocol";
-import { elideMessages, estimateTokens } from "./compaction.js";
+import { estimateTokens } from "./compaction.js";
+import { COMPACTION_SERVICE, createCompactionPipeline } from "./compaction-pipeline.js";
+import type { CompactionContext, Pipeline } from "./compaction-pipeline.js";
 import { AgentError } from "./errors.js";
 import { denialToolOutput, wrapToolOutput } from "./tool-runtime.js";
 import type { ToolRuntimeExecuteContext, ToolRuntimeService } from "./tool-runtime.js";
 
 const DEFAULT_MAX_TOOL_ROUNDS = 12;
 const DEFAULT_COMPACTION_BUDGET_TOKENS = 100_000;
-/** Elision stops once the estimate fits this fraction of the budget. */
-const ELISION_TARGET_FRACTION = 0.8;
 const TOOL_RUNTIME_SERVICE = "tools.runtime";
+
+/** Lazily-built default pipeline (no kernel service registered). */
+let lazyDefaultPipeline: Pipeline | undefined;
+function defaultPipeline(): Pipeline {
+  if (lazyDefaultPipeline === undefined) lazyDefaultPipeline = createCompactionPipeline();
+  return lazyDefaultPipeline;
+}
 
 /** Tool calls accumulated from tool_call.delta chunks, keyed by stream index. */
 interface AccumulatedCall {
@@ -193,31 +200,38 @@ export class AgentLoopImpl implements AgentLoop {
       messages.push(...initCtx.messages);
       messages.push({ role: "user", content: input.user_message.content });
 
-      // -- 7. compaction (rule-based elision) + router budget check --
+      // -- 7. compaction (four-tier pipeline) + router budget check --
       const budget = ctx.options?.compaction_budget_tokens ?? DEFAULT_COMPACTION_BUDGET_TOKENS;
       const budgetStatus = ctx.model.checkBudget(input.session_id);
       const estimateTriggered = estimateTokens(messages) > budget;
       const routerTriggered = budgetStatus.exceeded && budgetStatus.on_exceed !== "abort";
       if (estimateTriggered || routerTriggered) {
-        emit({
-          type: "compaction.started",
+        // The pipeline is a kernel service so surfaces can configure it
+        // (context.compaction in nyx.config.yaml); absent → defaults.
+        const pipeline =
+          ctx.kernel.services.get<Pipeline>(COMPACTION_SERVICE) ?? defaultPipeline();
+        const compactionCtx: CompactionContext = {
           session_id: input.session_id,
           turn_id: input.turn_id,
-          strategy: "rule-elision",
-          ts: Date.now(),
-        });
-        yield* flush();
-        const elision = elideMessages(messages, Math.floor(budget * ELISION_TARGET_FRACTION));
-        messages.splice(0, messages.length, ...elision.messages);
-        emit({
-          type: "compaction.completed",
-          session_id: input.session_id,
-          turn_id: input.turn_id,
-          strategy: "rule-elision",
-          freed_tokens: elision.freedTokens,
-          ts: Date.now(),
-        });
-        yield* flush();
+          messages,
+          current_tokens: estimateTokens(messages),
+          budget_tokens: budget,
+          reasoning_effort: "low",
+          model: ctx.model,
+          memory: ctx.memory,
+          sandbox: ctx.sandbox,
+          emit,
+          logger: ctx.logger,
+        };
+        const result = await pipeline.compact(compactionCtx);
+        if (result.tier !== undefined) {
+          // The pipeline emitted compaction.started/completed per tier; swap
+          // in the compacted list (the input is never mutated).
+          messages.splice(0, messages.length, ...result.messages);
+          yield* flush();
+        }
+        // No applicable tier: the list stays as-is; the turn proceeds (the
+        // router's on_exceed decision below still guards the hard abort).
       }
       if (budgetStatus.exceeded && budgetStatus.on_exceed === "abort") {
         emitFailed({

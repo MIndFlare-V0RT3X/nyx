@@ -1,0 +1,38 @@
+{
+  "tier": "elision",
+  "message_roles": [
+    "system",
+    "system",
+    "user",
+    "assistant",
+    "assistant",
+    "assistant",
+    "user"
+  ],
+  "block_kinds": [
+    [
+      "text"
+    ],
+    [
+      "text"
+    ],
+    [
+      "text"
+    ],
+    [
+      "tool_use"
+    ],
+    [
+      "tool_result"
+    ],
+    [
+      "text"
+    ],
+    [
+      "text"
+    ]
+  ],
+  "markers": [
+    "[elided tool output c1]"
+  ]
+}

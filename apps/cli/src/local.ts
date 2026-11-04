@@ -37,6 +37,7 @@ import {
   ToolRouterImpl,
 } from "@nyx/tools";
 import { createAgentLoop } from "@nyx/agent";
+import { COMPACTION_SERVICE, createCompactionPipeline } from "@nyx/agent";
 import type {
   ApprovalEngine,
   ApprovalRecord,
@@ -259,6 +260,14 @@ export function createLocalRuntime(deps: LocalRuntimeDeps): LocalRuntime {
     approvals,
   });
   kernel.services.set("tools.runtime", toolRuntime);
+  // 2.2: the four-tier compaction pipeline, configured from
+  // context.compaction; the loop looks it up as a kernel service.
+  kernel.services.set(
+    COMPACTION_SERVICE,
+    createCompactionPipeline({
+      ...config.context?.compaction,
+    }),
+  );
 
   const memory = new MemoryStoreImpl(config.memory.root, {
     episode_expiry_days: config.memory.episode_expiry_days,

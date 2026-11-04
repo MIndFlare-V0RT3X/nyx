@@ -244,6 +244,24 @@ owner_id: owner
 #     poll_timeout_s: 25
 #     edit_interval_ms: 1500
 
+# ─── context (optional) ──────────────────────────────────────────────────────
+# The four-tier compaction pipeline (Phase 2). Tiers run in order; the first
+# applicable one applies; Tier 4 is the safety valve that re-checks after
+# Tiers 1-3. Compaction never loses events — only the model-facing message
+# list is compacted; recovery is session.read(). See docs/COMPACTION.md.
+#
+# context:
+#   compaction:
+#     elision_threshold_tokens: 5000   # Tier 1: old tool outputs beyond this elide
+#     session_memory_threshold: 0.60   # Tier 2: fraction of the window
+#     session_memory_min_turns: 20     # Tier 2: minimum active turns
+#     llm_summary_threshold: 0.80      # Tier 3: fraction (or session memory exists)
+#     emergency_threshold: 0.95        # Tier 4: still above after Tiers 1-3
+#     post_compaction_reread_tokens: 5000  # re-read cap after any drop
+#     post_compaction_reread_files: 5      # most recently edited files
+#     enabled: true
+#     verbose_events: false            # per-block diagnostics via debug logs
+
 # ─── heartbeat (optional, disabled by default) ──────────────────────────────
 # Scheduled system-generated turns, enqueued at heartbeat priority into the
 # session's lane. Cron is 5-field (minute hour dom month dow, UTC); missed

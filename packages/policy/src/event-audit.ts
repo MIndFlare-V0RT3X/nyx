@@ -13,7 +13,12 @@ import { appendAudit } from "./audit.js";
 import type Database from "better-sqlite3";
 
 /** Event types whose occurrence must be audited. */
-export type AuditableEventType = "tool.call" | "tool.result" | "tool.error" | "action.denied";
+export type AuditableEventType =
+  | "tool.call"
+  | "tool.result"
+  | "tool.error"
+  | "action.denied"
+  | "compaction.completed"; // 2.2: emergency truncations only (see below)
 
 export type AuditableEvent = Extract<SessionEvent, { type: AuditableEventType }>;
 
@@ -22,25 +27,42 @@ export function isAuditableEvent(event: SessionEvent): event is AuditableEvent {
     event.type === "tool.call" ||
     event.type === "tool.result" ||
     event.type === "tool.error" ||
-    event.type === "action.denied"
+    event.type === "action.denied" ||
+    isEmergencyCompactionEvent(event)
   );
+}
+
+/**
+ * 2.2: an EMERGENCY compaction (strategy "emergency-degrade") destroys
+ * context by policy — that is an auditable action. Ordinary compaction
+ * (elision/summary/session-memory) is routine context hygiene and stays
+ * event-log-only. append and reconcile both key on this predicate so the
+ * cross-check stays symmetric.
+ */
+export function isEmergencyCompactionEvent(
+  event: SessionEvent,
+): event is Extract<SessionEvent, { type: "compaction.completed" }> {
+  return event.type === "compaction.completed" && event.strategy === "emergency-degrade";
 }
 
 function payloadOf(event: AuditableEvent): Record<string, unknown> {
   const base: Record<string, unknown> = {
     session_id: event.session_id,
     turn_id: event.turn_id,
-    call_id: event.call_id,
   };
+  if (event.type === "compaction.completed") {
+    return { ...base, strategy: event.strategy, freed_tokens: event.freed_tokens };
+  }
+  const withCall = { ...base, call_id: event.call_id };
   switch (event.type) {
     case "tool.call":
-      return { ...base, name: event.name, input: event.input };
+      return { ...withCall, name: event.name, input: event.input };
     case "tool.result":
-      return { ...base, output: event.output };
+      return { ...withCall, output: event.output };
     case "tool.error":
-      return { ...base, error: event.error };
+      return { ...withCall, error: event.error };
     case "action.denied":
-      return { ...base, reason: event.reason, detail: event.detail };
+      return { ...withCall, reason: event.reason, detail: event.detail };
   }
 }
 
@@ -59,7 +81,12 @@ export function appendEventAudit(
   appendAudit(
     db,
     {
-      actor: event.type === "action.denied" ? "system:runtime" : "agent",
+      actor:
+        event.type === "action.denied"
+          ? "system:runtime"
+          : event.type === "compaction.completed"
+            ? "system:compaction"
+            : "agent",
       action: event.type,
       payload: payloadOf(event),
       event_seq: seq,
