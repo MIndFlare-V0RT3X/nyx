@@ -113,11 +113,14 @@ export function createServer(deps: ServerDeps): NyxServer {
   const store = openSessionStore(join(deps.data_dir, "nyx.db"));
   // Late-bound: the approval engine (which owns the audit db) opens after
   // the sink because its callbacks append through the sink; the tool-event
-  // audit hook binds as soon as the engine exists.
-  let auditEvent: ((event: SessionEvent, seq: number) => void) | undefined;
+  // audit hook binds as soon as the engine exists (the holder is mutated
+  // in place — the sink closure reads it at call time).
+  const audit: {
+    event?: (event: SessionEvent, seq: number) => void;
+  } = {};
   const sink = createEventSink(store, {
     onAppended: (stored) => {
-      for (const storedEvent of stored) auditEvent?.(storedEvent, storedEvent.seq);
+      for (const storedEvent of stored) audit.event?.(storedEvent, storedEvent.seq);
     },
   });
 
@@ -163,7 +166,7 @@ export function createServer(deps: ServerDeps): NyxServer {
   });
   const approvals = approvalEngineHandle.engine;
   // Tool events now audit into the same hash chain as approval decisions.
-  auditEvent = approvalEngineHandle.auditEvent;
+  audit.event = approvalEngineHandle.auditEvent;
 
   const providers = deps.providers ?? buildProviders(config, logger);
   const providerRegistry = new ProviderRegistryImpl();

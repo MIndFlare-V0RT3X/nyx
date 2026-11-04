@@ -15,7 +15,7 @@ describe("DnsEgressResolver", () => {
     const resolver = new DnsEgressResolver({
       now: () => clock,
       ttl_ms: 30_000,
-      lookup: async (hostname) => {
+      lookup: async (_hostname) => {
         lookups += 1;
         return [addr(`10.1.${lookups}.5`)];
       },

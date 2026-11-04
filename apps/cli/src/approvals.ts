@@ -32,11 +32,15 @@ export interface ApprovalSurface {
 export function openApprovalSurface(data_dir: string): ApprovalSurface {
   const store = openSessionStore(join(data_dir, "nyx.db"));
   // Same late-bound tool-event audit hook as the runtime: consistent wiring
-  // across every surface that opens the sink + approval engine pair.
-  let auditEvent: ((event: SessionEvent, seq: number) => void) | undefined;
+  // across every surface that opens the sink + approval engine pair. The
+  // holder is mutated once the engine exists (the sink closure needs it
+  // before that).
+  const audit: {
+    event?: (event: SessionEvent, seq: number) => void;
+  } = {};
   const sink = createEventSink(store, {
     onAppended: (stored) => {
-      for (const storedEvent of stored) auditEvent?.(storedEvent, storedEvent.seq);
+      for (const storedEvent of stored) audit.event?.(storedEvent, storedEvent.seq);
     },
   });
   const handle = openApprovalEngine(join(data_dir, "policy.db"), {
@@ -72,7 +76,7 @@ export function openApprovalSurface(data_dir: string): ApprovalSurface {
         .catch(() => undefined);
     },
   });
-  auditEvent = handle.auditEvent;
+  audit.event = handle.auditEvent;
   return {
     store,
     sink,

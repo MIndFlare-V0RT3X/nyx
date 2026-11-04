@@ -49,7 +49,7 @@ async function pendingRowFor(db: DB, digest: string): Promise<{ id: string }> {
 describe("approval-lifecycle (Phase 0 verification 0.2)", () => {
   it("an approval resolved once cannot be reused for a second action", async () => {
     const db = freshDb();
-    let clock = 1_000_000;
+    const clock = 1_000_000;
     const now = (): number => clock;
     const engine = new ApprovalEngineImpl(db, { now, poll_ms: 1, ttl_ms: 600_000 });
 

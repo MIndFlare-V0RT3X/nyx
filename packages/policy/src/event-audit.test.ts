@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 import Database from "better-sqlite3";
 import { canonicalJson } from "@nyx/protocol";
 import { appendEventAudit, reconcileEventAudit } from "./event-audit.js";
-import { appendAudit, ensureAuditTable, verifyAuditChain } from "./audit.js";
+import { ensureAuditTable, verifyAuditChain } from "./audit.js";
 import { ApprovalEngineImpl } from "./approvals.js";
 import type { SessionEvent } from "@nyx/protocol";
 

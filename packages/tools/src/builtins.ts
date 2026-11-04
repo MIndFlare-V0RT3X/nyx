@@ -15,6 +15,7 @@
 import * as path from "node:path";
 import * as http from "node:http";
 import * as https from "node:https";
+import type { LookupFunction } from "node:net";
 import { checkResolvedTarget } from "@nyx/scope";
 import { DnsEgressResolver, stripTrailingDot } from "./egress.js";
 import type { EgressResolver, ResolvedEndpoint } from "./egress.js";
@@ -227,7 +228,7 @@ function requestOnce(
       } else {
         cb(null, ip.address, ip.family);
       }
-    }) as unknown as import("node:net").LookupFunction;
+    }) as unknown as LookupFunction;
     const req = (isHttps ? https : http).request({
       host: ip.address,
       port,
