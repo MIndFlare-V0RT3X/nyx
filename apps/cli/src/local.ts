@@ -18,7 +18,12 @@ import { join } from "node:path";
 import { createKernel } from "@nyx/kernel";
 import type { NyxConfig } from "@nyx/config";
 import { openSessionStore } from "@nyx/session";
-import { openApprovalEngine, PolicyEngineImpl } from "@nyx/policy";
+import {
+  EngagementOwnershipError,
+  assertEngagementOwnership,
+  openApprovalEngine,
+  PolicyEngineImpl,
+} from "@nyx/policy";
 import { MemoryStoreImpl } from "@nyx/memory";
 import { loadPersona, PersonaRuntimeImpl } from "@nyx/persona";
 import { ModelRouterImpl, ProviderRegistryImpl } from "@nyx/model";
@@ -356,6 +361,17 @@ export function createLocalRuntime(deps: LocalRuntimeDeps): LocalRuntime {
           "validation_failed",
           `unknown persona "${persona_id}": ${err instanceof Error ? err.message : String(err)}`,
         );
+      }
+      // An engagement authorizes its own operator's sessions — nothing else.
+      if (opts.engagement !== undefined && opts.engagement !== null) {
+        try {
+          assertEngagementOwnership(opts.engagement, config.owner_id);
+        } catch (err) {
+          if (err instanceof EngagementOwnershipError) {
+            throw new CliError("engagement_ownership", err.message, { cause: err });
+          }
+          throw err;
+        }
       }
       return store.create({
         owner_id: config.owner_id,

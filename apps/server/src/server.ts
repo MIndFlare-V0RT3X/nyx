@@ -23,6 +23,7 @@ import { createKernel } from "@nyx/kernel";
 import { BRAND, type NyxConfig } from "@nyx/config";
 import { openSessionStore } from "@nyx/session";
 import { openApprovalEngine, PolicyEngineImpl } from "@nyx/policy";
+import { EngagementOwnershipError, assertEngagementOwnership } from "@nyx/policy";
 import { MemoryStoreImpl } from "@nyx/memory";
 import { loadPersona, PersonaRuntimeImpl } from "@nyx/persona";
 import { ModelRouterImpl, ProviderRegistryImpl } from "@nyx/model";
@@ -342,6 +343,15 @@ export function createServer(deps: ServerDeps): NyxServer {
           "validation_failed",
           `invalid engagement targets: ${problems.join("; ")}`,
         );
+      }
+      // An engagement authorizes its own operator's sessions — nothing else.
+      try {
+        assertEngagementOwnership(body.engagement, config.owner_id);
+      } catch (err) {
+        if (err instanceof EngagementOwnershipError) {
+          return badRequest(err.code, err.message);
+        }
+        throw err;
       }
     }
     const persona_id = body.persona_id ?? config.persona.default_id;

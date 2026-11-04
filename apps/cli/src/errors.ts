@@ -8,6 +8,7 @@ export type CliErrorCode =
   | "not_found"
   | "approval_denied"
   | "approval_expired"
+  | "engagement_ownership"
   | "config_error"
   | "runtime_error";
 

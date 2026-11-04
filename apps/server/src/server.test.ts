@@ -194,6 +194,29 @@ describe("sessions", () => {
     const errBody = (await bad.json()) as { error: { message: string } };
     expect(errBody.error.message).toContain("invalid CIDR");
 
+    // Phase 1 hardening 2.3: an engagement from a different operator is a
+    // hard 400 naming both ids, never silently bound to this owner's session.
+    const foreignEngagement = await rig.server.app.request("/v1/sessions", {
+      method: "POST",
+      headers: ownerHeaders(),
+      body: JSON.stringify({
+        engagement: {
+          id: "ENG-3",
+          operator_id: "someone-else",
+          authorized_at: 1000,
+          expires_at: Date.now() + 3_600_000,
+          targets: { cidrs: ["127.0.0.0/8"], domains: [] },
+        },
+      }),
+    });
+    expect(foreignEngagement.status).toBe(400);
+    const foreignBody = (await foreignEngagement.json()) as {
+      error: { code: string; message: string };
+    };
+    expect(foreignBody.error.code).toBe("engagement_ownership");
+    expect(foreignBody.error.message).toContain("someone-else");
+    expect(foreignBody.error.message).toContain("owner");
+
     const unknownPersona = await rig.server.app.request("/v1/sessions", {
       method: "POST",
       headers: ownerHeaders(),

@@ -14,5 +14,9 @@ export {
   reconcileEventAudit,
 } from "./event-audit.js";
 export type { AuditableEvent, AuditableEventType } from "./event-audit.js";
+export {
+  EngagementOwnershipError,
+  assertEngagementOwnership,
+} from "./ownership.js";
 export { policyRuleSchema } from "./schema.js";
 export type { PolicyRuleSchema, SafeParseResult } from "./schema.js";

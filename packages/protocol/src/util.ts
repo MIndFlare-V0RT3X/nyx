@@ -83,6 +83,7 @@ export type NyxErrorCode =
   | "validation_failed"
   | "capability"
   | "engagement_required"
+  | "engagement_ownership"
   | "budget_exceeded"
   | "provider_error"
   | "aborted"
