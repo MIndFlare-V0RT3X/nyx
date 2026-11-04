@@ -54,7 +54,11 @@ export interface SubagentToolDeps {
 function isSpawnInput(value: unknown): value is SpawnSubagentInput {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const v = value as Record<string, unknown>;
-  if (typeof v.task !== "string" || v.task.length === 0) return false;
+  const keys = Object.keys(v);
+  if (!("task" in v) || typeof v.task !== "string" || v.task.length === 0) return false;
+  for (const key of keys) {
+    if (key !== "task" && key !== "tools" && key !== "budget_tokens") return false;
+  }
   if (v.tools !== undefined && (!Array.isArray(v.tools) || v.tools.some((t) => typeof t !== "string"))) {
     return false;
   }

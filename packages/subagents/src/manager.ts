@@ -96,6 +96,8 @@ interface RunningChild {
   parent_session_id: string;
   /** Set when the abort came from outside the child's own failure paths. */
   externalAbort: boolean;
+  /** Human-readable abort cause for the mirrored subagent.aborted event. */
+  abortReason: string;
 }
 
 const ABORT_POLL_MS = 150;
@@ -200,6 +202,7 @@ export class SubagentManagerImpl implements SubagentManager {
       controller,
       parent_session_id: parent.session_id,
       externalAbort: false,
+      abortReason: "abort requested",
     };
     this.running.set(child.session_id, runningChild);
 
@@ -240,6 +243,7 @@ export class SubagentManagerImpl implements SubagentManager {
     });
     const onParentAbort = (): void => {
       parentAborted = true;
+      runningChild.abortReason = "parent turn aborted";
       controller.abort(new SubagentError("aborted", "parent turn aborted"));
     };
     if (parent_ctx.signal.aborted) onParentAbort();
@@ -290,6 +294,7 @@ export class SubagentManagerImpl implements SubagentManager {
               const entry = this.running.get(id);
               if (entry !== undefined) {
                 entry.externalAbort = true;
+                entry.abortReason = "abort requested (external)";
                 entry.controller.abort(
                   new SubagentError("aborted", "abort requested (external)"),
                 );
@@ -336,7 +341,7 @@ export class SubagentManagerImpl implements SubagentManager {
         session_id: child.session_id,
         subagent_session_id: child.session_id,
         parent_session_id: parent.session_id,
-        reason: parentAborted ? "parent turn aborted" : "abort requested",
+        reason: parentAborted ? "parent turn aborted" : runningChild.abortReason,
         ts: this.now(),
       });
       error = {
@@ -431,6 +436,7 @@ export class SubagentManagerImpl implements SubagentManager {
     const entry = this.running.get(subagent_session_id);
     if (entry !== undefined) {
       entry.externalAbort = true;
+      entry.abortReason = "abort requested";
       entry.controller.abort(new SubagentError("aborted", "abort requested"));
       return;
     }
