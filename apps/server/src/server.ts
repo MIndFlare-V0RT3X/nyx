@@ -25,6 +25,8 @@ import { openUnifiedDatabase } from "@nyx/db";
 import { openSessionStore } from "@nyx/session";
 import { openApprovalEngine, PolicyEngineImpl } from "@nyx/policy";
 import { EngagementOwnershipError, assertEngagementOwnership } from "@nyx/policy";
+import { auditEngagementCreated } from "@nyx/policy";
+import type { DnsResolver } from "@nyx/policy";
 import { MemoryStoreImpl } from "@nyx/memory";
 import { loadPersona, PersonaRuntimeImpl } from "@nyx/persona";
 import { ModelRouterImpl, ProviderRegistryImpl } from "@nyx/model";
@@ -75,10 +77,15 @@ import { injectWebSocketServer, type WebSocketHub } from "./ws.js";
 
 export interface ServerDeps {
   config: NyxConfig;
-  /** Root for nyx.db / policy.db (created if missing). */
+  /** Root for nyx.db (created if missing). */
   data_dir: string;
   /** Test injection: replaces config-derived providers, registered by id. */
   providers?: ModelProvider[];
+  /**
+   * 2.0.4 test injection: replaces the OS resolver used for the initial
+   * engagement-creation DNS resolution (offline, deterministic tests).
+   */
+  engagement_resolver?: DnsResolver;
 }
 
 export interface NyxServer {
@@ -540,6 +547,22 @@ export function createServer(deps: ServerDeps): NyxServer {
       ...(body.title !== undefined ? { title: body.title } : {}),
       engagement: body.engagement ?? null,
     });
+    // 2.0.4: every engagement binding lands on the audit chain. Domain-only
+    // engagements record the initial DNS resolution (post-hoc validation of
+    // what the runtime pin will trust); CIDR-constrained ones record the
+    // constraint. Informational only — no runtime behavior change.
+    if (body.engagement !== undefined && body.engagement !== null) {
+      await auditEngagementCreated(
+        {
+          audit: (entry) => approvalEngineHandle.audit(entry),
+          logger,
+          ...(deps.engagement_resolver !== undefined
+            ? { resolve: deps.engagement_resolver }
+            : {}),
+        },
+        { session_id: meta.session_id, engagement: body.engagement, owner_id: config.owner_id },
+      );
+    }
     return c.json(meta, 201);
   });
 

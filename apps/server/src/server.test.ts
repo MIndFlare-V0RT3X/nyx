@@ -14,6 +14,7 @@ import { configSchema, type NyxConfig } from "@nyx/config";
 import { MockProvider, mockTextTurn, mockToolTurn } from "@nyx/model";
 import type { ModelProvider } from "@nyx/protocol";
 import { createServer as createNyxServer, type NyxServer } from "./server.js";
+import Database from "better-sqlite3";
 
 const OWNER_TOKEN = "test-owner-token-0123456789";
 const GUEST_TOKEN = "test-guest-token-0123456789";
@@ -54,6 +55,7 @@ function buildConfig(overrides: Record<string, unknown> = {}): NyxConfig {
 async function makeRig(
   providers?: ModelProvider[],
   overrides: Record<string, unknown> = {},
+  serverDeps: { engagement_resolver?: (host: string) => Promise<Array<{ address: string; family: number }>> } = {},
 ): Promise<Rig> {
   const dataDir = await mkdtemp(join(tmpdir(), "nyx-server-data-"));
   const sandboxRoot = await mkdtemp(join(tmpdir(), "nyx-server-sbx-"));
@@ -68,6 +70,9 @@ async function makeRig(
     config,
     data_dir: dataDir,
     ...(providers !== undefined ? { providers } : {}),
+    ...(serverDeps.engagement_resolver !== undefined
+      ? { engagement_resolver: serverDeps.engagement_resolver }
+      : {}),
   });
   const rig: Rig = {
     server,
@@ -258,6 +263,112 @@ describe("sessions", () => {
 
     const missing = await rig.server.app.request("/v1/sessions/nope", { headers: ownerHeaders() });
     expect(missing.status).toBe(404);
+  });
+});
+
+describe("engagement creation audit (2.0.4)", () => {
+  const fakeResolver = async (host: string) =>
+    host === "example.com"
+      ? [{ address: "93.184.216.34", family: 4 }, { address: "2606:2800:220:1:248:1893:25c8:1946", family: 6 }]
+      : [];
+
+  it("a domain-only engagement writes an engagement.created row with the initial resolution", async () => {
+    const rig = await makeRig(
+      [new MockProvider("mock", [mockTextTurn("x")])],
+      {},
+      { engagement_resolver: fakeResolver },
+    );
+    const res = await rig.server.app.request("/v1/sessions", {
+      method: "POST",
+      headers: ownerHeaders(),
+      body: JSON.stringify({
+        engagement: {
+          id: "ENG-domain-only",
+          operator_id: "owner",
+          authorized_at: Date.now(),
+          expires_at: Date.now() + 3_600_000,
+          targets: { domains: ["example.com"], cidrs: [] }, // domain-only: empty cidrs
+        },
+      }),
+    });
+    if (res.status !== 201) throw new Error(`session create failed: ${await res.text()}`);
+    const meta = (await res.json()) as { session_id: string };
+
+    const { verifyAuditChain } = await import("@nyx/policy");
+    const db = new Database(join(rig.dataDir, "nyx.db"));
+    try {
+      const rows = db
+        .prepare("SELECT actor, action, payload_json FROM audit WHERE action = 'engagement.created'")
+        .all() as Array<{ actor: string; action: string; payload_json: string }>;
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.actor).toBe("owner");
+      const payload = JSON.parse(rows[0]!.payload_json) as {
+        session_id: string;
+        domain_only: boolean;
+        domains: Array<{ domain: string; resolved_ips: string[] }>;
+        warning: string;
+      };
+      expect(payload.session_id).toBe(meta.session_id);
+      expect(payload.domain_only).toBe(true);
+      expect(payload.domains[0]!.domain).toBe("example.com");
+      expect(payload.domains[0]!.resolved_ips).toEqual(["93.184.216.34", "2606:2800:220:1:248:1893:25c8:1946"]);
+      expect(typeof payload.warning).toBe("string");
+      expect(verifyAuditChain(db).ok).toBe(true);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("a CIDR-constrained engagement writes a row noting the constraint", async () => {
+    const rig = await makeRig([new MockProvider("mock", [mockTextTurn("x")])]);
+    const res = await rig.server.app.request("/v1/sessions", {
+      method: "POST",
+      headers: ownerHeaders(),
+      body: JSON.stringify({
+        engagement: {
+          id: "ENG-cidr",
+          operator_id: "owner",
+          authorized_at: Date.now(),
+          expires_at: Date.now() + 3_600_000,
+          targets: { cidrs: ["93.184.0.0/16"], domains: ["example.com"] },
+        },
+      }),
+    });
+    expect(res.status).toBe(201);
+    const db = new Database(join(rig.dataDir, "nyx.db"));
+    try {
+      const payload = JSON.parse(
+        (db
+          .prepare("SELECT payload_json FROM audit WHERE action = 'engagement.created'")
+          .get() as { payload_json: string }).payload_json,
+      ) as { domain_only: boolean; cidrs: string[]; note: string };
+      expect(payload.domain_only).toBe(false);
+      expect(payload.cidrs).toEqual(["93.184.0.0/16"]);
+      expect(typeof payload.note).toBe("string");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("sessions without engagements write no engagement row", async () => {
+    const rig = await makeRig([new MockProvider("mock", [mockTextTurn("x")])]);
+    const res = await rig.server.app.request("/v1/sessions", {
+      method: "POST",
+      headers: ownerHeaders(),
+      body: JSON.stringify({ title: "no engagement" }),
+    });
+    expect(res.status).toBe(201);
+    const db = new Database(join(rig.dataDir, "nyx.db"));
+    try {
+      const n = (
+        db.prepare("SELECT COUNT(*) AS n FROM audit WHERE action = 'engagement.created'").get() as {
+          n: number;
+        }
+      ).n;
+      expect(n).toBe(0);
+    } finally {
+      db.close();
+    }
   });
 });
 

@@ -4,11 +4,14 @@
 // selection. Exit 0 when everything critical is OK, 1 otherwise. No network
 // unless a configured hosted provider needs a reachability probe (5s cap).
 
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { configSchema, type NyxConfig } from "@nyx/config";
+import { isDomainOnlyEngagement } from "@nyx/policy";
 import { checkDocker } from "@nyx/sandbox";
 import { openSessionStore } from "@nyx/session";
 import type { ModelProvider } from "@nyx/protocol";
-import { resolveCliConfig } from "./config.js";
+import { resolveCliConfig, resolveDataDir } from "./config.js";
 import { buildProviders } from "./providers.js";
 import { createCliLogger } from "./logger.js";
 
@@ -32,6 +35,8 @@ export interface DoctorOptions {
   env?: NodeJS.ProcessEnv;
   /** Test injection: skip config resolution and use this config verbatim. */
   config?: NyxConfig;
+  /** Test injection: data dir to scan for engagement warnings (default NYX_DATA_DIR or ~/.nyx). */
+  data_dir?: string;
   /** Test injection: skip the `docker version` spawn. */
   docker_available?: boolean;
   /** Reachability probe budget per provider (default 5000). */
@@ -277,6 +282,75 @@ function checkSandbox(
   };
 }
 
+/**
+ * 2.0.4: warn when any ACTIVE engagement is domain-only (domains declared,
+ * no CIDR constraint). The runtime pin trusts the first resolution for such
+ * engagements; the warning points the operator at the audit row recorded at
+ * creation time.
+ */
+async function checkEngagements(dataDir: string): Promise<DoctorCheck> {
+  if (!existsSync(join(dataDir, "nyx.db"))) {
+    return {
+      name: "engagements",
+      status: "ok",
+      detail: "no sessions database yet",
+      critical: false,
+    };
+  }
+  try {
+    const store = openSessionStore(join(dataDir, "nyx.db"));
+    try {
+      const now = Date.now();
+      const sessions = await store.list({ limit: 100_000 });
+      const domainOnly: Array<{ engagement_id: string; session_id: string }> = [];
+      let withEngagement = 0;
+      for (const session of sessions) {
+        const engagement = session.engagement;
+        if (engagement === null) continue;
+        withEngagement += 1;
+        if (engagement.expires_at <= now) continue; // inactive — expired
+        if (isDomainOnlyEngagement(engagement)) {
+          domainOnly.push({ engagement_id: engagement.id, session_id: session.session_id });
+        }
+      }
+      if (domainOnly.length > 0) {
+        const listed = domainOnly
+          .slice(0, 3)
+          .map((e) => `${e.engagement_id} (session ${e.session_id.slice(0, 8)}…)`)
+          .join(", ");
+        const more = domainOnly.length > 3 ? `, +${domainOnly.length - 3} more` : "";
+        return {
+          name: "engagements",
+          status: "warn",
+          detail:
+            `${domainOnly.length} active domain-only engagement${domainOnly.length === 1 ? "" : "s"} ` +
+            `(no CIDR constraint; the DNS pin trusts the first resolution — ` +
+            `creation-time resolutions are in the audit log): ${listed}${more}`,
+          critical: false,
+        };
+      }
+      return {
+        name: "engagements",
+        status: "ok",
+        detail:
+          withEngagement === 0
+            ? "no engagements bound"
+            : `${withEngagement} engagement${withEngagement === 1 ? "" : "s"} scanned, none domain-only`,
+        critical: false,
+      };
+    } finally {
+      store.close();
+    }
+  } catch (err) {
+    return {
+      name: "engagements",
+      status: "warn",
+      detail: `could not scan sessions: ${err instanceof Error ? err.message : String(err)}`,
+      critical: false,
+    };
+  }
+}
+
 /** Run every doctor check and compute the exit code. */
 export async function doctorChecks(opts: DoctorOptions = {}): Promise<DoctorReport> {
   const env = opts.env ?? process.env;
@@ -297,6 +371,8 @@ export async function doctorChecks(opts: DoctorOptions = {}): Promise<DoctorRepo
   });
   checks.push(...(await checkProviders(config, env, timeoutMs)));
   checks.push(checkSandbox(config, env, docker));
+  // 2.0.4: surface domain-only engagements from the operator's data dir.
+  checks.push(await checkEngagements(opts.data_dir ?? resolveDataDir(env)));
 
   const failed = checks.some((check) => check.critical && check.status === "fail");
   return { checks, exit_code: failed ? 1 : 0 };

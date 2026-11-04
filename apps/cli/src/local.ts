@@ -22,6 +22,7 @@ import { openSessionStore } from "@nyx/session";
 import {
   EngagementOwnershipError,
   assertEngagementOwnership,
+  auditEngagementCreated,
   openApprovalEngine,
   PolicyEngineImpl,
 } from "@nyx/policy";
@@ -383,12 +384,21 @@ export function createLocalRuntime(deps: LocalRuntimeDeps): LocalRuntime {
           throw err;
         }
       }
-      return store.create({
+      const meta = await store.create({
         owner_id: config.owner_id,
         persona_id,
         ...(opts.title !== undefined ? { title: opts.title } : {}),
         engagement: opts.engagement ?? null,
       });
+      // 2.0.4: engagement bindings land on the audit chain (domain-only ones
+      // record the initial DNS resolution). Informational, never fatal.
+      if (opts.engagement !== undefined && opts.engagement !== null) {
+        await auditEngagementCreated(
+          { audit: (entry) => approvalHandle.audit(entry), logger },
+          { session_id: meta.session_id, engagement: opts.engagement, owner_id: config.owner_id },
+        );
+      }
+      return meta;
     },
     meta: (session_id) => store.meta(session_id),
     sandboxFor,
