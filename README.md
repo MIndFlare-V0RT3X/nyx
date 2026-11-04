@@ -97,7 +97,9 @@ Full details: `docs/ARCHITECTURE.md`, `docs/SECURITY-MODEL.md`,
 | `packages/memory`   | markdown store + SQLite FTS5 index, compaction                            |
 | `packages/persona`  | persona loader, deterministic 8-section prompt assembly                   |
 | `packages/agent`    | the single DI agent loop                                                  |
-| `apps/server`       | Hono: REST + SSE + WS, bearer auth, owner-bound R4                        |
+| `packages/runtime`  | lane queue (per-session serial turns), cron, heartbeat scheduler          |
+| `packages/channels` | webhook + Telegram ingress, identity/session mapping, `/new` `/fork`      |
+| `apps/server`       | Hono: REST + SSE + WS, bearer auth, owner-bound R4, channels, heartbeats  |
 | `apps/cli`          | the `nyx` binary: run/chat/sessions/approvals/doctor                      |
 | `apps/web`          | minimal React client (64 KB gzipped)                                      |
 | `personas/default`  | Nyx — honest operator contract, scope discipline                          |

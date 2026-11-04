@@ -15,7 +15,7 @@ no analytics, no phone-home.
 
 ## The package graph
 
-Twelve library packages, three applications, and an end-to-end test workspace.
+Fourteen library packages, three applications, and an end-to-end test workspace.
 `@nyx/protocol` is the frozen contract: every type that crosses a package or
 process boundary lives there, and it imports nothing. Dependency direction is
 machine-enforced by ESLint `no-restricted-imports` in `eslint.config.mjs`.
@@ -23,7 +23,7 @@ machine-enforced by ESLint `no-restricted-imports` in `eslint.config.mjs`.
 ```mermaid
 flowchart TD
   subgraph apps["apps"]
-    SERVER["@nyx/server<br/>HTTP + SSE + WS"]
+    SERVER["@nyx/server<br/>HTTP + SSE + WS + channels + heartbeat"]
     CLI["@nyx/cli<br/>nyx binary, TUI"]
     WEB["@nyx/web<br/>browser client"]
   end
@@ -41,6 +41,8 @@ flowchart TD
     PERSONA["@nyx/persona"]
     TOOLS["@nyx/tools"]
     AGENT["@nyx/agent"]
+    RUNTIME["@nyx/runtime<br/>lane queue · cron · heartbeat"]
+    CHANNELS["@nyx/channels<br/>webhook · Telegram · manager"]
   end
 
   E2E["tests/e2e — @nyx/e2e"]
@@ -59,6 +61,8 @@ flowchart TD
   TOOLS --> POLICY
   TOOLS --> SCOPE
   TOOLS --> SANDBOX
+  RUNTIME --> PROTOCOL
+  CHANNELS --> PROTOCOL
 
   SERVER -->|"imports every @nyx/* package"| libs
   CLI -->|"imports every @nyx/* package"| libs
@@ -75,23 +79,33 @@ What the arrows encode:
 - **tools → policy, scope, sandbox.** The tool runtime is the single place that
   composes the enforcement pipeline (see `docs/PROTOCOL.md`). No other package
   may compose policy with execution.
+- **runtime → protocol only.** Orchestration, not policy: the lane queue
+  (per-session serial execution, global concurrency cap, round-robin
+  fairness) and the heartbeat scheduler (hand-rolled cron + SQLite state) hold
+  no secrets and make no decisions — they sequence work that other packages
+  already authorized.
+- **channels → protocol only.** Adapters are transport (webhook listener,
+  Telegram long-poll) plus a manager that checks identity against config
+  allow lists, maps conversations to sessions, and handles `/new` and
+  `/fork`. Every channel turn is driven through the host's TurnRunner — the
+  same lane, loop, policy, and approvals as the HTTP API. Channels add no
+  parallel policy path.
 - **agent → protocol only, via DI.** The loop imports types; every collaborator
   — kernel, session store, model router, tool registry and router, policy and
   approval engines, sandbox, memory, persona runtime — arrives through the
   `RunContext` it is handed (`packages/protocol/src/agent.ts`). There is no
   construction inside the loop body.
 - **server, cli → everything.** The surfaces compose the runtime and expose it:
-  the server as HTTP/SSE/WS (`apps/server`, Hono + ws), the CLI as the `nyx`
-  binary (Commander + Ink).
+  the server as HTTP/SSE/WS plus channel ingress and heartbeats
+  (`apps/server`, Hono + ws), the CLI as the `nyx` binary (Commander + Ink).
 - **web → HTTP only.** The browser client talks to the server's REST/SSE/WS API
   and imports no `@nyx/*` package.
 - **tests/e2e** drives the composed packages the way surfaces will: smoke,
   approval, replay, and scope scenarios against the real implementations.
 
-Current state (Phase 0): `protocol`, `config`, `session`, `model`, `scope`,
-`policy`, `sandbox`, `memory`, and `persona` are implemented with test suites.
-`kernel`, `tools`, `agent`, `server`, `cli`, `web`, and the e2e suites are in
-flight against the contracts in `@nyx/protocol` and the specs in this docs set.
+Current state (Phase 1): all packages implemented with test suites — including
+`@nyx/runtime` (lane queue, cron, heartbeat) and `@nyx/channels` (webhook,
+Telegram). See `docs/ROADMAP.md` for Phase 2 scope.
 
 ## The trust boundary
 

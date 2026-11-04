@@ -133,14 +133,50 @@ planted inside the workdir cannot point an operation outside).
 
 Every approval state change (`approval.requested`, `approval.resolved`,
 `approval.expired`, `approval.consumed`) writes an audit row **in the same
-SQLite transaction** as the change. Each row's hash is
-`sha256(prev_hash + "\n" + payload_json + "\n" + actor + "\n" + action + "\n" + created_at)`
-with the payload stored in canonical JSON; the genesis `prev_hash` is empty.
-`verifyAuditChain` walks the chain and detects tampered rows, rows that were
-edited and rehashed (the next row's link breaks), and deleted middle rows.
+SQLite transaction** as the change. Since Phase 1, **tool executions and
+denials are audited too**: the app-layer EventSink routes every stored
+`tool.call` / `tool.result` / `tool.error` / `action.denied` event into the
+same hash chain with an `event_seq` cross-reference to the session log — the
+operator can prove not only what they approved but what the agent actually
+did. Each row's hash is
+`sha256(prev_hash + "\n" + payload_json + "\n" + actor + "\n" + action + "\n" + created_at [+ "\n" + event_seq])`
+with the payload stored in canonical JSON; the genesis `prev_hash` is empty;
+rows without an event reference hash over the exact pre-Phase-1 material, so
+legacy databases keep verifying. `verifyAuditChain` walks the chain and
+detects tampered rows, rows that were edited and rehashed (the next row's
+link breaks), and deleted middle rows — including tampering with the
+`event_seq` link itself. `reconcileEventAudit` cross-checks the chain against
+the event log and reports missing or orphaned rows. Channel identity
+rejections (`channel.identity.rejected`) land in the same chain.
+
+One documented limitation: the event log and the audit log are separate
+SQLite files, so the event append and the audit append are **not one ACID
+transaction** — a crash between the two writes leaves an event without an
+audit row, which `reconcileEventAudit` detects (writes are ordered through
+the sink's serialized chain, so ordering itself is guaranteed).
 Documented blind spots: deleting the **last** row leaves a valid chain, and a
 full rewrite that recomputes every hash is undetectable without an externally
-anchored checkpoint — Phase 0 does not anchor.
+anchored checkpoint — Phase 1 does not anchor.
+
+### DNS-rebinding defense (Phase 1)
+
+`web.fetch` authorizes egress at **connection time, on the resolved
+addresses**, not just the hostname at policy time. The egress resolver
+(`@nyx/tools` `egress.ts`) resolves the hostname once per connection to a
+pinned `ResolvedEndpoint`; `checkResolvedTarget` (`@nyx/scope`) requires the
+hostname to pass the regular domain check **and**, when the engagement
+declares CIDR ranges, every resolved address to fall inside them (and
+outside exclusions) — a hostname that matched but resolves out of scope is
+denied with `dns_rebinding_out_of_scope`. The pinned transport
+(`node:http(s)` with a `lookup` override) connects to the validated address
+and never consults DNS again; redirect hops re-resolve and re-check
+per hop. Trailing-dot hostnames normalize to the same authorization. The pin
+lives for a TTL (default 30s), so a burst of requests within one turn reuses
+one answer instead of re-opening the window.
+
+Residual: engagements that declare **no CIDRs** (domain-only scopes) keep
+hostname-only authorization — there is no IP range to validate against.
+Operators who want rebinding protection should declare CIDR scopes.
 
 ### Untrusted-content discipline
 
@@ -153,7 +189,18 @@ persona and the policy engine carry the same stance — but the binding defense
 is that any action the injected text induces still passes scope, policy, and
 approval.
 
-### Credential handling (Phase 0)
+### Engagement ownership binding (Phase 1)
+
+An engagement authorizes **its own operator's** sessions — nothing else. On
+session creation (CLI and server, so every entry point),
+`assertEngagementOwnership` (`@nyx/policy`) verifies
+`engagement.operator_id === session.owner_id`; a mismatch is a hard error
+(`EngagementOwnershipError`, code `engagement_ownership`) naming both ids. An
+engagement uploaded by one operator cannot authorize actions in another
+operator's session, and (via the channel manager's identity mapping) a
+foreign Telegram/webhook user cannot bind an engagement to their sessions.
+
+### Credential handling (Phase 0, wording current)
 
 Env-var indirection only: config carries env-var **names**
 (`providers.<id>.api_key_env`), keys are read from the environment at
@@ -166,16 +213,16 @@ surface in `@nyx/model` passes through redaction: sensitive keys
 from messages and stacks, and structured logging applies the configurable
 `logging.redact` substring list. Over-redaction is the accepted failure mode.
 
-## What Phase 0 does NOT defend against
+## What Phase 1 does NOT defend against
 
 An honest list, so operators can reason about the residual risk:
 
 - **No egress proxy.** Shell egress from tools is contained only by the docker
   sandbox's `--network none` (the docker provider refuses `allowlist`/`open`
-  networking in Phase 0 with `not_implemented`). `web.fetch` resolves DNS
-  in-process — there is **no DNS-rebinding defense**: a hostname inside scope
-  that resolves to an out-of-scope IP is not caught by the literal-string
-  scope check.
+  networking in Phase 0 with `not_implemented`). `web.fetch`'s DNS-rebinding
+  defense covers its own connections (see above); **shell egress has no such
+  defense** — an engagement authorizing a hostname does not constrain what a
+  shell command connects to. That is the docker sandbox's job.
 - **The local sandbox has no network isolation.** No CPU/memory limits, no
   syscall filtering, no network blocking — it runs `/bin/bash -c` on the host
   inside a temp dir. It is development-only and **refuses to provision when

@@ -6,6 +6,67 @@ SemVer once 0.1.0 ships.
 
 ## [Unreleased]
 
+### Added — Phase 1 (hardening, lanes, channels, heartbeat)
+
+**1.0 Hardening** (the four items the Phase 0 review flagged):
+
+- **DNS-rebinding defense.** `web.fetch` authorizes egress at connection time
+  on the *resolved* addresses: a pinned `EgressResolver` + `checkResolvedTarget`
+  (hostname must pass the domain check AND, when the engagement declares CIDRs,
+  every resolved IP must fall inside them), a `node:http(s)` transport pinned
+  to the validated address via a `lookup` override (DNS is never consulted
+  again), per-hop re-resolution on redirects, trailing-dot normalization, and
+  a TTL pin. Deny reason: `dns_rebinding_out_of_scope`. Domain-only
+  engagements keep hostname-only authorization (documented residual).
+- **Tool executions in the hash-chained audit log.** `tool.call` /
+  `tool.result` / `tool.error` / `action.denied` events audit with an
+  `event_seq` cross-reference (back-compatible hashing; in-place migration),
+  written by both apps' EventSinks; `reconcileEventAudit` cross-checks chain
+  against event log; 1,000-event interleaved verification tested.
+- **Engagement `operator_id` ↔ owner binding.** `assertEngagementOwnership`
+  in `@nyx/policy` (every entry point: CLI + server session creation);
+  mismatch is a hard `engagement_ownership` error naming both ids.
+- **First-run USER.md bootstrap.** `nyx init` prompts for name, timezone, and
+  standing instructions and writes the default persona's USER.md; skips
+  already-populated files; `nyx init --yes` writes the template unchanged;
+  repo checkouts copy the full default persona to the fresh home.
+
+**1.1 Lane queue** — new `@nyx/runtime`: per-session FIFO lanes, serial
+execution by default, global concurrency cap with round-robin fairness, abort
+propagation (aborting a running task cancels it and drains that session's
+queue; other sessions untouched), heartbeat-parallel opt-out. The server's
+`POST /v1/sessions/:id/turns` enqueues and returns `turn_id` + lane status
+immediately — a second turn while one is in flight **queues instead of
+409ing**. Verified with a 100-turn FIFO test via event seq monotonicity.
+
+**1.2 Channels** — new `@nyx/channels`: `ChannelAdapter` interface, webhook
+adapter (loopback HTTP listener; reply delivered exactly once in the response;
+202 with ids past `reply_timeout_ms`), Telegram adapter (long-polling Bot API
+via an injectable client — no network in CI; streaming replies via throttled
+`editMessageText`; env-indirect bot token), and the manager that owns identity
+allow lists (rejections audited, no reply), sha256(channel:user:thread) →
+session mapping (persisted), and `/new` + `/fork`. Channels drive the same
+lane/loop/policy/approval machinery as the HTTP API — no parallel policy
+path. Config `channels` section, disabled by default.
+
+**1.3 Heartbeat** — `@nyx/runtime` cron (hand-rolled 5-field parser, vixie
+dom/dow semantics, UTC — declared choice, no new dependency) +
+`HeartbeatScheduler` with SQLite-persisted state: fires enqueue
+heartbeat-priority turns; state advances before firing (crash-safe); missed
+fires (process down) are logged as `heartbeat.missed` and never re-fired;
+manual `trigger()` does not consume the schedule. Server wiring with
+`config.heartbeat` (disabled by default); recommended default specs
+(memory-review daily 03:00, session-summary hourly) shipped commented.
+
+**Docs:** `CHANNELS.md`, `HEARTBEAT.md` added; `ARCHITECTURE.md` (14-package
+graph), `SECURITY-MODEL.md` (DNS-rebinding, tool audit, engagement
+ownership, updated residuals) updated; example config documents `lanes`,
+`channels`, `heartbeat`.
+
+Verification: 33/33 test tasks — **743 passed, 0 failed**, 8 Docker-sandbox
+skips; all 18 packages typecheck clean; lint clean; Phase 0 verification
+items (replay-10k, approval-lifecycle, redaction grep) still pass.
+
 ### Added — Phase 0 (foundation)
 
 - Monorepo scaffold: pnpm workspaces + Turborepo, strict TypeScript (ESM),
