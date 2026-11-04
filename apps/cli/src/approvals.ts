@@ -9,7 +9,12 @@
 import { join } from "node:path";
 import { openApprovalEngine } from "@nyx/policy";
 import { openSessionStore } from "@nyx/session";
-import type { ApprovalEngine, ApprovalRecord, SessionStore } from "@nyx/protocol";
+import type {
+  ApprovalEngine,
+  ApprovalRecord,
+  SessionEvent,
+  SessionStore,
+} from "@nyx/protocol";
 import { toSerializedError } from "@nyx/protocol";
 import { CliError } from "./errors.js";
 import { formatDuration, truncate } from "./format.js";
@@ -26,7 +31,14 @@ export interface ApprovalSurface {
 
 export function openApprovalSurface(data_dir: string): ApprovalSurface {
   const store = openSessionStore(join(data_dir, "nyx.db"));
-  const sink = createEventSink(store);
+  // Same late-bound tool-event audit hook as the runtime: consistent wiring
+  // across every surface that opens the sink + approval engine pair.
+  let auditEvent: ((event: SessionEvent, seq: number) => void) | undefined;
+  const sink = createEventSink(store, {
+    onAppended: (stored) => {
+      for (const storedEvent of stored) auditEvent?.(storedEvent, storedEvent.seq);
+    },
+  });
   const handle = openApprovalEngine(join(data_dir, "policy.db"), {
     onCreated: (rec) => {
       void sink
@@ -60,6 +72,7 @@ export function openApprovalSurface(data_dir: string): ApprovalSurface {
         .catch(() => undefined);
     },
   });
+  auditEvent = handle.auditEvent;
   return {
     store,
     sink,

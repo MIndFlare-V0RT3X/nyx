@@ -12,6 +12,8 @@ export interface AuditEntry {
   actor: string;
   action: string;
   payload: unknown;
+  /** Optional cross-reference: the session event log row this entry records. */
+  event_seq?: number;
 }
 
 export interface AuditVerifyResult {
@@ -29,15 +31,24 @@ interface AuditRow {
   action: string;
   payload_json: string;
   created_at: number;
+  event_seq: number | null;
 }
 
 const AUDIT_DDL = `CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY AUTOINCREMENT, prev_hash TEXT NOT NULL, hash TEXT NOT NULL,
-  actor TEXT NOT NULL, action TEXT NOT NULL, payload_json TEXT NOT NULL, created_at INTEGER NOT NULL
+  actor TEXT NOT NULL, action TEXT NOT NULL, payload_json TEXT NOT NULL, created_at INTEGER NOT NULL,
+  event_seq INTEGER
 )`;
 
 export function ensureAuditTable(db: Database.Database): void {
   db.exec(AUDIT_DDL);
+  // Migrate pre-event_seq databases in place (CREATE IF NOT EXISTS does not
+  // add columns to an existing table).
+  const cols = db.pragma("table_info(audit)") as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === "event_seq")) {
+    db.exec("ALTER TABLE audit ADD COLUMN event_seq INTEGER");
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS audit_event_seq ON audit(event_seq)");
 }
 
 function computeHash(
@@ -46,8 +57,14 @@ function computeHash(
   actor: string,
   action: string,
   createdAt: number,
+  eventSeq: number | null,
 ): string {
-  const material = `${prevHash}\n${payloadJson}\n${actor}\n${action}\n${String(createdAt)}`;
+  // Back-compatible: rows without an event cross-reference hash over the
+  // exact pre-1.0 material (nothing appended); rows with one extend it, so
+  // tampering with the event_seq link itself breaks the chain too.
+  const material =
+    `${prevHash}\n${payloadJson}\n${actor}\n${action}\n${String(createdAt)}` +
+    (eventSeq === null ? "" : `\n${String(eventSeq)}`);
   return createHash("sha256").update(material, "utf8").digest("hex");
 }
 
@@ -74,10 +91,11 @@ export function appendAudit(
   const prevHash = prev?.hash ?? ""; // genesis
   const createdAt = opts.now?.() ?? Date.now();
   const payloadJson = canonicalJson(entry.payload);
-  const hash = computeHash(prevHash, payloadJson, entry.actor, entry.action, createdAt);
+  const eventSeq = entry.event_seq ?? null;
+  const hash = computeHash(prevHash, payloadJson, entry.actor, entry.action, createdAt, eventSeq);
   db.prepare(
-    "INSERT INTO audit (prev_hash, hash, actor, action, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-  ).run(prevHash, hash, entry.actor, entry.action, payloadJson, createdAt);
+    "INSERT INTO audit (prev_hash, hash, actor, action, payload_json, created_at, event_seq) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).run(prevHash, hash, entry.actor, entry.action, payloadJson, createdAt, eventSeq);
 }
 
 /**
@@ -94,7 +112,7 @@ export function verifyAuditChain(db: Database.Database): AuditVerifyResult {
   ensureAuditTable(db);
   const rows = db
     .prepare(
-      "SELECT id, prev_hash, hash, actor, action, payload_json, created_at FROM audit ORDER BY id ASC",
+      "SELECT id, prev_hash, hash, actor, action, payload_json, created_at, event_seq FROM audit ORDER BY id ASC",
     )
     .all() as AuditRow[];
   let prevHash = "";
@@ -106,6 +124,7 @@ export function verifyAuditChain(db: Database.Database): AuditVerifyResult {
       row.actor,
       row.action,
       row.created_at,
+      row.event_seq ?? null,
     );
     if (row.hash !== expected || row.prev_hash !== prevHash) {
       return { ok: false, checked, first_bad_id: row.id };

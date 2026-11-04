@@ -5,6 +5,7 @@
 
 import { nanoid } from "nanoid";
 import { appendAudit, ensureAuditTable, verifyAuditChain } from "./audit.js";
+import { appendEventAudit } from "./event-audit.js";
 import { CodedError } from "./errors.js";
 import type {
   ApprovalContext,
@@ -12,6 +13,7 @@ import type {
   ApprovalRecord,
   PolicyVerdict,
   RiskTier,
+  SessionEvent,
 } from "@nyx/protocol";
 import Database from "better-sqlite3";
 
@@ -304,11 +306,23 @@ export class ApprovalEngineImpl implements ApprovalEngine {
  * approval/audit store (`nyx run`, `nyx chat`, `nyx approvals`, the server)
  * checks the chain up front and refuses to operate on a log that fails
  * verification.
+ *
+ * `auditEvent` exposes the tool-event audit path on the same db handle: the
+ * app-layer EventSink calls it after the session store assigns an event's
+ * seq, landing tool.call / tool.result / tool.error / action.denied rows in
+ * the same hash chain (see event-audit.ts).
  */
+export interface OpenedApprovalEngine {
+  engine: ApprovalEngineImpl;
+  close(): void;
+  /** Hash-chain audit row for one stored session event (no-op for non-audited types). */
+  auditEvent(event: SessionEvent, seq: number): void;
+}
+
 export function openApprovalEngine(
   dbPath: string,
   opts: ApprovalEngineOptions = {},
-): { engine: ApprovalEngineImpl; close(): void } {
+): OpenedApprovalEngine {
   const db = new Database(dbPath);
   try {
     const engine = new ApprovalEngineImpl(db, opts);
@@ -321,7 +335,11 @@ export function openApprovalEngine(
           "the audit log may have been tampered with",
       );
     }
-    return { engine, close: () => db.close() };
+    return {
+      engine,
+      close: () => db.close(),
+      auditEvent: (event, seq) => appendEventAudit(db, event, seq),
+    };
   } catch (err) {
     db.close();
     throw err;

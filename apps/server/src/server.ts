@@ -45,6 +45,7 @@ import {
   type RunContext,
   type Sandbox,
   type SandboxProvider,
+  type SessionEvent,
 } from "@nyx/protocol";
 import { validateTargets } from "@nyx/scope";
 import { authenticate, resolveAuth, type Actor, type ResolvedAuth } from "./auth.js";
@@ -109,7 +110,15 @@ export function createServer(deps: ServerDeps): NyxServer {
   mkdirSync(deps.data_dir, { recursive: true });
   const logger = createLogger(config.logging);
   const store = openSessionStore(join(deps.data_dir, "nyx.db"));
-  const sink = createEventSink(store);
+  // Late-bound: the approval engine (which owns the audit db) opens after
+  // the sink because its callbacks append through the sink; the tool-event
+  // audit hook binds as soon as the engine exists.
+  let auditEvent: ((event: SessionEvent, seq: number) => void) | undefined;
+  const sink = createEventSink(store, {
+    onAppended: (stored) => {
+      for (const storedEvent of stored) auditEvent?.(storedEvent, storedEvent.seq);
+    },
+  });
 
   let wsHub: WebSocketHub | undefined;
 
@@ -152,6 +161,8 @@ export function createServer(deps: ServerDeps): NyxServer {
     },
   });
   const approvals = approvalEngineHandle.engine;
+  // Tool events now audit into the same hash chain as approval decisions.
+  auditEvent = approvalEngineHandle.auditEvent;
 
   const providers = deps.providers ?? buildProviders(config, logger);
   const providerRegistry = new ProviderRegistryImpl();

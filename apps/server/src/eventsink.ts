@@ -11,6 +11,18 @@
 
 import type { SessionEvent, SessionStore, StoredEvent } from "@nyx/protocol";
 
+export interface EventSinkOptions {
+  /**
+   * Called inside the serialized chain, after the store has committed the
+   * batch and assigned seqs. The tool-event audit path hangs off this: the
+   * server routes stored tool.call / tool.result / tool.error /
+   * action.denied events into the hash-chained audit log with their seq.
+   * Throwing here fails the append call — audit failures are loud, never
+   * silent.
+   */
+  onAppended?: (stored: StoredEvent[]) => void;
+}
+
 export interface EventSink {
   /** Append through the serialized chain; resolves with the stored events. */
   append(session_id: string, events: SessionEvent[]): Promise<StoredEvent[]>;
@@ -22,11 +34,15 @@ export interface EventSink {
   readonly wrapped: SessionStore;
 }
 
-export function createEventSink(store: SessionStore): EventSink {
+export function createEventSink(store: SessionStore, opts: EventSinkOptions = {}): EventSink {
   let chain: Promise<unknown> = Promise.resolve();
 
   const append = (session_id: string, events: SessionEvent[]): Promise<StoredEvent[]> => {
-    const run = chain.then(() => store.append(session_id, events));
+    const run = chain.then(async () => {
+      const stored = await store.append(session_id, events);
+      opts.onAppended?.(stored);
+      return stored;
+    });
     // The chain survives a failed link: the next append still runs, and the
     // failure is reported only to the caller of that append.
     chain = run.then(

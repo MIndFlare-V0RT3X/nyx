@@ -80,5 +80,32 @@ describe("e2e smoke", () => {
       type: "turn.completed",
       usage: { output_tokens: expect.any(Number) },
     });
+
+    // Tool events landed in the hash-chained audit log (Phase 1 hardening
+    // 2.2): the server's EventSink routes every stored tool.call /
+    // tool.result / tool.error / action.denied into policy.db's audit chain
+    // with its event seq, so the operator can prove what the agent did, not
+    // only what they approved.
+    const { verifyAuditChain, reconcileEventAudit } = await import("@nyx/policy");
+    // @ts-expect-error better-sqlite3 is not a declared dependency of @nyx/e2e; tests resolve it from the sibling @nyx/policy workspace.
+    const Database = (await import("../../packages/policy/node_modules/better-sqlite3")).default;
+    const auditDb = new Database(join(rig.dataDir, "policy.db"));
+    try {
+      const chain = verifyAuditChain(auditDb);
+      expect(chain.ok).toBe(true);
+      expect(chain.checked).toBeGreaterThan(0);
+      expect(reconcileEventAudit(auditDb, events)).toEqual([]);
+      const toolRows = auditDb
+        .prepare(
+          "SELECT action, event_seq FROM audit WHERE event_seq IS NOT NULL ORDER BY event_seq",
+        )
+        .all() as Array<{ action: string; event_seq: number }>;
+      expect(toolRows).toEqual([
+        { action: "tool.call", event_seq: events.find((e) => e.type === "tool.call")!.seq },
+        { action: "tool.result", event_seq: events.find((e) => e.type === "tool.result")!.seq },
+      ]);
+    } finally {
+      auditDb.close();
+    }
   });
 });

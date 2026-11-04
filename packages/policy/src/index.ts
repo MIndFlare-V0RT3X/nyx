@@ -8,5 +8,11 @@ export { ApprovalEngineImpl, openApprovalEngine } from "./approvals.js";
 export type { ApprovalEngineOptions } from "./approvals.js";
 export { appendAudit, verifyAuditChain } from "./audit.js";
 export type { AuditEntry, AuditVerifyResult } from "./audit.js";
+export {
+  appendEventAudit,
+  isAuditableEvent,
+  reconcileEventAudit,
+} from "./event-audit.js";
+export type { AuditableEvent, AuditableEventType } from "./event-audit.js";
 export { policyRuleSchema } from "./schema.js";
 export type { PolicyRuleSchema, SafeParseResult } from "./schema.js";
