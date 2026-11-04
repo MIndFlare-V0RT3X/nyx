@@ -344,10 +344,18 @@ describe("§6.2 fan-out hardening (fork isolation + artifact security)", () => {
       h.parentCtx,
       { session_id: h.parent.session_id, turn_id: "t1" },
     );
-    // Wait until it is provably running, then bury the map with 8 settled
-    // siblings — the oldest settled entry (not the running one) is evicted.
-    await new Promise((r) => setTimeout(r, 80));
-    expect((await h.manager.list(h.parent.session_id))[0]!.state).toBe("running");
+    // Wait until it is provably running (poll — a fixed sleep flakes under
+    // parallel suite load), then bury the map with 8 settled siblings — the
+    // oldest settled entry (not the running one) is evicted.
+    const deadline = Date.now() + 5_000;
+    for (;;) {
+      const listed = await h.manager.list(h.parent.session_id);
+      if (listed.length > 0 && listed[0]!.state === "running") break;
+      if (Date.now() > deadline) {
+        throw new Error(`slow-kid never reached running state (listed: ${JSON.stringify(listed)})`);
+      }
+      await new Promise((r) => setTimeout(r, 25));
+    }
     for (let i = 0; i < 8; i++) {
       h.provider.script(`fill-${i}`, artifactTurn(`fill-${i}.txt`));
       const r = await h.manager.spawn(
