@@ -63,7 +63,7 @@ graph), `SECURITY-MODEL.md` (DNS-rebinding, tool audit, engagement
 ownership, updated residuals) updated; example config documents `lanes`,
 `channels`, `heartbeat`.
 
-Verification: 33/33 test tasks — **743 passed, 0 failed**, 8 Docker-sandbox
+Verification: 33/33 test tasks — **744 passed, 0 failed**, 8 Docker-sandbox
 skips; all 18 packages typecheck clean; lint clean; Phase 0 verification
 items (replay-10k, approval-lifecycle, redaction grep) still pass.
 
