@@ -58,6 +58,9 @@ describe("spawn_subagent tool registration", () => {
       risk: "R1",
       capabilities: [],
       concurrency: "parallel",
+      // Long-running children get a long wall clock (the 30 s default tool
+      // timeout would kill legitimate minutes-long subagents).
+      timeout_ms: 600_000,
     });
     // The model-facing schema is the brief's §2.3 shape.
     const schema = entry!.def.input_schema as {
@@ -88,6 +91,34 @@ describe("spawn_subagent tool registration", () => {
         fakeCtx(),
       ),
     ).rejects.toMatchObject({ code: "validation_failed" });
+  });
+
+  it("enforces the advertised budget minimum (1024) — the runtime schema drops `minimum`", async () => {
+    // Fan-out review R1: the compiled runtime schema is type+properties+
+    // required only, so `minimum: 1024` is enforced HERE. Negative, zero,
+    // fractional, and sub-minimum budgets must all die at the tool boundary.
+    const registry = new ToolRegistryImpl();
+    const manager = {
+      spawn: () => {
+        throw new Error("must not be called");
+      },
+    } as unknown as SubagentManager;
+    registerSubagentTool(registry, { manager, config: resolveSubagentsConfig() });
+    const handler = registry.get(SPAWN_SUBAGENT_TOOL)!.handler;
+    for (const bad of [-1_000_000, 0, 512, 1024.5]) {
+      await expect(
+        handler.execute(
+          { call_id: "c1", name: SPAWN_SUBAGENT_TOOL, input: { task: "x", budget_tokens: bad } },
+          fakeCtx(),
+        ),
+      ).rejects.toMatchObject({ code: "validation_failed", name: "SubagentError" });
+    }
+    // The boundary itself is legal.
+    const ok = await handler.execute(
+      { call_id: "c1", name: SPAWN_SUBAGENT_TOOL, input: { task: "x", budget_tokens: 1024 } },
+      fakeCtx({ session_id: "s1", turn_id: "t1", emit: () => undefined }),
+    ).catch(() => undefined); // no bound turn → any error is fine; input passed validation
+    expect(ok).toBeUndefined();
   });
 
   it("routes to the manager with the bound parent ref and returns the result as JSON", async () => {

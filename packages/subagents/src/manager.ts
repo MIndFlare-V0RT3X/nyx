@@ -22,6 +22,7 @@ import { nanoid } from "nanoid";
 import type Database from "better-sqlite3";
 import type {
   AgentLoop,
+  ApprovalEngine,
   ContentBlock,
   RunContext,
   SerializedError,
@@ -33,6 +34,7 @@ import type {
   SubagentSpec,
   Usage,
 } from "@nyx/protocol";
+import { toSerializedError } from "@nyx/protocol";
 import { createAgentLoop } from "@nyx/agent";
 import {
   BudgetTrackingRouter,
@@ -41,7 +43,7 @@ import {
   childUserMessage,
 } from "./child-views.js";
 import { resolveSubagentsConfig, type SubagentsConfig } from "./config.js";
-import { requestSubagentAbort, takeSubagentAbortRequests } from "./control.js";
+import { requestSubagentAbort, listSubagentAbortRequests, deleteSubagentAbortRequest } from "./control.js";
 import { SubagentError } from "./errors.js";
 
 /** The per-turn binding the spawn_subagent tool resolves its parent through. */
@@ -94,6 +96,8 @@ export interface SubagentManagerDeps {
 interface RunningChild {
   controller: AbortController;
   parent_session_id: string;
+  /** The parent turn's approval engine — used to unblock ask-waits on abort. */
+  approvals: ApprovalEngine | undefined;
   /** Set when the abort came from outside the child's own failure paths. */
   externalAbort: boolean;
   /** Human-readable abort cause for the mirrored subagent.aborted event. */
@@ -129,6 +133,21 @@ export class SubagentManagerImpl implements SubagentManager {
   ): Promise<SubagentResult> {
     if (typeof spec.task !== "string" || spec.task.trim().length === 0) {
       throw new SubagentError("validation_failed", "spawn: spec.task must be a non-empty string");
+    }
+    // Budget floor (fan-out review R1): the allocation arithmetic below only
+    // holds for positive integers — a negative spec budget would poison the
+    // per-turn spend downward and buy room against max_total_per_turn that
+    // was never granted. The tool layer additionally enforces the advertised
+    // schema minimum (1024) for model-authored specs; the manager accepts any
+    // positive integer so surfaces/tests may use small budgets deliberately.
+    if (
+      spec.budget_tokens !== undefined &&
+      (!Number.isInteger(spec.budget_tokens) || spec.budget_tokens < 1)
+    ) {
+      throw new SubagentError(
+        "validation_failed",
+        `spawn: spec.budget_tokens must be a positive integer (got ${String(spec.budget_tokens)})`,
+      );
     }
     if (this.cfg.sandbox_sharing === "fork") {
       throw new SubagentError(
@@ -201,6 +220,7 @@ export class SubagentManagerImpl implements SubagentManager {
     const runningChild: RunningChild = {
       controller,
       parent_session_id: parent.session_id,
+      approvals: parent_ctx.approvals,
       externalAbort: false,
       abortReason: "abort requested",
     };
@@ -215,8 +235,9 @@ export class SubagentManagerImpl implements SubagentManager {
     let parentAborted = false;
     const onParentAbort = (): void => {
       parentAborted = true;
-      runningChild.abortReason = "parent turn aborted";
-      controller.abort(new SubagentError("aborted", "parent turn aborted"));
+      this.abortChild(runningChild, child.session_id, "parent turn aborted", (
+        new SubagentError("aborted", "parent turn aborted")
+      ));
     };
     let summary = "";
     let tokensUsed = 0;
@@ -254,7 +275,9 @@ export class SubagentManagerImpl implements SubagentManager {
       );
       budgetRouter = new BudgetTrackingRouter(parent_ctx.model, budget, () => {
         budgetExceeded = true;
-        controller.abort(new SubagentError("budget_exceeded", "subagent budget exceeded"));
+        this.abortChild(runningChild, child.session_id, "subagent budget exceeded", (
+          new SubagentError("budget_exceeded", "subagent budget exceeded")
+        ));
       });
       if (parent_ctx.signal.aborted) onParentAbort();
       else parent_ctx.signal.addEventListener("abort", onParentAbort, { once: true });
@@ -278,7 +301,11 @@ export class SubagentManagerImpl implements SubagentManager {
       };
 
       // ── run the child turn, harvesting summary/usage/failure from its own
-      //    events while racing the cross-process abort poll (§2.4f–h).
+      //    events while racing the cross-process abort poll (§2.4f–h). The
+      //    poll deadline is checked at the TOP of the loop from a last-poll
+      //    timestamp: a fresh sleep raced against event delivery loses every
+      //    race while the child streams faster than poll_ms, which would
+      //    starve the cross-process abort for as long as the stream lasts.
       const runner = this.loop.run(
         {
           session_id: child.session_id,
@@ -289,29 +316,23 @@ export class SubagentManagerImpl implements SubagentManager {
       );
       const iterator = runner[Symbol.asyncIterator]();
       let pending = iterator.next();
+      let lastPoll = this.now();
       for (;;) {
+        if (this.deps.db !== undefined && this.now() - lastPoll >= this.pollMs) {
+          lastPoll = this.now();
+          await this.drainAbortRequests();
+        }
         let result: IteratorResult<SessionEvent>;
-        if (this.deps.db !== undefined) {
+        if (this.deps.db === undefined) {
+          result = await pending;
+        } else {
+          const waitMs = Math.max(1, this.pollMs - (this.now() - lastPoll));
           const winner = await Promise.race([
             pending.then((r) => ({ kind: "next" as const, r })),
-            sleep(this.pollMs).then(() => ({ kind: "poll" as const })),
+            sleep(waitMs).then(() => ({ kind: "poll" as const })),
           ]);
-          if (winner.kind === "poll") {
-            for (const id of takeSubagentAbortRequests(this.deps.db)) {
-              const entry = this.running.get(id);
-              if (entry !== undefined) {
-                entry.externalAbort = true;
-                entry.abortReason = "abort requested (external)";
-                entry.controller.abort(new SubagentError("aborted", "abort requested (external)"));
-              }
-              // Requests for children this process doesn't run are drained
-              // as stale — their owners already finished or live elsewhere.
-            }
-            continue;
-          }
+          if (winner.kind === "poll") continue; // loop head decides + drains
           result = winner.r;
-        } else {
-          result = await pending;
         }
         if (result.done) break;
         const ev = result.value;
@@ -328,6 +349,14 @@ export class SubagentManagerImpl implements SubagentManager {
           turnFailure = ev.error;
         }
       }
+    } catch (err) {
+      // A throw anywhere AFTER the child exists (a failed mirrored append, a
+      // broken child-context build, a loop that explodes before its own
+      // try/catch) is the CHILD's failure per §2.4i — not a spawn() rejection.
+      // Recording it here and falling through to the terminal section mirrors
+      // subagent.failed and returns state="failed", so a mid-flight throw can
+      // never leave the child "running" forever (fan-out review R1/R2).
+      turnFailure = toSerializedError(err);
     } finally {
       parent_ctx.signal.removeEventListener("abort", onParentAbort);
       this.running.delete(child.session_id);
@@ -441,12 +470,17 @@ export class SubagentManagerImpl implements SubagentManager {
     const entry = this.running.get(subagent_session_id);
     if (entry !== undefined) {
       entry.externalAbort = true;
-      entry.abortReason = "abort requested";
-      entry.controller.abort(new SubagentError("aborted", "abort requested"));
+      this.abortChild(
+        entry,
+        subagent_session_id,
+        "abort requested",
+        new SubagentError("aborted", "abort requested"),
+      );
       return;
     }
     // Not running here — leave a control row for the owning process. If no
-    // process owns it either, the row is drained as stale by the next poll.
+    // process owns it either, the row is deleted by the next poll once the
+    // session is provably settled (or unknown).
     if (this.deps.db !== undefined) {
       requestSubagentAbort(this.deps.db, subagent_session_id, "subagents.abort");
     }
@@ -480,6 +514,73 @@ export class SubagentManagerImpl implements SubagentManager {
   }
 
   // ---- internals ---------------------------------------------------------
+
+  /**
+   * One abort path, four callers (parent signal / budget / in-process /
+   * cross-process). Besides firing the controller it withdraws the child's
+   * pending approvals: a child blocked in approvals.request() is not racing
+   * the signal there (the Phase 2 runtime awaits the engine directly), so
+   * without the withdraw the abort would only take effect at approval TTL.
+   */
+  private abortChild(
+    entry: RunningChild,
+    childSessionId: string,
+    reason: string,
+    err: SubagentError,
+  ): void {
+    entry.abortReason = reason;
+    entry.controller.abort(err);
+    try {
+      entry.approvals?.withdrawSession?.(childSessionId, reason);
+    } catch {
+      // Best-effort: the controller is already aborted. A withdraw failure
+      // only means the pending approval settles on its own (TTL/resolution).
+    }
+  }
+
+  /**
+   * Applies pending cross-process abort requests THIS process can act on.
+   * Rows for children owned by other processes are left in place — their
+   * owner's poll must see them (a drain-all read here would let a bystander
+   * manager delete a request its owner had not yet seen; fan-out review R2).
+   * Rows naming settled or unknown sessions can never apply and are deleted.
+   */
+  private async drainAbortRequests(): Promise<void> {
+    const db = this.deps.db;
+    if (db === undefined) return;
+    for (const row of listSubagentAbortRequests(db)) {
+      const entry = this.running.get(row.session_id);
+      if (entry !== undefined) {
+        entry.externalAbort = true;
+        this.abortChild(
+          entry,
+          row.session_id,
+          "abort requested (external)",
+          new SubagentError("aborted", "abort requested (external)"),
+        );
+        deleteSubagentAbortRequest(db, row.session_id);
+        continue;
+      }
+      if (await this.isSettledOrUnknown(row.session_id)) {
+        deleteSubagentAbortRequest(db, row.session_id);
+      }
+    }
+  }
+
+  /** True when the session already has a terminal subagent.* event (or does not exist). */
+  private async isSettledOrUnknown(sessionId: string): Promise<boolean> {
+    try {
+      const events = await this.deps.store.read(sessionId);
+      return events.some(
+        (e) =>
+          e.type === "subagent.completed" ||
+          e.type === "subagent.failed" ||
+          e.type === "subagent.aborted",
+      );
+    } catch {
+      return true; // unreadable/nonexistent — the row can never apply
+    }
+  }
 
   /** Appends the terminal event to the child's log, then the parent's. */
   private async mirror(

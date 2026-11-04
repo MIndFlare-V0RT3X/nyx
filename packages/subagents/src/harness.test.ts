@@ -124,10 +124,13 @@ export class TmpSandbox implements Sandbox {
  * Scripted provider that dispatches on a marker inside the LAST user message
  * (the child's initial message embeds its task; tests give each child a task
  * with a unique marker). Unmatched requests consume the fallback queue — the
- * parent session's script.
+ * parent session's script. Every request is recorded so tests can assert on
+ * what the model was actually offered (e.g. the child's tools catalog).
  */
 export class TaskDispatchProvider implements ModelProvider {
   readonly id = "mock";
+  /** Every CompletionRequest seen, in order (model-facing surface proof). */
+  readonly requests: CompletionRequest[] = [];
   private readonly byMarker = new Map<string, MockTurn[]>();
   private readonly fallback: MockTurn[] = [];
 
@@ -156,6 +159,7 @@ export class TaskDispatchProvider implements ModelProvider {
   }
 
   async *complete(req: CompletionRequest): AsyncGenerator<ModelChunk, void, void> {
+    this.requests.push(req);
     const turn = this.nextTurn(req);
     if (turn === undefined) {
       throw new Error("task-dispatch provider: script exhausted");
@@ -196,9 +200,13 @@ export function fakePersona(personaId = "test-persona"): PersonaRuntime {
 export interface SubagentHarnessOptions {
   config?: Partial<SubagentsConfig>;
   /** Extra tools registered alongside the builtins (e.g. slow test tools). */
-  extraTools?: Array<{ name: string; handler: ToolHandler }>;
+  extraTools?: Array<{ name: string; handler: ToolHandler; risk?: "R0" | "R1" | "R2" | "R3" }>;
   /** Register the spawn_subagent tool (default true). */
   registerSpawnTool?: boolean;
+  /** Use this provider instead of a fresh one (e.g. a slow-stream subclass). */
+  provider?: TaskDispatchProvider;
+  /** Extra SubagentManagerDeps merged over the defaults (db, poll_ms, hooks). */
+  managerDeps?: Record<string, unknown>;
 }
 
 export interface SubagentHarness {
@@ -227,7 +235,7 @@ export async function makeSubagentHarness(
   const store = openSessionStore(":memory:");
   const parent = await store.create({ owner_id: "test-owner", persona_id: "test-persona" });
 
-  const provider = new TaskDispatchProvider();
+  const provider = opts.provider ?? new TaskDispatchProvider();
   const registry = new ProviderRegistryImpl();
   registry.register(provider);
   const model = new ModelRouterImpl(registry, {
@@ -251,7 +259,7 @@ export async function makeSubagentHarness(
         name: extra.name,
         description: `test tool ${extra.name}`,
         input_schema: { type: "object" },
-        risk: "R0",
+        risk: extra.risk ?? "R0",
         capabilities: [],
         handler: `builtin:${extra.name}`,
       },
@@ -274,7 +282,11 @@ export async function makeSubagentHarness(
   const sandbox = new TmpSandbox("sbx-parent", workdir);
 
   const config = resolveSubagentsConfig(opts.config);
-  const manager = createSubagentManager({ store, config: opts.config });
+  const manager = createSubagentManager({
+    store,
+    config: opts.config,
+    ...(opts.managerDeps as object | undefined),
+  });
   if (opts.registerSpawnTool !== false) {
     registerSubagentTool(toolRegistry, { manager, config });
   }

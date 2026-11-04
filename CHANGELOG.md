@@ -87,9 +87,92 @@ SemVer once 0.1.0 ships.
 - **Docs.** `docs/SUBAGENTS.md` (contract, config, aborts, API, known
   simplifications); ARCHITECTURE (16-package graph, subagent isolation
   invariant), README, PROTOCOL (event catalogue + routes), example config.
-- **Tests.** 824 total across 19 packages, 0 failures (49 new: 29
-  `@nyx/subagents`, 4 server routes, 2 CLI, 2 e2e incl. fan-out, 2 agent
-  parallel-round, 4 session kind/migration, 3 protocol schemas, 3 config).
+- **Tests.** 865 total across 19 packages, 0 failures (49 new over Phase
+  2's 816: 29 `@nyx/subagents`, 4 server routes, 2 CLI, 2 e2e incl.
+  fan-out, 2 agent parallel-round, 4 session kind/migration, 3 protocol
+  schemas, 3 config).
+
+### Fixed — Phase 3 hardening (the real three-reviewer fan-out)
+
+After steps 3.1–3.10 were green, three parallel review agents (R1: depth/
+budget/allowlist; R2: abort/isolation; R3: tool-router filtering) reviewed
+the shipped sources read-only and returned numbered findings with
+severities. 20 findings total: 6 fixed in code, 14 verified-by-test or
+accepted-with-reason (every acceptance documented in SUBAGENTS.md). Each
+fix is locked in by a regression test.
+
+- **Budget floor (R1, High).** A model-authored negative `budget_tokens`
+  passed the compiled runtime schema (which drops `minimum`) and poisoned
+  the per-turn allocation downward — `spent + budget` could never exceed
+  `max_total_per_turn`, buying unbounded extra spawns. Fixed twice over:
+  the tool boundary now enforces the advertised minimum (integer ≥ 1024,
+  matching the schema the model was shown) and the manager rejects any
+  non-positive-integer spec budget (`validation_failed`). The runtime-path
+  regression test drives the poisoned input through a REAL parent turn.
+- **Post-create throws can no longer zombie a child (R1+R2, High/Medium).**
+  A throw after child-session creation (a failed mirrored append, a loop
+  exploding before its own try/catch) used to propagate out of `spawn()`,
+  leaving the child's log with `subagent.spawned` and no terminal event —
+  `list()` reported it "running" forever and the copied approval presenter
+  leaked. Now the whole post-create section is guarded: the throw becomes
+  the child's failure per §2.4i — `subagent.failed` mirrored on both logs,
+  `state="failed"` returned, `onSettled` fired, allocation left counted
+  (conservative stickiness, documented).
+- **Cross-process abort rows are ownership-aware (R2, High).**
+  `takeSubagentAbortRequests` drained ALL rows and the poll dropped the ones
+  it didn't own — with server and CLI both running subagents over one
+  nyx.db, a bystander manager's poll could delete a request before its
+  owner saw it, silently losing the abort. Replaced with
+  `listSubagentAbortRequests` + per-row decisions: act+delete on owned
+  children, delete on provably stale rows (settled/unknown session), LEAVE
+  rows for children other processes own. Regression test proves all three
+  row fates on two real connections to one file.
+- **The abort poll is no longer starvable by streaming (R2, Medium).** The
+  old pump raced a fresh `sleep(poll_ms)` against the next event — a child
+  streaming faster than the poll interval never let the timer win, delaying
+  cross-process aborts for the whole stream. The deadline is now checked at
+  the TOP of the pump from a last-poll timestamp, so a drain happens at
+  least every `poll_ms` regardless of event rate (proven with a
+  continuously-streaming child and an abort row written pre-stream).
+- **Abort now unblocks ask-waits (R2, Medium).** A child blocked in
+  `approvals.request()` was not racing the abort signal (the Phase 2 runtime
+  awaits the engine directly), so an abort took effect only at approval TTL
+  (10 min). Every abort path (parent signal, budget, in-process, cross-
+  process) now also withdraws the child's pending approvals via the new
+  optional `ApprovalEngine.withdrawSession` protocol method (additive; the
+  2.0.2 impl already had it) — the wait resolves deny and the abort lands
+  immediately. Tested with a child genuinely blocked on an R2 ask.
+- **The parent's memory catalog excludes the `subagent` scope (R2,
+  Medium).** The loop's prompt-assembly catalog query was unscoped, so
+  child-written `subagent`-scope memory titles (first 80 chars) could
+  surface in the PARENT's next prompt — violating "summary only via
+  SubagentResult". The catalog now queries session/persona/owner/global
+  explicitly; a child reading its own memory is unaffected (its view
+  translates). Plus: `SubagentMemory.list` over-fetches before ownership
+  filtering so other children's rows can't truncate the child's own results
+  (R2, Low), and `get()` ownership is now regression-tested.
+- **Test gaps closed from the review (R2/R3, Low).** "Both logs" asserted
+  per abort flavor (parent-abort, in-process, cross-process); abort-vs-
+  budget precedence; the config-independence of the structural
+  spawn_subagent gate (forbidden_tools emptied, spec names it — still
+  absent); the child's outgoing model request offers no spawn_subagent
+  (provider now records requests); a session STARTING at max depth lacks
+  the tool and cannot spawn; `timeout_ms: 600_000` asserted; the
+  cross-process test now uses two real connections to one file; the fanout
+  fixture's one inaccurate claim corrected.
+- **Accepted with reason (documented in SUBAGENTS.md):** in-flight budget
+  depends on providers emitting usage chunks; crash reconciliation deferred
+  to Phase 4 GC (no process-liveness data — a heuristic could kill live
+  children of another process); typed rejection codes flatten to the
+  runtime's `tool_failed` event code (Phase 0 behavior unchanged);
+  `SubagentSpec.model` reserved but unwired; `fs.edit` omitted from the
+  default allowlist (no such builtin — naming it would be dead config);
+  rewrite-hooks vs. parallel-round classification; FilteredToolRegistry
+  register/unregister delegation; `RunContext.tool_router` carried but
+  unconsumed.
+- **Suite after hardening.** **879 passed, 0 failed** (+8 platform-skipped
+  sandbox tests), typecheck clean across all 19 packages, lint clean — 14
+  new regression tests from the review findings.
 
 ### Added — Phase 2 (unified DB, channel approvals, compaction)
 

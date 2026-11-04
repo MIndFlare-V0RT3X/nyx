@@ -240,6 +240,8 @@ export class TmpSandbox implements Sandbox {
 export class FakeMemoryStore implements MemoryStore {
   private nextId = 0;
   private readonly entries = new Map<string, MemoryEntry>();
+  /** Every list() call's scope argument — prompt-assembly query proof. */
+  readonly listCalls: Array<MemoryScope[] | undefined> = [];
 
   async write(entry: Omit<MemoryEntry, "id" | "created_at" | "updated_at">): Promise<MemoryEntry> {
     const now = Date.now();
@@ -270,6 +272,7 @@ export class FakeMemoryStore implements MemoryStore {
     kind?: MemoryEntry["kind"];
     limit?: number;
   }): Promise<MemoryEntry[]> {
+    this.listCalls.push(opts?.scope);
     const scope = opts?.scope;
     const kind = opts?.kind;
     const limit = opts?.limit;
@@ -436,6 +439,7 @@ export interface Harness {
   mock: MockProvider;
   store: SessionStore;
   session: SessionMeta;
+  memory: FakeMemoryStore;
   logger: RecordingLogger;
   approvals: ApprovalEngineImpl;
   /** Approval-lifecycle records surfaced by the engine callbacks (empty in loop tests — the fake runtime bypasses approvals). */
@@ -518,6 +522,7 @@ export async function makeHarness(opts: HarnessOptions = {}): Promise<Harness> {
     mock,
     store,
     session,
+    memory,
     logger,
     approvals,
     approvalLog,

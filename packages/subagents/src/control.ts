@@ -3,9 +3,15 @@
 // spawned it (server, or a `nyx chat` process); `nyx subagents abort <id>`
 // runs in a THIRD process that cannot reach that controller in memory. The
 // unified nyx.db carries the request: the CLI writes a row, the owning
-// manager's poll (the same pattern the approval engine uses) drains it and
-// aborts the child. Rows for children nobody runs are drained as stale —
-// aborting a finished subagent is a no-op.
+// manager's poll (the same pattern the approval engine uses) reads it and
+// aborts the child.
+//
+// Rows are NOT drained blindly: a manager only deletes a row it acted on
+// (a child it aborted) or a row that is provably stale (the session is
+// settled or unknown). A row for a child running in ANOTHER process is left
+// in place — with a drain-all read, a bystander manager's poll could delete
+// a request its owner had not yet seen, silently losing the abort (server
+// and CLI local runtime can both run subagents over the same nyx.db).
 
 import type Database from "better-sqlite3";
 
@@ -35,17 +41,22 @@ export function requestSubagentAbort(
 }
 
 /**
- * Drain every pending request and return the session ids. The caller decides
- * which of them it owns (running children); the rest are stale by
- * construction — an abort request can only name an already-spawned child, and
- * a child that finished between write and poll needs no abort.
+ * Every pending request, WITHOUT deleting anything. The caller decides row
+ * by row: abort the children it owns (and delete those rows), leave rows for
+ * children owned by other processes, and delete rows that are provably
+ * stale (settled or unknown sessions — nobody will ever act on them).
  */
-export function takeSubagentAbortRequests(db: Database.Database): string[] {
+export function listSubagentAbortRequests(
+  db: Database.Database,
+): Array<{ session_id: string; requested_at: number; actor: string }> {
   ensureSubagentControlTable(db);
-  const rows = db
-    .prepare("SELECT session_id FROM subagent_abort_requests")
-    .all() as Array<{ session_id: string }>;
-  if (rows.length === 0) return [];
-  db.prepare("DELETE FROM subagent_abort_requests").run();
-  return rows.map((r) => r.session_id);
+  return db
+    .prepare("SELECT session_id, requested_at, actor FROM subagent_abort_requests")
+    .all() as Array<{ session_id: string; requested_at: number; actor: string }>;
+}
+
+/** Delete one abort request (the caller has acted on it or proven it stale). */
+export function deleteSubagentAbortRequest(db: Database.Database, session_id: string): void {
+  ensureSubagentControlTable(db);
+  db.prepare("DELETE FROM subagent_abort_requests WHERE session_id = ?").run(session_id);
 }

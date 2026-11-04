@@ -78,4 +78,12 @@ export interface ApprovalEngine {
   pending(session_id: string): Promise<ApprovalRecord[]>;
   /** Exact-action binding: consume a resolved approval for a digest. Throws on mismatch/expiry/reuse. */
   consume(id: string, action_digest: string): Promise<ApprovalRecord>;
+  /**
+   * Withdraw every pending approval of a session (resolving each deny with
+   * decided_by "system:withdrawn" and its audit row). Optional: implemented
+   * by ApprovalEngineImpl since 2.0.2. Abort paths call it so a turn being
+   * torn down does not leave a request() blocked until its TTL — a caller
+   * that lacks it simply keeps the pre-2.0.2 behavior.
+   */
+  withdrawSession?(session_id: string, reason: string): number | void;
 }

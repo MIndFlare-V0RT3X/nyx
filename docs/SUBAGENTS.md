@@ -131,10 +131,17 @@ the parent's session memory.
 ## Known simplifications (documented, not hidden)
 
 - **Reviewer provenance (§5.1 fan-out):** NYX is a harness, not a model — it
-  has no bundled LLM. The fan-out validation in `tests/e2e/fanout-review.test.ts`
-  scripts the reviewer models: the reads/greps are real (executed against the
-  real sources through the real tool pipeline), the findings text is
-  Fizz-authored from reviewing the same files.
+  has no bundled LLM. The fan-out validation ran twice: (a) scripted in
+  `tests/e2e/fanout-review.test.ts` — the reads/greps are real (executed
+  against the real sources through the real tool pipeline), the findings text
+  is Fizz-authored; and (b) for real — three parallel review agents (depth/
+  budget/allowlist, abort/isolation, tool-router filtering) reviewed the
+  shipped sources and returned numbered findings with severities. Their
+  findings drove the hardening round documented in the CHANGELOG: the budget
+  floor, post-create failure finalization, ownership-aware abort rows, the
+  non-starvable poll, abort-time approval withdrawal, and the subagent-scope
+  catalog exclusion are all review outcomes, each locked in by a regression
+  test in `packages/subagents/src/manager.test.ts`.
 - **Child turn id shape:** the child's turn is `sub-<nanoid>`; the subagent
   event's `turn_id` field carries it on both logs.
 - **Live TUI token counter:** the spawn card shows the task and, on
@@ -142,4 +149,57 @@ the parent's session memory.
   subscription in the TUI (deferred).
 - **Budget allocation stickiness:** an allocation is rolled back only when
   session creation fails; a later throw leaves it counted (conservative —
-  over-counting denies, never overspends).
+  over-counting denies, never overspends). The throw itself, however, is
+  finalized: a post-create failure mirrors `subagent.failed` and returns
+  `state="failed"` (§2.4i), so a mid-flight throw can never leave a child
+  "running" forever.
+- **Budget floor:** a spec's `budget_tokens` must be a positive integer at
+  the manager and at least 1024 at the tool boundary (the advertised schema
+  minimum — the runtime's compiled schema drops `minimum` by design). The
+  config may set smaller budgets (`default_budget_tokens` is operator
+  territory); a negative or zero spec budget is a validation error, never a
+  downward poison of the per-turn allocation.
+- **In-flight budget needs usage chunks:** the per-child budget guard counts
+  `usage` chunks as they stream. A provider that omits usage leaves the
+  in-flight guard unarmed for that stream (the per-turn allocation cap still
+  holds); the real providers emit usage on every stream.
+- **Crash reconciliation is Phase 4:** if the OWNING PROCESS dies mid-child,
+  the child's log keeps `subagent.spawned` with no terminal event and lists
+  as "running" until `subagents.retention_days` GC lands (Phase 4 heartbeat
+  task). No heuristic is fabricated here: without process-liveness data,
+  auto-failing such children could kill live children owned by another
+  process (server + CLI local runtime can both run subagents on one nyx.db).
+- **Cross-process abort rows are ownership-aware:** a manager's poll deletes
+  only rows it acted on (its own children) or rows that are provably stale
+  (settled/unknown session). A row for a child running in another process
+  survives until that process's poll consumes it; a row whose owner died is
+  cleaned by the next drain after the child settles.
+- **Typed rejection codes flatten at the runtime:** a `depth_exceeded` or
+  `budget_exceeded` SubagentError reaches the model as a `tool.error` whose
+  event code is the runtime's generic `tool_failed` (Phase 0 behavior,
+  unchanged by policy); the typed code is in the message and is asserted at
+  the manager level by the test suite.
+- **`SubagentSpec.model` is reserved, not wired:** the protocol schema
+  accepts a per-subagent model override; the manager runs every child on the
+  parent's router (a `BudgetTrackingRouter` over it). The field is inert
+  until Phase 4 gives model routing a per-child chain.
+- **`fs.edit` is not in the default allowlist:** the brief's §2.6 example
+  lists it, but the builtin registry has no `fs.edit` tool — naming it would
+  be dead config (the allowlist intersects the parent registry). The default
+  lists the five real tools.
+- **Rewrite hooks vs. parallel rounds:** the loop classifies a round
+  parallel/serial from the ORIGINAL tool names; an `action.before` hook that
+  rewrites a parallel-classified call to a serial-classified tool name would
+  see it dispatched in the parallel lane. Hooks are trusted plugin code; the
+  documented invariant (two `shell.exec` never overlap) holds for
+  unrewritten names. Re-classifying post-rewrite is a Phase 4 hardening
+  candidate.
+- **`FilteredToolRegistry.register/unregister` delegate to the parent
+  registry:** a plugin registering a tool during a child turn mutates the
+  process-wide registry (the child's already-fixed allowlist cannot gain
+  tools from it — the snapshot is taken at spawn). Trusted-plugin territory,
+  documented stance.
+- **`RunContext.tool_router` is carried but unconsumed:** the loop routes
+  through the kernel service `tools.runtime` and `ctx.tools`; the field is
+  protocol surface for future routing extensions. The child's inline router
+  is consistent with the filtered registry it sits over.

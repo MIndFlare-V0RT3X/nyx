@@ -360,6 +360,68 @@ describe("subagents over the server API (Phase 3)", () => {
     expect(unknown.status).toBe(404);
   });
 
+  it("DELETE /v1/subagents/:id aborts a RUNNING child mid-turn (fan-out review R2)", async () => {
+    // A child that streams for ~450ms: the abort lands mid-stream, proving
+    // the in-process path through the HTTP route (not just the settled no-op).
+    class SlowDispatchProvider extends DispatchProvider {
+      override async *complete(req: CompletionRequest): AsyncGenerator<ModelChunk, void, void> {
+        for await (const chunk of super.complete(req)) {
+          await new Promise((r) => setTimeout(r, 15));
+          yield chunk;
+        }
+      }
+    }
+    const stream: ModelChunk[] = [{ type: "usage", usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } }];
+    for (let i = 0; i < 30; i++) stream.push({ type: "text.delta", text: `c${i} ` });
+    stream.push({ type: "done", finish_reason: "stop" });
+    const provider = new SlowDispatchProvider();
+    provider.script("slowchild", [stream]);
+    provider.scriptParent([
+      toolCallTurn([{ id: "c1", name: "spawn_subagent", args: '{"task":"slowchild"}' }]),
+      textTurn("spawn returned"),
+    ]);
+    const rig = await makeRig(provider);
+    const sessionId = await createSession(rig);
+    await postTurn(rig, sessionId, "go");
+
+    // Wait until the child exists and is streaming.
+    let childId = "";
+    await until(async () => {
+      const events = await readEvents(rig, sessionId);
+      const spawned = events.find((e) => e.type === "subagent.spawned");
+      if (spawned !== undefined) {
+        childId = (spawned as { subagent_session_id: string }).subagent_session_id;
+        return true;
+      }
+      return false;
+    });
+
+    const res = await rig.server.app.request(`/v1/subagents/${childId}`, {
+      method: "DELETE",
+      headers: ownerHeaders(),
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as object).toMatchObject({ aborted: childId });
+
+    // The terminal event lands on BOTH logs, and the parent turn finishes.
+    await until(async () => {
+      const events = await readEvents(rig, sessionId);
+      return events.some((e) => e.type === "subagent.aborted" && e.subagent_session_id === childId);
+    });
+    const childEvents = await readEvents(rig, childId);
+    expect(childEvents.some((e) => e.type === "subagent.aborted")).toBe(true);
+    await until(async () => {
+      const events = await readEvents(rig, sessionId);
+      return events.some((e) => e.type === "turn.completed");
+    });
+    const infos = (await (
+      await rig.server.app.request(`/v1/sessions/${sessionId}/subagents`, {
+        headers: ownerHeaders(),
+      })
+    ).json()) as Array<{ state: string }>;
+    expect(infos[0]).toMatchObject({ state: "aborted" });
+  });
+
   it("DELETE /v1/sessions/:id archives a subagent session (never hard-deletes)", async () => {
     const provider = new DispatchProvider();
     provider.script("archive me", [textTurn("done")]);

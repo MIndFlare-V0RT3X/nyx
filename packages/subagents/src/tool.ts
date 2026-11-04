@@ -64,7 +64,14 @@ function isSpawnInput(value: unknown): value is SpawnSubagentInput {
   }
   if (
     v.budget_tokens !== undefined &&
-    (typeof v.budget_tokens !== "number" || !Number.isInteger(v.budget_tokens))
+    (typeof v.budget_tokens !== "number" ||
+      !Number.isInteger(v.budget_tokens) ||
+      // The advertised input schema's minimum: the compiled runtime schema
+      // drops `minimum` (type+properties+required only), so it is enforced
+      // HERE — the model-facing path must not accept what the schema it was
+      // shown rejects (fan-out review R1: a negative budget would otherwise
+      // poison the per-turn allocation arithmetic in the manager).
+      v.budget_tokens < 1024)
   ) {
     return false;
   }
@@ -101,7 +108,8 @@ export function registerSubagentTool(registry: ToolRegistry, deps: SubagentToolD
       if (!isSpawnInput(call.input)) {
         throw new SubagentError(
           "validation_failed",
-          "spawn_subagent input must be {task: string, tools?: string[], budget_tokens?: integer}",
+          "spawn_subagent input must be {task: string, tools?: string[], " +
+            "budget_tokens?: integer >= 1024}",
         );
       }
       const bound = deps.manager.boundTurn(ctx.session_id, ctx.turn_id);

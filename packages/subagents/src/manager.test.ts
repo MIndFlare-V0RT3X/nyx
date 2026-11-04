@@ -4,13 +4,27 @@
 // (hard rules #1/#2/#3), and list()/depth_for().
 
 import { describe, expect, it } from "vitest";
-import { mockTextTurn } from "@nyx/model";
-import type { SessionEvent, StoredEvent, ToolHandler } from "@nyx/protocol";
+import { promises as fsp } from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { mockTextTurn, mockToolTurn } from "@nyx/model";
+import type { ApprovalEngineImpl, ApprovalPresenter } from "@nyx/policy";
+import { createAgentLoop } from "@nyx/agent";
+import type {
+  AgentLoop,
+  ModelChunk,
+  SessionEvent,
+  StoredEvent,
+  ToolHandler,
+} from "@nyx/protocol";
 import type Database from "better-sqlite3";
 import { SubagentMemory } from "./memory-view.js";
 import { SubagentError } from "./errors.js";
-import { requestSubagentAbort } from "./control.js";
-import { makeSubagentHarness, type SubagentHarness } from "./harness.test.js";
+import {
+  requestSubagentAbort,
+  listSubagentAbortRequests,
+} from "./control.js";
+import { makeSubagentHarness, TaskDispatchProvider, type SubagentHarness } from "./harness.test.js";
 
 const types = (events: readonly SessionEvent[]): string[] => events.map((e) => e.type);
 
@@ -531,71 +545,39 @@ describe("3.5 — abort propagation", () => {
     expect(result.state).toBe("aborted");
     const parentEvents = await readAll(h, h.parent.session_id);
     expect(byType(parentEvents, "subagent.aborted")[0]!.reason).toBe("abort requested");
+    // BOTH logs carry the terminal event (in-process flavor).
+    const childEvents = await readAll(h, result.session_id);
+    expect(byType(childEvents, "subagent.aborted")[0]!.reason).toBe("abort requested");
   });
 
   it("a cross-process abort request (control row) aborts the running child", async () => {
+    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "nyx-xproc-abort-"));
+    const dbFile = path.join(dir, "nyx.db");
+    const Database = (await import("better-sqlite3")).default;
+    // TWO handles on one FILE: the manager's poll handle and a second
+    // connection standing in for the CLI process that writes the request.
+    const mgrDb: Database.Database = new Database(dbFile);
+    const cliDb: Database.Database = new Database(dbFile);
     const h = await makeSubagentHarness({
       extraTools: [
         { name: "test.slow", handler: { execute: () => new Promise(() => undefined) } },
       ],
+      managerDeps: { db: mgrDb, poll_ms: 20 },
     });
-    // A second better-sqlite3 handle stands in for the OTHER process.
-    const Database = (await import("better-sqlite3")).default;
-    const otherDb: Database.Database = new Database(":memory:");
-    let childId = "";
     h.provider.script("slowpoke", [
-      [
-        {
-          type: "tool_call.delta",
-          index: 0,
-          id: "c1",
-          name: "test.slow",
-          arguments_delta: "{}",
-        },
-        { type: "usage", usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } },
-        { type: "done", finish_reason: "tool_calls" },
-      ],
+      mockToolTurn({ call_id: "c1", name: "test.slow", input: {} }),
       mockTextTurn("never"),
     ]);
 
-    // The manager's cross-process poll needs a SHARED db: :memory: databases
-    // are per-handle, so give the manager a file-backed db instead.
-    const h2 = await makeSubagentHarness({
-      extraTools: [
-        { name: "test.slow", handler: { execute: () => new Promise(() => undefined) } },
-      ],
-    });
-    const sharedDb: Database.Database = new Database(":memory:");
-    const managerWithDb = await (
-      await import("./manager.js")
-    ).createSubagentManager({
-      store: h2.store,
-      db: sharedDb,
-      poll_ms: 20,
-    });
-    h2.provider.script("slowpoke", [
-      [
-        {
-          type: "tool_call.delta",
-          index: 0,
-          id: "c1",
-          name: "test.slow",
-          arguments_delta: "{}",
-        },
-        { type: "usage", usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } },
-        { type: "done", finish_reason: "tool_calls" },
-      ],
-      mockTextTurn("never"),
-    ]);
-
-    const spawned = managerWithDb.spawn(
+    let childId = "";
+    const spawned = h.manager.spawn(
       { task: "slowpoke", tools: ["test.slow"] },
-      h2.parentCtx,
-      { session_id: h2.parent.session_id, turn_id: "t1" },
+      h.parentCtx,
+      { session_id: h.parent.session_id, turn_id: "t1" },
     );
     await new Promise((resolve) => {
       const timer = setInterval(async () => {
-        const events = await h2.store.read(h2.parent.session_id);
+        const events = await h.store.read(h.parent.session_id);
         const found = events.find((e) => e.type === "subagent.spawned");
         if (found !== undefined) {
           childId = (found as { subagent_session_id: string }).subagent_session_id;
@@ -604,14 +586,21 @@ describe("3.5 — abort propagation", () => {
         }
       }, 10);
     });
-    // The "other process" writes the abort request into ITS view of the db.
-    requestSubagentAbort(sharedDb, childId, "cli:test");
+    // The "other process" writes the abort request through ITS connection.
+    requestSubagentAbort(cliDb, childId, "cli:test");
     const result = await spawned;
     expect(result.state).toBe("aborted");
-    const parentEvents = await readAll(h2, h2.parent.session_id);
+    const parentEvents = await readAll(h, h.parent.session_id);
     expect(byType(parentEvents, "subagent.aborted")[0]!.reason).toBe("abort requested (external)");
-    sharedDb.close();
-    otherDb.close();
+    // BOTH logs carry the terminal event (asserted per abort flavor).
+    const childEvents = await readAll(h, result.session_id);
+    expect(byType(childEvents, "subagent.aborted")[0]!.reason).toBe("abort requested (external)");
+    // The acted-on row is consumed — the next poll sees an empty table.
+    await new Promise((r) => setTimeout(r, 40));
+    expect(listSubagentAbortRequests(cliDb)).toEqual([]);
+    mgrDb.close();
+    cliDb.close();
+    await fsp.rm(dir, { recursive: true, force: true });
   });
 });
 
@@ -877,5 +866,479 @@ describe("concurrent spawn allocation (Reviewer-1 hardening)", () => {
     expect(byType(childEvents, "tool.error")[0]).toMatchObject({
       error: { code: "tool_unknown" },
     });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Fan-out review hardening (§5.1, the three-reviewer round). Each test names
+// the finding it locks in: R1 = depth/budget/allowlist, R2 = abort/isolation,
+// R3 = tool router filtering.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Provider that streams each scripted chunk ~8ms apart (slow-stream tests). */
+class SlowStreamProvider extends TaskDispatchProvider {
+  protected chunkDelayMs = 8;
+
+  override async *complete(req: Parameters<TaskDispatchProvider["complete"]>[0]) {
+    for await (const chunk of super.complete(req)) {
+      await new Promise((r) => setTimeout(r, this.chunkDelayMs));
+      yield chunk;
+    }
+  }
+}
+
+describe("fan-out hardening — R1: budget arithmetic", () => {
+  it("rejects negative, zero, and fractional spec budgets (no session, no allocation)", async () => {
+    const h = await makeSubagentHarness();
+    for (const bad of [-1_000_000, 0, 1024.5]) {
+      await expect(
+        h.manager.spawn({ task: "poison", budget_tokens: bad }, h.parentCtx, {
+          session_id: h.parent.session_id,
+          turn_id: "t1",
+        }),
+      ).rejects.toMatchObject({ code: "validation_failed" });
+    }
+    // Nothing was created and nothing was allocated.
+    expect(turnSpendOf(h.manager as never)(h.parent.session_id, "t1")).toBe(0);
+    expect(byType(await readAll(h, h.parent.session_id), "subagent.spawned")).toEqual([]);
+  });
+
+  it("a negative budget through the REAL runtime path dies as a tool error (model-facing closure)", async () => {
+    const h = await makeSubagentHarness();
+    h.manager.bindTurn(h.parent.session_id, "rt1", h.parentCtx);
+    // The parent's script (fallback queue): a spawn call with a poisoned budget.
+    h.provider.scriptParent([
+      mockToolTurn({
+        call_id: "c1",
+        name: "spawn_subagent",
+        input: { task: "x", budget_tokens: -1000000 },
+      }),
+      mockTextTurn("recovered"),
+    ]);
+    const events: SessionEvent[] = [];
+    for await (const ev of createAgentLoop().run(
+      {
+        session_id: h.parent.session_id,
+        turn_id: "rt1",
+        user_message: { role: "user", content: [{ type: "text", text: "go" }] },
+      },
+      h.parentCtx,
+    )) {
+      events.push(ev);
+    }
+    // The runtime's compiled schema drops `minimum` (type+properties+required
+    // only) — the handler's own check is what closes the path.
+    const err = byType(events, "tool.error")[0]!;
+    expect(err.error.message).toContain("1024");
+    expect(byType(events, "subagent.spawned")).toEqual([]);
+    expect(turnSpendOf(h.manager as never)(h.parent.session_id, "rt1")).toBe(0);
+    // The parent turn itself recovered.
+    expect(types(events)).toContain("turn.completed");
+    h.manager.unbindTurn(h.parent.session_id);
+  });
+});
+
+describe("fan-out hardening — R1/R2: post-create throws cannot zombie a child", () => {
+  it("a loop that explodes before its own try/catch becomes state=failed, settled everywhere", async () => {
+    const settled: Array<string> = [];
+    const explodingLoop: AgentLoop = {
+      // eslint-disable-next-line require-yield -- the point: it throws first
+      async *run(): AsyncGenerator<SessionEvent> {
+        throw new Error("child loop exploded");
+      },
+    };
+    const h = await makeSubagentHarness({
+      managerDeps: {
+        loop: explodingLoop,
+        onSettled: (id: string, state: string) => settled.push(`${id}:${state}`),
+      },
+    });
+    const result = await h.manager.spawn({ task: "doomed" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
+
+    expect(result.state).toBe("failed");
+    expect(result.error?.message).toContain("child loop exploded");
+    // subagent.failed lands on BOTH logs — list() can never report "running".
+    const parentEvents = await readAll(h, h.parent.session_id);
+    expect(byType(parentEvents, "subagent.failed")[0]!.subagent_session_id).toBe(result.session_id);
+    const childEvents = await readAll(h, result.session_id);
+    expect(byType(childEvents, "subagent.failed")[0]!.subagent_session_id).toBe(result.session_id);
+    expect(settled).toEqual([`${result.session_id}:failed`]);
+    const infos = await h.manager.list(h.parent.session_id);
+    expect(infos.map((i) => i.state)).toEqual(["failed"]);
+    // Allocation stickiness: the failed child's budget stays counted
+    // (conservative — over-counting denies, never overspends).
+    expect(turnSpendOf(h.manager as never)(h.parent.session_id, "t1")).toBe(32_768);
+  });
+});
+
+describe("fan-out hardening — R2: abort × approvals × poll liveness", () => {
+  it("a child blocked on an ask-approval is unblocked by parent abort (withdraw, not TTL)", async () => {
+    const presented: string[] = [];
+    const withdrawn: string[] = [];
+    const presenter: ApprovalPresenter = {
+      id: "test-presenter",
+      present: async (req) => {
+        presented.push(req.approval_id);
+      },
+      withdraw: async (approval_id, reason) => {
+        withdrawn.push(`${approval_id}:${reason}`);
+      },
+    };
+    const h = await makeSubagentHarness({
+      extraTools: [
+        {
+          name: "test.ask",
+          risk: "R2", // no allow rule matches R2 → policy "ask"
+          handler: { execute: async () => ({ kind: "text", text: "asked" }) },
+        },
+      ],
+      managerDeps: {
+        onSpawned: (child: { session_id: string }) => {
+          (h.parentCtx.approvals as ApprovalEngineImpl).registerPresenter(
+            child.session_id,
+            presenter,
+          );
+        },
+      },
+    });
+    h.provider.script("asker", [
+      mockToolTurn({ call_id: "c1", name: "test.ask", input: {} }),
+      mockTextTurn("done"),
+    ]);
+
+    const spawned = h.manager.spawn({ task: "asker", tools: ["test.ask"] }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
+    // Let the child reach the approval wait (presented = blocked).
+    await new Promise((r) => setTimeout(r, 120));
+    expect(presented).toHaveLength(1);
+    h.parentController.abort();
+    const result = await spawned; // resolves via withdraw, not the 10-min TTL
+
+    expect(result.state).toBe("aborted");
+    expect(result.error).toMatchObject({ code: "aborted" });
+    const parentEvents = await readAll(h, h.parent.session_id);
+    expect(byType(parentEvents, "subagent.aborted")[0]!.reason).toBe("parent turn aborted");
+    expect(withdrawn.length).toBe(1);
+    expect(withdrawn[0]).toContain("parent turn aborted");
+  });
+
+  it("the cross-process poll is not starved by a continuously streaming child", async () => {
+    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "nyx-stream-abort-"));
+    const dbFile = path.join(dir, "nyx.db");
+    const Database = (await import("better-sqlite3")).default;
+    const mgrDb: Database.Database = new Database(dbFile);
+    const cliDb: Database.Database = new Database(dbFile);
+    // 40 chunks x 8ms ≈ 320ms of continuous streaming — event gaps stay far
+    // below poll_ms, the exact regime that starved the old sleep-based poll.
+    const stream: ModelChunk[] = [{ type: "usage", usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } }];
+    for (let i = 0; i < 40; i++) stream.push({ type: "text.delta", text: `chunk ${i} ` });
+    stream.push({ type: "done", finish_reason: "stop" });
+    const provider = new SlowStreamProvider();
+    const h = await makeSubagentHarness({
+      provider,
+      managerDeps: {
+        db: mgrDb,
+        poll_ms: 30,
+        onSpawned: (child: { session_id: string }) =>
+          requestSubagentAbort(cliDb, child.session_id, "cli:test"),
+      },
+    });
+    h.provider.script("chatterbox", [stream]);
+
+    const result = await h.manager.spawn({ task: "chatterbox" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
+    // The abort row was written BEFORE the stream began; a non-starved poll
+    // applies it mid-stream, so the terminal state is aborted — not the
+    // completed turn the stream would otherwise produce.
+    expect(result.state).toBe("aborted");
+    expect(listSubagentAbortRequests(cliDb)).toEqual([]);
+    mgrDb.close();
+    cliDb.close();
+    await fsp.rm(dir, { recursive: true, force: true });
+  });
+
+  it("abort precedence: a parent abort racing a budget trip settles as aborted", async () => {
+    const provider = new SlowStreamProvider();
+    const h = await makeSubagentHarness({
+      provider,
+      config: { default_budget_tokens: 1024 },
+    });
+    // The budget trips on the FIRST chunk (~8ms); the parent aborts at 60ms —
+    // both mid-stream, before the pump drains the terminal state.
+    const stream: ModelChunk[] = [
+      { type: "usage", usage: { input_tokens: 4000, output_tokens: 1000, total_tokens: 5000 } },
+    ];
+    for (let i = 0; i < 40; i++) stream.push({ type: "text.delta", text: `chunk ${i} ` });
+    stream.push({ type: "done", finish_reason: "stop" });
+    h.provider.script("burner", [stream]);
+
+    const spawned = h.manager.spawn({ task: "burner" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
+    setTimeout(() => h.parentController.abort(), 60);
+    const result = await spawned;
+
+    expect(result.state).toBe("aborted"); // parentAborted outranks budgetExceeded
+    const parentEvents = await readAll(h, h.parent.session_id);
+    expect(byType(parentEvents, "subagent.aborted")[0]!.reason).toBe("parent turn aborted");
+  });
+
+  it("abort rows are ownership-aware: stale rows die, rows for other processes survive", async () => {
+    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "nyx-row-aware-"));
+    const dbFile = path.join(dir, "nyx.db");
+    const Database = (await import("better-sqlite3")).default;
+    const mgrDb: Database.Database = new Database(dbFile);
+    const cliDb: Database.Database = new Database(dbFile);
+    const h = await makeSubagentHarness({
+      extraTools: [
+        {
+          name: "test.linger",
+          handler: {
+            execute: () =>
+              new Promise((r) => setTimeout(() => r({ kind: "text", text: "done" }), 80)),
+          },
+        },
+      ],
+      managerDeps: { db: mgrDb, poll_ms: 20 },
+    });
+    h.provider.script("drain-one", [
+      mockToolTurn({ call_id: "c1", name: "test.linger", input: {} }),
+      mockTextTurn("drain one done"),
+    ]);
+
+    // Three foreign rows: a SETTLED child (terminal event present), a
+    // RUNNING-ELSEWHERE child (spawned, no terminal — another process owns
+    // it), and a bogus id that matches no session at all.
+    const settledChild = await h.store.create({
+      owner_id: "test-owner",
+      persona_id: "test-persona",
+      parent_id: h.parent.session_id,
+      kind: "subagent",
+    });
+    await h.store.append(settledChild.session_id, [
+      {
+        type: "subagent.completed",
+        session_id: settledChild.session_id,
+        subagent_session_id: settledChild.session_id,
+        parent_session_id: h.parent.session_id,
+        summary: "already done",
+        tokens_used: 1,
+        duration_ms: 1,
+        ts: Date.now(),
+      },
+    ]);
+    const elsewhereChild = await h.store.create({
+      owner_id: "test-owner",
+      persona_id: "test-persona",
+      parent_id: h.parent.session_id,
+      kind: "subagent",
+    });
+    await h.store.append(elsewhereChild.session_id, [
+      {
+        type: "subagent.spawned",
+        session_id: elsewhereChild.session_id,
+        subagent_session_id: elsewhereChild.session_id,
+        turn_id: "sub-x",
+        parent_session_id: h.parent.session_id,
+        parent_turn_id: "t-x",
+        task: "lives in another process",
+        depth: 1,
+        ts: Date.now(),
+      },
+    ]);
+    requestSubagentAbort(cliDb, settledChild.session_id, "cli:test");
+    requestSubagentAbort(cliDb, elsewhereChild.session_id, "cli:test");
+    requestSubagentAbort(cliDb, "no-such-session", "cli:test");
+
+    // The probe child runs ~80ms with poll_ms 20 → several drain passes.
+    const probe = await h.manager.spawn({ task: "drain-one", tools: ["test.linger"] }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
+    expect(probe.state).toBe("completed");
+
+    const remaining = listSubagentAbortRequests(cliDb).map((r) => r.session_id);
+    expect(remaining).toEqual([elsewhereChild.session_id]); // survived: not ours
+    // Once the elsewhere child settles, a later drain cleans its row too.
+    await h.store.append(elsewhereChild.session_id, [
+      {
+        type: "subagent.completed",
+        session_id: elsewhereChild.session_id,
+        subagent_session_id: elsewhereChild.session_id,
+        parent_session_id: h.parent.session_id,
+        summary: "finally done",
+        tokens_used: 1,
+        duration_ms: 1,
+        ts: Date.now(),
+      },
+    ]);
+    h.provider.script("drain-two", [
+      mockToolTurn({ call_id: "c1", name: "test.linger", input: {} }),
+      mockTextTurn("drain two done"),
+    ]);
+    await h.manager.spawn({ task: "drain-two", tools: ["test.linger"] }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t2",
+    });
+    expect(listSubagentAbortRequests(cliDb)).toEqual([]);
+    mgrDb.close();
+    cliDb.close();
+    await fsp.rm(dir, { recursive: true, force: true });
+  });
+});
+
+describe("fan-out hardening — R3: structural absence, proven harder", () => {
+  it("spawn_subagent is absent even with forbidden_tools emptied (config-independence)", async () => {
+    const h = await makeSubagentHarness({ config: { forbidden_tools: [] } });
+    h.provider.script("recursive", [
+      mockToolTurn({ call_id: "c1", name: "spawn_subagent", input: { task: "grandchild" } }),
+      mockTextTurn("i could not spawn"),
+    ]);
+    const result = await h.manager.spawn(
+      { task: "recursive", tools: ["spawn_subagent", "fs.read"] },
+      h.parentCtx,
+      { session_id: h.parent.session_id, turn_id: "t1" },
+    );
+    expect(result.state).toBe("completed");
+    // The spec NAMED spawn_subagent and config forbids nothing — the child's
+    // registry still lacks it (the hardcoded gate, not the config list).
+    const childEvents = await readAll(h, result.session_id);
+    expect(byType(childEvents, "tool.error")[0]).toMatchObject({
+      error: { code: "tool_unknown" },
+    });
+    // …while the allowed tool really is there.
+    const childCtx = h.capturedContexts.get(result.session_id)!;
+    expect(childCtx.tools.list().map((d) => d.name)).toContain("fs.read");
+    expect(childCtx.tools.list().map((d) => d.name)).not.toContain("spawn_subagent");
+    // No grandchild was created: the only spawned event on the child's log is
+    // the child's OWN (mirrored at its creation).
+    const childSpawned = byType(childEvents, "subagent.spawned");
+    expect(childSpawned).toHaveLength(1);
+    expect(childSpawned[0]!.subagent_session_id).toBe(result.session_id);
+  });
+
+  it("the child's outgoing model request offers no spawn_subagent (catalog proof)", async () => {
+    const h = await makeSubagentHarness();
+    h.provider.script("catalog-probe", [mockTextTurn("ok")]);
+    await h.manager.spawn({ task: "catalog-probe" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
+    const childRequest = h.provider.requests.find((r) =>
+      r.messages.some(
+        (m) =>
+          m.role === "user" &&
+          m.content.some(
+            (b) => b.type === "text" && b.text.includes("You are a subagent. Your task: catalog-probe"),
+          ),
+      ),
+    );
+    expect(childRequest).toBeDefined();
+    const names = (childRequest!.tools ?? []).map((t) => t.name);
+    expect(names).not.toContain("spawn_subagent");
+    expect(names).toEqual(
+      expect.arrayContaining(["fs.read", "fs.write", "fs.list", "shell.exec", "web.fetch"]),
+    );
+  });
+
+  it("a session that STARTS at max depth still lacks the tool, and depth is exhausted", async () => {
+    const h = await makeSubagentHarness(); // max_depth 3
+    // Build a depth-2 parent by hand (subagent of a subagent)…
+    const s1 = await h.store.create({
+      owner_id: "test-owner",
+      persona_id: "test-persona",
+      parent_id: h.parent.session_id,
+      kind: "subagent",
+    });
+    const s2 = await h.store.create({
+      owner_id: "test-owner",
+      persona_id: "test-persona",
+      parent_id: s1.session_id,
+      kind: "subagent",
+    });
+    // …so this spawn creates a depth-3 child (the configured maximum).
+    h.provider.script("deepest", [
+      mockToolTurn({ call_id: "c1", name: "spawn_subagent", input: { task: "grandchild" } }),
+      mockTextTurn("no tool to call"),
+    ]);
+    const result = await h.manager.spawn({ task: "deepest" }, h.parentCtx, {
+      session_id: s2.session_id,
+      turn_id: "t1",
+    });
+    expect(result.state).toBe("completed");
+    const spawnedEvent = byType(await readAll(h, s2.session_id), "subagent.spawned")[0]!;
+    expect(spawnedEvent.depth).toBe(3);
+    // Hard rule #7: the depth-3 child still cannot SEE the tool.
+    const childEvents = await readAll(h, result.session_id);
+    expect(byType(childEvents, "tool.error")[0]).toMatchObject({
+      error: { code: "tool_unknown" },
+    });
+    // And the lineage is exhausted: spawning FROM the depth-3 child rejects.
+    expect(await h.manager.depth_for(result.session_id)).toBe(0);
+    h.provider.script("one-too-many", [mockTextTurn("never")]);
+    await expect(
+      h.manager.spawn({ task: "one-too-many" }, h.parentCtx, {
+        session_id: result.session_id,
+        turn_id: "t1",
+      }),
+    ).rejects.toMatchObject({ code: "depth_exceeded" });
+  });
+});
+
+describe("fan-out hardening — R2: memory view edges", () => {
+  it("get() ownership-filters; list() over-fetches past other children's rows", async () => {
+    const h = await makeSubagentHarness();
+    const parentEntry = await h.memory.write({
+      scope: "session",
+      kind: "fact",
+      content: "parent secret",
+      tags: [],
+      source: { session_id: h.parent.session_id },
+    });
+    const viewA = new SubagentMemory(h.memory, "child-A");
+    const viewB = new SubagentMemory(h.memory, "child-B");
+    const own: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const e = await viewA.write({
+        scope: "session",
+        kind: "episode",
+        content: `A note ${i}`,
+        tags: [],
+        source: { session_id: "child-A" },
+      });
+      own.push(e.id);
+    }
+    for (let i = 0; i < 5; i++) {
+      await viewB.write({
+        scope: "session",
+        kind: "episode",
+        content: `B note ${i}`,
+        tags: [],
+        source: { session_id: "child-B" },
+      });
+    }
+
+    // get(): own id yes, another child's id no, parent's session-scope id no.
+    expect((await viewA.get(own[0]!))?.content).toBe("A note 0");
+    const bEntries = await viewB.list({ limit: 50 });
+    expect(await viewA.get(bEntries[0]!.id)).toBeNull();
+    expect(await viewA.get(parentEntry.id)).toBeNull();
+
+    // list(): 5 foreign subagent rows exist, but A still gets its full 3.
+    expect((await viewA.list({ limit: 3 })).map((e) => e.content)).toHaveLength(3);
+    expect((await viewA.list()).map((e) => e.content).every((c) => c.startsWith("A note"))).toBe(
+      true,
+    );
+    expect(await viewA.list()).toHaveLength(5);
+    // …and none of A's queries ever surface the parent's session row.
+    expect((await viewA.list()).map((e) => e.content)).not.toContain("parent secret");
   });
 });

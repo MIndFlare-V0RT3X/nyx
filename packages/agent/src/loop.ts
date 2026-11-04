@@ -134,7 +134,16 @@ export class AgentLoopImpl implements AgentLoop {
     try {
       // -- 3. init context: persona sections, pre-turn history, catalogs --
       const projection = await ctx.session.projection(input.session_id);
-      const memories = await ctx.memory.list({ limit: 50 });
+      // Catalog scopes: everything a session may see EXCEPT the "subagent"
+      // scope. Subagent-scope rows belong to child sessions — the parent must
+      // learn a child's results from the SubagentResult, never from memory
+      // (hard rule #3; fan-out review R2). A child reading its OWN memory is
+      // unaffected: its SubagentMemory view translates "session" onto its
+      // "subagent" rows before this query runs.
+      const memories = await ctx.memory.list({
+        scope: ["session", "persona", "owner", "global"],
+        limit: 50,
+      });
       const sections = ctx.persona.buildSystemPrompt({
         session_facts: {
           date: new Date().toISOString(),

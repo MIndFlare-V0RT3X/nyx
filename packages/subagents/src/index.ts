@@ -17,7 +17,8 @@ export {
 export {
   ensureSubagentControlTable,
   requestSubagentAbort,
-  takeSubagentAbortRequests,
+  listSubagentAbortRequests,
+  deleteSubagentAbortRequest,
 } from "./control.js";
 export {
   BudgetTrackingRouter,

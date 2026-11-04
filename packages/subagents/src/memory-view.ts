@@ -26,6 +26,14 @@ import type {
 /** Scopes a subagent may read: its own (translated) session scope + global. */
 const READABLE: readonly MemoryScope[] = ["session", "subagent", "global"];
 
+/**
+ * Over-fetch cap for list(): the ownership filter runs AFTER the inner query,
+ * so the view must fetch more than the caller's limit to return that many
+ * OWNED rows when other sessions' subagent entries crowd the result. 10k
+ * covers personal-harness scale; the cap is documented, not hidden.
+ */
+const LIST_OVERFETCH = 10_000;
+
 export class SubagentMemoryError extends Error {
   constructor(message: string) {
     super(message);
@@ -62,7 +70,8 @@ export class SubagentMemory implements MemoryStore {
       ...opts,
       scope: this.translateScopes(opts?.scope),
     });
-    return rows.filter((e) => this.owns(e));
+    const owned = rows.filter((e) => this.owns(e));
+    return opts?.limit === undefined ? owned : owned.slice(0, opts.limit);
   }
 
   async get(id: string): Promise<MemoryEntry | null> {
@@ -75,10 +84,15 @@ export class SubagentMemory implements MemoryStore {
     kind?: MemoryEntry["kind"];
     limit?: number;
   }): Promise<MemoryEntry[]> {
+    // The ownership filter runs after the inner query, and the inner store
+    // applies LIMIT before this view can filter — so fetch wide, filter to
+    // owned, then slice (fan-out review R2: a naive pass-through would
+    // silently truncate the child's own entries when other children's
+    // subagent rows fill the inner limit first).
     const rows = await this.inner.list({
       ...opts,
       scope: this.translateScopes(opts?.scope),
-      limit: opts?.limit === undefined ? undefined : opts.limit,
+      limit: LIST_OVERFETCH,
     });
     const owned = rows.filter((e) => this.owns(e));
     return opts?.limit === undefined ? owned : owned.slice(0, opts.limit);

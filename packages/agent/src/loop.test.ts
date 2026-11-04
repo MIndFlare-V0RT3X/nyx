@@ -216,6 +216,54 @@ describe("agent loop", () => {
       expect(second.model).toBe("mock-1");
       expect(second.tools).toEqual([]);
     });
+
+    it("builds the memory catalog WITHOUT the subagent scope (parent never sees child memory)", async () => {
+      // Hard rule #3, fan-out review R2: subagent-scope rows belong to child
+      // sessions; the parent must learn a child's results from the
+      // SubagentResult, never from memory. The catalog query must exclude
+      // the "subagent" scope structurally.
+      const h = await makeHarness({
+        script: [mockTextTurn("ok")],
+        memories: [
+          {
+            scope: "session",
+            kind: "fact",
+            content: "parent session fact",
+            tags: [],
+            source: { session_id: "s1" },
+          },
+          {
+            scope: "subagent",
+            kind: "episode",
+            content: "child secret summary",
+            tags: [],
+            source: { session_id: "child-1" },
+          },
+          {
+            scope: "global",
+            kind: "fact",
+            content: "global fact",
+            tags: [],
+            source: {},
+          },
+        ],
+      });
+      await h.run();
+
+      // The catalog query names its scopes — and "subagent" is not among them.
+      expect(h.memory.listCalls.length).toBeGreaterThan(0);
+      for (const scopes of h.memory.listCalls) {
+        expect(scopes).toBeDefined();
+        expect(scopes!).not.toContain("subagent");
+      }
+      // Functionally: with the store honoring the scope filter, the catalog
+      // the persona received cannot contain the child's row.
+      const catalogRows = await h.memory.list({ scope: h.memory.listCalls[0], limit: 50 });
+      expect(catalogRows.map((m) => m.content)).toEqual(
+        expect.arrayContaining(["parent session fact", "global fact"]),
+      );
+      expect(catalogRows.map((m) => m.content)).not.toContain("child secret summary");
+    });
   });
 
   describe("error recovery", () => {

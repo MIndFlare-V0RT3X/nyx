@@ -23,7 +23,12 @@ export interface SubagentsConfig {
   retention_days: number;
 }
 
-/** The default_allowed_tools list per the Phase 3 brief (§2.6). */
+/**
+ * The default_allowed_tools list: the brief §2.6 example minus `fs.edit` —
+ * the builtin registry has no fs.edit tool (fs.read/fs.write/fs.list only),
+ * so naming it would be dead config (the allowlist is intersected with the
+ * parent registry; a phantom entry grants nothing).
+ */
 export const DEFAULT_ALLOWED_TOOLS: readonly string[] = [
   "fs.read",
   "fs.write",
