@@ -105,6 +105,17 @@ async function until(cond: () => Promise<boolean> | boolean, ms = 8000): Promise
   throw new Error("condition not met in time");
 }
 
+/** Every stored event for a session, in seq order, via the session store. */
+async function readEvents(rig: Rig, sessionId: string) {
+  const { openSessionStore } = await import("@nyx/session");
+  const store = openSessionStore(join(rig.dataDir, "nyx.db"));
+  try {
+    return await store.read(sessionId, 1);
+  } finally {
+    store.close();
+  }
+}
+
 /** Spin a loopback HTTP server; returns { url, close }. */
 async function loopbackServer(body: string): Promise<{ url: string; close(): Promise<void> }> {
   const srv: HttpServer = createServer((_req, res) => {
@@ -311,12 +322,13 @@ describe("turns (mock provider, full loop)", () => {
     expect(written).toBe("hello nyx");
   });
 
-  it("409s a concurrent turn while one is in flight (approval-blocked)", async () => {
+  it("a second turn while one is in flight queues in the lane and runs FIFO (approval-blocked)", async () => {
     const http = await loopbackServer("loopback body");
     try {
       const provider = new MockProvider("mock", [
         mockToolTurn({ call_id: "c1", name: "web.fetch", input: { url: http.url } }),
         mockTextTurn("done"),
+        mockTextTurn("second turn done"), // the queued turn's completion
       ]);
       const rig = await makeRig([provider]);
       const created = await rig.server.app.request("/v1/sessions", {
@@ -360,9 +372,15 @@ describe("turns (mock provider, full loop)", () => {
         headers: ownerHeaders(),
         body: JSON.stringify({ content: { text: "another turn" } }),
       });
-      expect(concurrent.status).toBe(409);
+      // Phase 1 lane queue: a second turn while one is in flight no longer
+      // 409s — it QUEUES in the session's lane and runs when the first
+      // finishes (FIFO, serial per session).
+      expect(concurrent.status).toBe(202);
+      const queuedBody = (await concurrent.json()) as { turn_id: string; lane: { depth: number } };
+      expect(queuedBody.turn_id).not.toBe("");
+      expect(queuedBody.lane.depth).toBeGreaterThanOrEqual(1);
 
-      // resolve → turn finishes
+      // resolve → turn 1 finishes → turn 2 (the queued one) runs to completion
       const resolved = await rig.server.app.request(`/v1/approvals/${approvalId}`, {
         method: "POST",
         headers: ownerHeaders(),
@@ -386,8 +404,74 @@ describe("turns (mock provider, full loop)", () => {
         projection: { tool_calls: Array<{ output: unknown }> };
       };
       expect(JSON.stringify(body.projection.tool_calls[0]?.output)).toContain("loopback body");
+
+      // And the queued turn really ran afterwards (FIFO): its completion
+      // lands after the first turn's.
+      await until(async () => {
+        const events = await readEvents(rig, meta.session_id);
+        return (
+          events.filter((e) => e.type === "turn.completed").length >= 2 &&
+          events.some((e) => e.type === "turn.started" && e.turn_id === queuedBody.turn_id)
+        );
+      });
     } finally {
       await http.close();
+    }
+  });
+
+  it("100 turns POSTed to one session execute in FIFO order (event seq monotonicity)", async () => {
+    const provider = new MockProvider(
+      "mock",
+      Array.from({ length: 100 }, (_, i) => mockTextTurn(`reply-${i}`)),
+    );
+    const rig = await makeRig([provider]);
+    const created = await rig.server.app.request("/v1/sessions", {
+      method: "POST",
+      headers: ownerHeaders(),
+      body: JSON.stringify({ title: "lane fifo" }),
+    });
+    const meta = (await created.json()) as { session_id: string };
+
+    const turnIds: string[] = [];
+    for (let i = 0; i < 100; i++) {
+      const res = await rig.server.app.request(`/v1/sessions/${meta.session_id}/turns`, {
+        method: "POST",
+        headers: ownerHeaders(),
+        body: JSON.stringify({ content: { text: `msg-${i}` } }),
+      });
+      expect(res.status).toBe(202);
+      turnIds.push(((await res.json()) as { turn_id: string }).turn_id);
+    }
+
+    await until(
+      async () => {
+        const events = await readEvents(rig, meta.session_id);
+        return events.filter((e) => e.type === "turn.completed").length === 100;
+      },
+      60_000,
+    );
+
+    const events = await readEvents(rig, meta.session_id);
+    // turn.started events appear in exactly the submission order.
+    const startedOrder = events
+      .filter((e) => e.type === "turn.started")
+      .map((e) => e.turn_id);
+    expect(startedOrder).toEqual(turnIds);
+    // Global seq is monotonic across the whole log (store guarantee) and the
+    // session executed strictly serially: turn N's completion precedes turn
+    // N+1's start.
+    const seqs = events.map((e) => e.seq);
+    expect([...seqs].sort((a, b) => a - b)).toEqual(seqs);
+    for (let i = 1; i < 100; i++) {
+      const prevDone = events.find(
+        (e) => e.type === "turn.completed" && e.turn_id === turnIds[i - 1],
+      );
+      const thisStart = events.find(
+        (e) => e.type === "turn.started" && e.turn_id === turnIds[i],
+      );
+      expect(prevDone).toBeDefined();
+      expect(thisStart).toBeDefined();
+      expect(prevDone!.seq).toBeLessThan(thisStart!.seq);
     }
   });
 });

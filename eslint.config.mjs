@@ -20,12 +20,13 @@ const ALLOWED = {
   "packages/persona": ["@nyx/protocol"],
   "packages/tools": ["@nyx/protocol", "@nyx/policy", "@nyx/scope", "@nyx/sandbox"],
   "packages/agent": ["@nyx/protocol"],
-  "apps/server": ["@nyx/protocol", "@nyx/config", "@nyx/kernel", "@nyx/session", "@nyx/model", "@nyx/tools", "@nyx/policy", "@nyx/scope", "@nyx/sandbox", "@nyx/memory", "@nyx/persona", "@nyx/agent"],
+  "packages/runtime": ["@nyx/protocol"],
+  "apps/server": ["@nyx/protocol", "@nyx/config", "@nyx/kernel", "@nyx/session", "@nyx/model", "@nyx/tools", "@nyx/policy", "@nyx/scope", "@nyx/sandbox", "@nyx/memory", "@nyx/persona", "@nyx/agent", "@nyx/runtime"],
   "apps/cli": ["@nyx/protocol", "@nyx/config", "@nyx/kernel", "@nyx/session", "@nyx/model", "@nyx/tools", "@nyx/policy", "@nyx/scope", "@nyx/sandbox", "@nyx/memory", "@nyx/persona", "@nyx/agent"],
   "apps/web": [],
 };
 
-const ALL_PACKAGES = ["@nyx/protocol", "@nyx/config", "@nyx/kernel", "@nyx/session", "@nyx/model", "@nyx/scope", "@nyx/policy", "@nyx/sandbox", "@nyx/memory", "@nyx/persona", "@nyx/tools", "@nyx/agent", "@nyx/server", "@nyx/cli", "@nyx/web"];
+const ALL_PACKAGES = ["@nyx/protocol", "@nyx/config", "@nyx/kernel", "@nyx/session", "@nyx/model", "@nyx/scope", "@nyx/policy", "@nyx/sandbox", "@nyx/memory", "@nyx/persona", "@nyx/tools", "@nyx/agent", "@nyx/runtime", "@nyx/server", "@nyx/cli", "@nyx/web"];
 
 const boundaryOverrides = Object.entries(ALLOWED).map(([dir, allowed]) => {
   const forbidden = ALL_PACKAGES.filter((p) => !allowed.includes(p));

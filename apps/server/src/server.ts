@@ -35,6 +35,8 @@ import {
   ToolRouterImpl,
 } from "@nyx/tools";
 import { createAgentLoop } from "@nyx/agent";
+import { createLaneQueue } from "@nyx/runtime";
+import type { LaneQueue } from "@nyx/runtime";
 import {
   ContentBlockSchema,
   EngagementSchema,
@@ -232,16 +234,25 @@ export function createServer(deps: ServerDeps): NyxServer {
   const auth = resolveAuth(config.server, process.env);
   const loop = createAgentLoop();
 
-  // ── per-session turn execution ──
-  const busySessions = new Set<string>();
+  // ── per-session turn execution (lane queue) ──
+  // One session = one lane = serial execution; turns POSTed while one is in
+  // flight queue up (FIFO) instead of 409ing. The global cap and round-robin
+  // scheduling keep a burst of sessions from starving each other. Aborting a
+  // running turn (close()) cancels it and drains that session's queue.
+  const lanes: LaneQueue = createLaneQueue({
+    max_concurrent_global: config.lanes?.max_concurrent_global ?? 4,
+    max_concurrent_per_session: config.lanes?.max_concurrent_per_session ?? 1,
+    heartbeat_serialized_with_interactive:
+      config.lanes?.heartbeat_serialized_with_interactive ?? true,
+  });
   const turnControllers = new Map<string, AbortController>();
 
   const runTurn = async (
     session_id: string,
     turn_id: string,
     content: ContentBlock[],
+    controller: AbortController,
   ): Promise<void> => {
-    const controller = new AbortController();
     turnControllers.set(session_id, controller);
     const log = logger.child({ session_id, turn_id, component: "turn" });
     try {
@@ -278,7 +289,6 @@ export function createServer(deps: ServerDeps): NyxServer {
       log.error("turn.threw", { error: toSerializedError(err) });
     } finally {
       turnControllers.delete(session_id);
-      busySessions.delete(session_id);
     }
   };
 
@@ -433,21 +443,26 @@ export function createServer(deps: ServerDeps): NyxServer {
         parsed.error.issues.map((i) => `${i.path.join(".") || "body"} ${i.message}`).join("; "),
       );
     }
-    if (busySessions.has(id)) {
-      return c.json(
-        errorBody("validation_failed", "a turn is already in progress for this session"),
-        409,
-      );
-    }
     const content = (
       Array.isArray(parsed.data.content)
         ? parsed.data.content
         : [{ type: "text", text: parsed.data.content.text }]
     ) as ContentBlock[];
     const turn_id = nanoid(12);
-    busySessions.add(id);
-    void runTurn(id, turn_id, content);
-    return c.json({ turn_id, session_id: id }, 202);
+    // Enqueue into the session's lane: the turn runs when the lane reaches
+    // it (serial per session), the route returns immediately, and the event
+    // stream (SSE/WS) carries events from the queue position onward.
+    const controller = new AbortController();
+    void lanes
+      .enqueue({
+        session_id: id,
+        priority: "interactive",
+        run: () => runTurn(id, turn_id, content, controller),
+        signal: controller.signal,
+      })
+      .catch(() => undefined); // lane aborts (close/drain) are expected
+    const status = lanes.status(id);
+    return c.json({ turn_id, session_id: id, lane: status }, 202);
   });
 
   app.post("/v1/sessions/:id/fork", async (c) => {

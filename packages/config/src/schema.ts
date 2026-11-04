@@ -250,6 +250,16 @@ export const configSchema = z
     memory: memorySchema.default({}),
     persona: personaSchema.default({}),
     logging: loggingSchema.default({}),
+    // Optional (Phase 1): per-session lane queue tuning. Absent → code
+    // defaults (4 global, 1 per session, heartbeats serialized).
+    lanes: z
+      .object({
+        max_concurrent_global: z.number().int().min(1).max(256),
+        max_concurrent_per_session: z.number().int().min(1).max(64),
+        heartbeat_serialized_with_interactive: z.boolean(),
+      })
+      .strict()
+      .optional(),
     owner_id: z.string().min(1).default("owner"),
   })
   .strict();
@@ -262,6 +272,7 @@ export type NyxChainStep = z.infer<typeof chainStepSchema>;
 export type NyxRouteRule = z.infer<typeof routeRuleSchema>;
 export type NyxRouterConfig = z.infer<typeof routerSchema>;
 export type NyxPolicyRuleConfig = z.infer<typeof policyRuleSchema>;
+export type NyxLanesConfig = z.infer<typeof configSchema>["lanes"];
 
 // ---------------------------------------------------------------------------
 // Compile-time drift probes. If either of these errors, the Zod mirror above
