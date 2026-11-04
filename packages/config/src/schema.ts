@@ -403,6 +403,22 @@ export const configSchema = z
       })
       .strict()
       .default({}),
+    // Optional (Phase 5 §3): the security subsystem. Absent → code defaults.
+    // The security TOOLS register when enabled (they are technique-gated to
+    // absence without an authorizing engagement — enabling registration is
+    // safe by construction). The skills themselves ship in skills/security/
+    // and surface via skills.dirs. See docs/SECURITY-SUBSYSTEM.md.
+    security: z
+      .object({
+        enabled: z.boolean().default(true),
+        // Where the binaries execute. "sandbox" routes them through the
+        // session sandbox (network-locked until the container egress ACL
+        // roadmap lands — for offline/local processing); "host" runs
+        // operator-installed binaries with the tool layer's checked egress.
+        executor: z.enum(["sandbox", "host"]).default("sandbox"),
+      })
+      .strict()
+      .default({}),
     // Optional (Phase 2 §2.2): the four-tier compaction pipeline. Absent →
     // code defaults (documented in docs/COMPACTION.md).
     context: z
@@ -439,6 +455,8 @@ export type NyxPolicyRuleConfig = z.infer<typeof policyRuleSchema>;
 export type NyxLanesConfig = z.infer<typeof configSchema>["lanes"];
 export type NyxChannelsConfig = z.infer<typeof configSchema>["channels"];
 export type NyxHeartbeatConfig = z.infer<typeof configSchema>["heartbeat"];
+export type NyxSkillsConfig = z.infer<typeof configSchema>["skills"];
+export type NyxSecurityConfig = z.infer<typeof configSchema>["security"];
 
 // ---------------------------------------------------------------------------
 // Compile-time drift probes. If either of these errors, the Zod mirror above

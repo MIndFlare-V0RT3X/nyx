@@ -50,7 +50,7 @@ import {
   registerLoadSkillTool,
   registerSkillsHook,
 } from "@nyx/skills";
-import { buildEngagementTooling } from "@nyx/security";
+import { buildEngagementTooling, FindingStore, registerSecurityTools, SecurityRateLimiter } from "@nyx/security";
 import type {
   ApprovalEngine,
   ApprovalRecord,
@@ -300,6 +300,18 @@ export function createLocalRuntime(deps: LocalRuntimeDeps): LocalRuntime {
   });
   registerLoadSkillTool(toolRegistry, { provider: skillsProvider });
   registerSkillsHook(kernel, { provider: skillsProvider });
+
+  // ── security (Phase 5 §3; mirrors apps/server) ──
+  // Registration is safe by construction — the session's engagement view
+  // filters unauthorized techniques out at turn scope.
+  if (config.security?.enabled !== false) {
+    registerSecurityTools(toolRegistry, {
+      store: new FindingStore({ db: unified.db }),
+      limiter: new SecurityRateLimiter(),
+      use_sandbox_executor: config.security?.executor !== "host",
+      audit: (entry) => approvalHandle.audit(entry),
+    });
+  }
   // 2.2: the four-tier compaction pipeline, configured from
   // context.compaction; the loop looks it up as a kernel service.
   kernel.services.set(

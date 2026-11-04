@@ -192,6 +192,10 @@ describe("loadConfig — golden files", () => {
         pinned: ["deploy-runbook"],
         excluded: ["legacy-migrations"],
       },
+      security: {
+        enabled: true,
+        executor: "sandbox",
+      },
       owner_id: "owner",
     });
   });

@@ -156,7 +156,8 @@ export function catalogLine(skill: SkillEntry): string {
   const trigger = skill.when_to_use !== undefined ? ` — trigger: ${skill.when_to_use}` : "";
   const tools =
     skill.tools !== undefined && skill.tools.length > 0 ? ` [tools: ${skill.tools.join(", ")}]` : "";
-  return `- ${skill.name}${skill.version !== undefined ? ` (v${skill.version})` : ""}: ${skill.description}${trigger}${tools}`;
+  const attack = skill.attack_class !== undefined ? ` [${skill.attack_class}]` : "";
+  return `- ${skill.name}${skill.version !== undefined ? ` (v${skill.version})` : ""}: ${skill.description}${trigger}${tools}${attack}`;
 }
 
 /**

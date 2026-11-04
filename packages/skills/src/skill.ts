@@ -17,6 +17,11 @@ import { z } from "zod";
 
 /** The frontmatter contract. `tools` is informational in Phase 4: parsed,
  * validated, and surfaced in the catalog — runtime tool GATING is Phase 5. */
+/** The attack class a security skill exercises (Phase 5 §3). Phase 5 ships
+ * recon/enum/scan skills only; `exploit` exists in the contract for Phase 6
+ * tooling gated behind the `exploitation` technique. */
+export const SKILL_ATTACK_CLASSES = ["recon", "enum", "scan", "exploit"] as const;
+
 export const SkillFrontmatterSchema = z
   .object({
     name: z
@@ -28,6 +33,7 @@ export const SkillFrontmatterSchema = z
     when_to_use: z.string().min(3).max(300).optional(),
     tools: z.array(z.string().min(1)).max(32).optional(),
     persona_scope: z.array(z.string().min(1)).max(64).optional(),
+    attack_class: z.enum(SKILL_ATTACK_CLASSES).optional(),
     version: z
       .string()
       .regex(/^\d+\.\d+\.\d+$/, "semantic version (MAJOR.MINOR.PATCH)")
@@ -41,6 +47,7 @@ export interface SkillEntry {
   when_to_use?: string;
   tools?: string[];
   persona_scope?: string[];
+  attack_class?: (typeof SKILL_ATTACK_CLASSES)[number];
   version?: string;
   /** The instruction body — returned by load_skill, never in the catalog. */
   body: string;
@@ -116,6 +123,7 @@ export function parseSkillMd(text: string, file: string): ParseResult {
       ...(s.when_to_use !== undefined ? { when_to_use: s.when_to_use } : {}),
       ...(s.tools !== undefined ? { tools: [...s.tools] } : {}),
       ...(s.persona_scope !== undefined ? { persona_scope: [...s.persona_scope] } : {}),
+      ...(s.attack_class !== undefined ? { attack_class: s.attack_class } : {}),
       ...(s.version !== undefined ? { version: s.version } : {}),
       body: stripped,
       file,

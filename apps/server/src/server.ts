@@ -62,7 +62,7 @@ import {
   type TaskManager,
   type TaskRunner,
 } from "@nyx/tasks";
-import { buildEngagementTooling } from "@nyx/security";
+import { buildEngagementTooling, FindingStore, registerSecurityTools, SecurityRateLimiter } from "@nyx/security";
 import {
   ChannelManager,
   ChannelSessionStore,
@@ -321,6 +321,20 @@ export function createServer(deps: ServerDeps): NyxServer {
   });
   registerLoadSkillTool(toolRegistry, { provider: skillsProvider });
   registerSkillsHook(kernel, { provider: skillsProvider });
+
+  // ── security (Phase 5 §3) ──
+  // The tools register when enabled — safe by construction: without an
+  // authorizing engagement the session's registry view filters every one of
+  // them out (5.2's buildEngagementTooling in runTurn). One process-level
+  // rate limiter; buckets are keyed (engagement, class, host).
+  if (config.security?.enabled !== false) {
+    registerSecurityTools(toolRegistry, {
+      store: new FindingStore({ db: unified.db }),
+      limiter: new SecurityRateLimiter(),
+      use_sandbox_executor: config.security?.executor !== "host",
+      audit: (entry) => approvalEngineHandle.audit(entry),
+    });
+  }
   // 2.2: the four-tier compaction pipeline, configured from
   // context.compaction; the loop looks it up as a kernel service.
   kernel.services.set(

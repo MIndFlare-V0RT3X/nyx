@@ -122,15 +122,21 @@ interface EgressTarget {
   port?: number;
 }
 
-type EgressExtraction = { ok: true; target: EgressTarget } | { ok: false; reason: string };
+type EgressExtraction = { ok: true; targets: EgressTarget[] } | { ok: false; reason: string };
 
 /**
- * Extract the egress target from a tool input. web.fetch-style tools declare
+ * Extract the egress target(s) from a tool input. web.fetch-style tools declare
  * a `url` (must be absolute http/https, no embedded userinfo — a scheme or
  * userinfo the operator never approved is a scope denial, not a validation
  * nit). Tools may alternatively declare `host` (+ optional `port`) directly;
  * an inline "host:port" authority is split the same way. Default http/https
  * ports are materialized so engagement port allowlists are actually checked.
+ *
+ * Phase 5 security tools add three shapes, all funneled through the SAME
+ * pre-check: `targets` (a list of urls/hosts — every entry is checked),
+ * `domain` (a bare host), and `target` (a host or CIDR — the CIDR's base
+ * address is checked; the range itself is the security tool's structural
+ * containment concern).
  */
 function extractEgressTarget(input: unknown): EgressExtraction {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
@@ -166,7 +172,41 @@ function extractEgressTarget(input: unknown): EgressExtraction {
       return { ok: false, reason: `url has no host: ${JSON.stringify(obj.url)}` };
     }
     const port = url.port !== "" ? Number(url.port) : url.protocol === "https:" ? 443 : 80;
-    return { ok: true, target: { host: url.hostname, port } };
+    return { ok: true, targets: [{ host: url.hostname, port }] };
+  }
+
+  // A list of urls / hosts / CIDRs — every entry is extracted and checked.
+  if (Array.isArray(obj.targets)) {
+    const targets: EgressTarget[] = [];
+    for (const entry of obj.targets) {
+      if (typeof entry !== "string" || entry.length === 0) {
+        return { ok: false, reason: "targets entries must be non-empty strings" };
+      }
+      const extracted = extractHostEntry(entry);
+      if (extracted === null) {
+        return { ok: false, reason: `invalid target for network egress: ${JSON.stringify(entry)}` };
+      }
+      targets.push(extracted);
+    }
+    if (targets.length === 0) {
+      return { ok: false, reason: "targets must not be empty for network egress" };
+    }
+    return { ok: true, targets };
+  }
+
+  // A single host or CIDR (nmap-style `target`) — CIDRs contribute their
+  // base address; the range containment is the tool's structural check.
+  if (typeof obj.target === "string" && obj.target !== "") {
+    const extracted = extractHostEntry(obj.target);
+    if (extracted === null) {
+      return { ok: false, reason: `invalid target for network egress: ${JSON.stringify(obj.target)}` };
+    }
+    return { ok: true, targets: [extracted] };
+  }
+
+  // A bare domain (subfinder-style).
+  if (typeof obj.domain === "string" && obj.domain !== "") {
+    return { ok: true, targets: [{ host: obj.domain }] };
   }
 
   if (typeof obj.host === "string" && obj.host !== "") {
@@ -188,12 +228,39 @@ function extractEgressTarget(input: unknown): EgressExtraction {
       host = inline.host;
       port = inline.port;
     }
-    return { ok: true, target: { host, port } };
+    return { ok: true, targets: [{ host, ...(port !== undefined ? { port } : {}) }] };
   }
   return {
     ok: false,
     reason: "network egress requires a url (http/https) or a host field in the tool input",
   };
+}
+
+/** One `targets`/`target` entry: absolute http(s) URL, host[:port], or CIDR
+ * (base address). Null when the entry is none of those. */
+function extractHostEntry(entry: string): EgressTarget | null {
+  if (entry.includes("://")) {
+    let url: URL;
+    try {
+      url = new URL(entry);
+    } catch {
+      return null;
+    }
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (url.username !== "" || url.password !== "") return null;
+    if (url.hostname === "") return null;
+    const port = url.port !== "" ? Number(url.port) : url.protocol === "https:" ? 443 : 80;
+    return { host: url.hostname, port };
+  }
+  const slash = entry.indexOf("/");
+  if (slash !== -1 && /^\d+$/.test(entry.slice(slash + 1))) {
+    // CIDR — the base address represents the range at the pre-check layer.
+    return { host: entry.slice(0, slash) };
+  }
+  const inline = splitInlinePort(entry);
+  if (inline !== null) return inline;
+  if (entry.trim().length === 0) return null;
+  return { host: entry.trim() };
 }
 
 /** Split "host:port" / "[v6]:port" into its parts; null when there is no inline port. */
@@ -338,14 +405,16 @@ class ToolRuntimeImpl implements ToolRuntime {
           return { kind: "text", text: `denied by scope: ${detail}` };
         }
         const check = makeScopeChecker(ctx.engagement);
-        const query: ScopeTargetQuery =
-          extraction.target.port !== undefined
-            ? { host: extraction.target.host, port: extraction.target.port }
-            : { host: extraction.target.host };
-        const verdict = check(query);
-        if (!verdict.allowed) {
-          this.emitDenied(ctx, call, "scope", verdict.reason);
-          return { kind: "text", text: `denied by scope: ${verdict.reason}` };
+        for (const target of extraction.targets) {
+          const query: ScopeTargetQuery =
+            target.port !== undefined
+              ? { host: target.host, port: target.port }
+              : { host: target.host };
+          const verdict = check(query);
+          if (!verdict.allowed) {
+            this.emitDenied(ctx, call, "scope", verdict.reason);
+            return { kind: "text", text: `denied by scope: ${verdict.reason}` };
+          }
         }
       }
 

@@ -345,5 +345,19 @@ owner_id: owner
 #   catalog_max_tokens: 2000        # the catalog section's token cap
 #   dirs:                           # shared skill bases (~ expands)
 #     - ~/.nyx/skills
+#     - ./skills                   # add the repo's shipped skills (incl. security)
 #   pinned: []                      # always in the catalog, in this order
 #   excluded: []                    # never advertised
+
+# ── security (Phase 5) ──────────────────────────────────────────────────────
+# The security subsystem: engagement files (engagements/<id>.yaml), the
+# technique-gated tool registry, the findings DB, and reports. The tools
+# register when enabled — safe by construction: a session without an
+# authorizing engagement sees NONE of them. The security SKILLS ship in
+# skills/security/ (persona-scoped to "security"). docs/SECURITY-SUBSYSTEM.md.
+# security:
+#   enabled: true                   # register the security tools at all
+#   executor: sandbox               # "sandbox" (network-locked until the
+#                                   #  container egress ACL roadmap lands) or
+#                                   #  "host" (operator-installed binaries,
+#                                   #  tool-layer checked egress)

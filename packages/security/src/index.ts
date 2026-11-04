@@ -108,3 +108,17 @@ export {
   type RenderedReport,
 } from "./reports/generator.js";
 export { verifyEvidence, EvidenceError, type VerifiedEvidence } from "./reports/evidence.js";
+
+// ── security tools (Phase 5 §3) ──────────────────────────────────────────────
+export {
+  registerSecurityTools,
+  FakeSecurityExecutor,
+  HostSecurityExecutor,
+  SandboxSecurityExecutor,
+  assertSafeTokens,
+  SecurityToolError,
+  type SecurityExecutor,
+  type ExecutorResult,
+  type RegisterSecurityToolsDeps,
+  type SecurityToolDeps,
+} from "./tools/index.js";

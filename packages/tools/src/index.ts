@@ -14,3 +14,5 @@ export type {
   ToolRuntimeOptions,
   ToolRuntimeDeps,
 } from "./runtime.js";
+export { DnsEgressResolver } from "./egress.js";
+export type { EgressResolver, ResolvedEndpoint } from "./egress.js";

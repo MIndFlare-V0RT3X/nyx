@@ -1,0 +1,74 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Dockerfile.security — the operator-built sandbox image for security
+# engagements (Phase 5 §3.1, hard rule #8: pinned, reproducible, no latest).
+#
+# Build (documented in README.md "Security engagements"):
+#   docker build -f Dockerfile.security -t nyx-security:1 .
+#
+# The image installs the six Phase 5 tools at the pinned versions below.
+# Versions are ARGs so operators can pin differently, but they MUST be set:
+# an empty ARG fails the build loudly rather than silently floating.
+#
+# NOTE (Phase 5 scope): the sandbox this image feeds is still --network none
+# by Phase 0 design; container-level egress ACLs are on the roadmap (an
+# egress proxy). Until then the security tools run through the harness's
+# checked egress path with executor "host" (operator-installed binaries) or
+# inside this image for offline/local processing. This image is the pinned
+# foundation the network mode will build on.
+
+FROM debian:12.9-slim
+
+ARG SUBFINDER_VERSION=v2.17.0
+ARG HTTPX_VERSION=v1.12.0
+ARG NUCLEI_VERSION=v3.11.1
+ARG FFUF_VERSION=v2.3.0
+ARG KATANA_VERSION=v1.8.0
+ARG NMAP_VERSION=7.993
+ARG TARGETARCH
+
+RUN : "${SUBFINDER_VERSION:?SUBFINDER_VERSION must be pinned}" \
+ && : "${HTTPX_VERSION:?HTTPX_VERSION must be pinned}" \
+ && : "${NUCLEI_VERSION:?NUCLEI_VERSION must be pinned}" \
+ && : "${FFUF_VERSION:?FFUF_VERSION must be pinned}" \
+ && : "${KATANA_VERSION:?KATANA_VERSION must be pinned}" \
+ && : "${NMAP_VERSION:?NMAP_VERSION must be pinned}" \
+ && : "${TARGETARCH:?TARGETARCH must be set (buildx provides it)}"
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates \
+      curl \
+      bzip2 \
+      "nmap=${NMAP_VERSION}*" \
+ && rm -rf /var/lib/apt/lists/*
+
+# ProjectDiscovery tools ship prebuilt per-arch tarballs; map docker's
+# TARGETARCH to their release naming.
+RUN case "${TARGETARCH}" in \
+      amd64) PDARCH=amd64 ;; \
+      arm64) PDARCH=arm64 ;; \
+      *) echo "unsupported TARGETARCH ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+ && mkdir -p /tmp/pd /usr/local/bin \
+ && curl -fsSL "https://github.com/projectdiscovery/subfinder/releases/download/${SUBFINDER_VERSION}/subfinder_${SUBFINDER_VERSION#v}_linux_${PDARCH}.zip" -o /tmp/pd/subfinder.zip \
+ && curl -fsSL "https://github.com/projectdiscovery/httpx/releases/download/${HTTPX_VERSION}/httpx_${HTTPX_VERSION#v}_linux_${PDARCH}.zip" -o /tmp/pd/httpx.zip \
+ && curl -fsSL "https://github.com/projectdiscovery/nuclei/releases/download/${NUCLEI_VERSION}/nuclei_${NUCLEI_VERSION#v}_linux_${PDARCH}.zip" -o /tmp/pd/nuclei.zip \
+ && curl -fsSL "https://github.com/projectdiscovery/katana/releases/download/${KATANA_VERSION}/katana_${KATANA_VERSION#v}_linux_${PDARCH}.zip" -o /tmp/pd/katana.zip \
+ && curl -fsSL "https://github.com/ffuf/ffuf/releases/download/${FFUF_VERSION}/ffuf_${FFUF_VERSION#v}_linux_${PDARCH}.tar.gz" | tar -xz -C /usr/local/bin ffuf \
+ && cd /tmp/pd \
+ && for z in subfinder httpx nuclei katana; do unzip -o -q "${z}.zip" -d "${z}x"; done \
+ && mv subfinderx/subfinder httpx/httpx nuclei/nuclei katanax/katana /usr/local/bin/ \
+ && rm -rf /tmp/pd \
+ && subfinder -version 2>&1 | head -1 \
+ && httpx -version 2>&1 | head -1 \
+ && nuclei -version 2>&1 | head -1 \
+ && katana -version 2>&1 | head -1 \
+ && ffuf -V \
+ && nmap --version | head -1
+
+# A small default wordlist for ffuf (operators mount their own at
+# /workspace/wordlists when they want more).
+RUN mkdir -p /opt/wordlists \
+ && printf '%s\n' admin backup cgi-bin config console dashboard data db debug dev doc docs download downloads etc files ftp home html images img info js lib login logout media api public register root scripts secret server setup sql static temp test tmp uploads user users var workspace > /opt/wordlists/common.txt
+
+WORKDIR /workspace
