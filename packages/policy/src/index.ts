@@ -6,10 +6,16 @@ export { PolicyEngineImpl, computeActionDigest } from "./policy.js";
 export type { PolicyEngineOptions } from "./policy.js";
 export {
   ApprovalEngineImpl,
+  DEFAULT_CHANNEL_APPROVAL_TTL_MS,
   ensureApprovalEngineTables,
   openApprovalEngine,
 } from "./approvals.js";
-export type { ApprovalEngineOptions } from "./approvals.js";
+export type {
+  ApprovalEngineOptions,
+  ApprovalPresenter,
+  ApprovalRequest,
+  RegisterPresenterOptions,
+} from "./approvals.js";
 export { appendAudit, ensureAuditTable, verifyAuditChain } from "./audit.js";
 export type { AuditEntry, AuditVerifyResult } from "./audit.js";
 export {

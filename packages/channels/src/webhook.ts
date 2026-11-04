@@ -16,12 +16,15 @@ import type {
   WebhookChannelConfig,
 } from "./types.js";
 import type { ChannelManager } from "./manager.js";
+import type { WebhookApprovalPresenter } from "./approvals.js";
 
 export interface WebhookAdapterOptions {
   config: WebhookChannelConfig;
   manager: ChannelManager;
   logger?: Logger;
   now?: () => number;
+  /** 2.1: approvals surface as approval_required bodies with a resolve_url. */
+  approvalPresenter?: WebhookApprovalPresenter;
 }
 
 interface WebhookPayload {
@@ -153,11 +156,17 @@ export class WebhookChannel implements ChannelAdapter {
       return;
     }
 
-    // A turn is running: wait up to reply_timeout_ms, then answer with ids.
+    // A turn is running: wait up to reply_timeout_ms for the reply, but if
+    // the turn needs an approval, answer with the approval_required body
+    // (2.1) — the client resolves via the main API's resolve_url.
+    const approvalBody =
+      this.opts.approvalPresenter !== undefined
+        ? this.opts.approvalPresenter.waitForApproval(result.session_id)
+        : new Promise<null>(() => undefined); // never resolves when no presenter
     const timeout = new Promise<"timeout">((resolve) => {
       setTimeout(() => resolve("timeout"), cfg.reply_timeout_ms).unref?.();
     });
-    const settled = await Promise.race([result.handle.completion, timeout]);
+    const settled = await Promise.race([result.handle.completion, timeout, approvalBody]);
     if (settled === "timeout") {
       res.writeHead(202, { "content-type": "application/json" });
       res.end(
@@ -169,12 +178,19 @@ export class WebhookChannel implements ChannelAdapter {
       );
       return;
     }
+    if (settled !== null && typeof settled === "object" && "resolve_url" in settled) {
+      // approval_required body (2.1): the turn keeps running; the client
+      // resolves via the resolve_url on the main API.
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(settled));
+      return;
+    }
     res.writeHead(200, { "content-type": "application/json" });
     res.end(
       JSON.stringify({
         session_id: result.session_id,
         turn_id: result.handle.turn_id,
-        reply: settled.text,
+        reply: settled === null ? "" : settled.text,
       }),
     );
   }

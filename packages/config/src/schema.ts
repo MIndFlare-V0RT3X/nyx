@@ -282,6 +282,7 @@ export const configSchema = z
             port: z.number().int().min(0).max(65535),
             allowed_owners: z.array(z.string().min(1)),
             reply_timeout_ms: z.number().int().min(1),
+            approval_ttl_ms: z.number().int().min(1_000).optional(),
           })
           .strict()
           .optional(),
@@ -292,6 +293,7 @@ export const configSchema = z
             allowed_user_ids: z.array(z.number().int()),
             poll_timeout_s: z.number().int().min(1).max(120),
             edit_interval_ms: z.number().int().min(500),
+            approval_ttl_ms: z.number().int().min(1_000).optional(),
           })
           .strict()
           .optional(),

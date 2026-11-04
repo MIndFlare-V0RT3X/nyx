@@ -18,8 +18,19 @@ import type { ChannelManager } from "./manager.js";
 /** The Telegram Bot API surface this adapter needs (injectable for tests). */
 export interface TelegramClient {
   getUpdates(offset: number, timeout_s: number, signal: AbortSignal): Promise<TelegramUpdate[]>;
-  sendMessage(chat_id: string, text: string): Promise<{ message_id: number }>;
-  editMessageText(chat_id: string, message_id: number, text: string): Promise<void>;
+  sendMessage(
+    chat_id: string,
+    text: string,
+    opts?: { reply_markup?: unknown },
+  ): Promise<{ message_id: number }>;
+  editMessageText(
+    chat_id: string,
+    message_id: number,
+    text: string,
+    opts?: { reply_markup?: unknown },
+  ): Promise<void>;
+  /** 2.1: stop the client-side spinner on a callback query. */
+  answerCallbackQuery(callback_query_id: string, text?: string): Promise<void>;
 }
 
 export interface TelegramUpdate {
@@ -29,6 +40,13 @@ export interface TelegramUpdate {
     chat: { id: number };
     from?: { id: number };
     text?: string;
+  };
+  /** 2.1: inline-keyboard button press (approval resolution). */
+  callback_query?: {
+    id: string;
+    data?: string;
+    from?: { id: number };
+    message?: { message_id: number; chat: { id: number } };
   };
 }
 
@@ -60,16 +78,30 @@ export function createHttpTelegramClient(
       call<TelegramUpdate[]>("getUpdates", {
         offset,
         timeout: timeout_s,
-        allowed_updates: ["message"],
+        allowed_updates: ["message", "callback_query"],
       }).catch(async (err: unknown) => {
         // Long-poll aborted by stop(): a clean shutdown, not an error.
         if (signal.aborted) return [];
         throw err;
       }),
-    sendMessage: (chat_id, text) =>
-      call<{ message_id: number }>("sendMessage", { chat_id, text }),
-    editMessageText: (chat_id, message_id, text) =>
-      call<boolean>("editMessageText", { chat_id, message_id, text }).then(() => undefined),
+    sendMessage: (chat_id, text, opts) =>
+      call<{ message_id: number }>("sendMessage", {
+        chat_id,
+        text,
+        ...(opts?.reply_markup !== undefined ? { reply_markup: opts.reply_markup } : {}),
+      }),
+    editMessageText: (chat_id, message_id, text, opts) =>
+      call<boolean>("editMessageText", {
+        chat_id,
+        message_id,
+        text,
+        ...(opts?.reply_markup !== undefined ? { reply_markup: opts.reply_markup } : {}),
+      }).then(() => undefined),
+    answerCallbackQuery: (callback_query_id, text) =>
+      call<boolean>("answerCallbackQuery", {
+        callback_query_id,
+        ...(text !== undefined ? { text } : {}),
+      }).then(() => undefined),
   };
 }
 
@@ -81,6 +113,8 @@ export interface TelegramAdapterOptions {
   now?: () => number;
   /** Test seam: sleep between polls. */
   sleep?: (ms: number) => Promise<void>;
+  /** 2.1: callback_query routing (the approval bridge). */
+  onCallbackQuery?: (query: NonNullable<TelegramUpdate["callback_query"]>) => void;
 }
 
 export class TelegramChannel implements ChannelAdapter {
@@ -167,6 +201,11 @@ export class TelegramChannel implements ChannelAdapter {
   }
 
   private dispatch(update: TelegramUpdate): void {
+    // 2.1: inline-keyboard button presses route to the approval bridge.
+    if (update.callback_query !== undefined) {
+      this.opts.onCallbackQuery?.(update.callback_query);
+      return;
+    }
     const message = update.message;
     if (message === undefined || message.text === undefined || message.from === undefined) return;
     const msg: InboundMessage = {

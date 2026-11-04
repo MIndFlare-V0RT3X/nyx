@@ -17,6 +17,42 @@ import type {
 } from "@nyx/protocol";
 import Database from "better-sqlite3";
 
+// ── 2.1.1: channel-facing approval presentation ──
+
+/** An approval request as handed to a presenter (channel surface). */
+export interface ApprovalRequest {
+  approval_id: string;
+  session_id: string;
+  turn_id: string;
+  summary: string;
+  risk: RiskTier;
+  action_digest: string;
+  /** Epoch ms — the engine auto-denies at this point. */
+  expires_at: number;
+}
+
+/**
+ * A channel's way of SHOWING an approval request and collecting the
+ * operator's decision. The engine calls present(); the operator responds by
+ * calling engine.resolve(approval_id, decision, actor). withdraw() is called
+ * when the request dies without a decision (expiry, abort, session close) so
+ * the surface can clean up its UI.
+ */
+export interface ApprovalPresenter {
+  readonly id: string;
+  present(req: ApprovalRequest): Promise<void>;
+  /** Engine calls this to withdraw a pending request (abort, session close, expiry cleanup). */
+  withdraw(approval_id: string, reason: string): Promise<void>;
+}
+
+export interface RegisterPresenterOptions {
+  /** TTL for approvals of this session (channel default 5 min). */
+  ttl_ms?: number;
+}
+
+/** Default channel approval TTL (5 minutes; TTY default stays 10). */
+export const DEFAULT_CHANNEL_APPROVAL_TTL_MS = 300_000;
+
 export interface ApprovalEngineOptions {
   now?: () => number;
   /** Approval TTL in ms (default 10 minutes). */
@@ -127,6 +163,8 @@ export class ApprovalEngineImpl implements ApprovalEngine {
   private readonly pollMs: number;
   private readonly onCreated: ((record: ApprovalRecord) => void) | undefined;
   private readonly onResolved: ((record: ApprovalRecord) => void) | undefined;
+  /** 2.1.1: per-session presenters (channel surfaces); absent → TTY/poll path. */
+  private readonly presenters = new Map<string, { presenter: ApprovalPresenter; ttlMs: number }>();
 
   constructor(db: Database.Database, opts: ApprovalEngineOptions = {}) {
     this.db = db;
@@ -139,11 +177,47 @@ export class ApprovalEngineImpl implements ApprovalEngine {
     ensureApprovalEngineTables(db);
   }
 
+  /**
+   * 2.1.1: register a presenter for a session. While registered, request()
+   * delegates to it instead of relying on the TTY loop: the presenter shows
+   * the request, the operator answers, the presenter (or the resolve route)
+   * calls engine.resolve(). The channel TTL applies (default 5 min).
+   */
+  registerPresenter(
+    session_id: string,
+    presenter: ApprovalPresenter,
+    opts: RegisterPresenterOptions = {},
+  ): void {
+    this.presenters.set(session_id, {
+      presenter,
+      ttlMs: opts.ttl_ms ?? DEFAULT_CHANNEL_APPROVAL_TTL_MS,
+    });
+  }
+
+  /**
+   * 2.1.1: drop a session's presenter. Pending approvals of the session are
+   * denied and withdrawn first (a closed surface must not leave orphans).
+   */
+  unregisterPresenter(session_id: string): void {
+    if (!this.presenters.has(session_id)) return;
+    // Withdraw FIRST, while the presenter is still registered: the surface
+    // must receive its withdraw() notifications for every pending request.
+    this.withdrawSession(session_id, "presenter unregistered");
+    this.presenters.delete(session_id);
+  }
+
+  /** Sessions with a registered presenter (surface teardown). */
+  presenterSessions(): string[] {
+    return [...this.presenters.keys()];
+  }
+
   /** Insert a pending approval (plus its audit row) and block until it is resolved or expired. */
   async request(v: PolicyVerdict, ctx: ApprovalContext): Promise<"allow" | "deny"> {
     const id = nanoid();
     const createdAt = this.now();
-    const expiresAt = createdAt + this.ttlMs;
+    const presenterEntry = this.presenters.get(ctx.session_id);
+    const ttl = presenterEntry?.ttlMs ?? this.ttlMs;
+    const expiresAt = createdAt + ttl;
     const risk = riskFromVerdict(v);
 
     this.db.transaction(() => {
@@ -191,6 +265,26 @@ export class ApprovalEngineImpl implements ApprovalEngine {
       used_at: null,
     });
 
+    // 2.1.1: a registered presenter SHOWS the request (inline keyboard,
+    // approval_required body, …). present() failing must not break the turn:
+    // the approval stays pending until resolved or the TTL auto-denies.
+    if (presenterEntry !== undefined) {
+      try {
+        await presenterEntry.presenter.present({
+          approval_id: id,
+          session_id: ctx.session_id,
+          turn_id: ctx.turn_id,
+          summary: v.summary,
+          risk,
+          action_digest: v.action_digest,
+          expires_at: expiresAt,
+        });
+      } catch {
+        // surfaced by the presenter's own logging; the poll loop below is the
+        // safety net (TTL auto-deny + withdraw)
+      }
+    }
+
     for (;;) {
       await sleep(this.pollMs);
       const row = this.db
@@ -227,6 +321,15 @@ export class ApprovalEngineImpl implements ApprovalEngine {
           expires_at: expiresAt,
           used_at: null,
         });
+        // 2.1.1: the presenter learns its request died without a decision
+        // ("⏱ approval expired — action denied" on channels).
+        if (presenterEntry !== undefined) {
+          try {
+            await presenterEntry.presenter.withdraw(id, "expired");
+          } catch {
+            // presenter cleanup is best-effort
+          }
+        }
         return "deny";
       }
       if (!row) return "deny"; // row vanished externally — nothing left to poll for
@@ -328,6 +431,7 @@ export class ApprovalEngineImpl implements ApprovalEngine {
    * blocked request() returns instead of waiting out its TTL).
    */
   withdrawSession(sessionId: string, reason: string): number {
+    const presenterEntry = this.presenters.get(sessionId);
     const pendings = this.db
       .prepare(
         `SELECT * FROM policy_approvals
@@ -358,6 +462,10 @@ export class ApprovalEngineImpl implements ApprovalEngine {
       })();
       withdrawn += 1;
       this.onResolved?.(updated);
+      // 2.1.1: the surface learns its request died without a decision.
+      if (presenterEntry !== undefined) {
+        presenterEntry.presenter.withdraw(row.id, reason).catch(() => undefined);
+      }
     }
     return withdrawn;
   }

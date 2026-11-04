@@ -1,7 +1,7 @@
 {
   "name": "@nyx/channels",
   "version": "0.1.0",
-  "description": "NYX — channel adapters (webhook, Telegram) and the channel manager",
+  "description": "NYX \u2014 channel adapters (webhook, Telegram) and the channel manager",
   "type": "module",
   "license": "AGPL-3.0-or-later",
   "main": "./dist/index.js",
@@ -21,6 +21,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@nyx/policy": "workspace:*",
     "@nyx/protocol": "workspace:*",
     "better-sqlite3": "^11.8.1"
   },

@@ -62,6 +62,12 @@ export interface ChannelTurnRunner {
     session_id: string;
     owner_id: string;
     content: ContentBlock[];
+    /** 2.1: the originating channel, so the host can register the right approval presenter. */
+    channel?: {
+      id: string;
+      /** The channel's conversation id (Telegram chat id; webhook thread id). */
+      thread_id?: string;
+    };
   }): ChannelTurnHandle;
 }
 
@@ -78,6 +84,8 @@ export interface WebhookChannelConfig {
   allowed_owners: string[];
   /** How long a POST waits for the turn before answering with ids only. */
   reply_timeout_ms: number;
+  /** 2.1: approval TTL for webhook-originated turns (default 5 min). */
+  approval_ttl_ms?: number;
 }
 
 export interface TelegramChannelConfig {
@@ -86,6 +94,8 @@ export interface TelegramChannelConfig {
   allowed_user_ids: number[];
   poll_timeout_s: number;
   edit_interval_ms: number;
+  /** 2.1: approval TTL for telegram-originated turns (default 5 min). */
+  approval_ttl_ms?: number;
 }
 
 export interface ChannelsRuntimeConfig {

@@ -31,3 +31,17 @@ export {
   TelegramChannel,
 } from "./telegram.js";
 export type { TelegramAdapterOptions, TelegramClient, TelegramUpdate } from "./telegram.js";
+
+// ── 2.1: channel approval presenters ──
+export {
+  TelegramApprovalBridge,
+  TelegramApprovalPresenter,
+  WebhookApprovalPresenter,
+  approvalKeyboard,
+  approvalRequestText,
+} from "./approvals.js";
+export type {
+  TelegramApprovalBridgeOptions,
+  TelegramApprovalPresenterOptions,
+  WebhookApprovalBody,
+} from "./approvals.js";

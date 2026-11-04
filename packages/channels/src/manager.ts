@@ -150,7 +150,17 @@ export class ChannelManager {
     }
 
     const content: ContentBlock[] = [{ type: "text", text }];
-    const handle = this.runner.startTurn({ session_id, owner_id: owner, content });
+    const handle = this.runner.startTurn({
+      session_id,
+      owner_id: owner,
+      content,
+      // 2.1: the originating channel — the host registers the matching
+      // approval presenter (Telegram inline keyboard / webhook body).
+      channel: {
+        id: msg.channel,
+        ...(msg.channel_thread_id !== undefined ? { thread_id: msg.channel_thread_id } : {}),
+      },
+    });
     return { status: "started", handle, session_id };
   }
 }

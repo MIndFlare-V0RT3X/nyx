@@ -10,7 +10,7 @@
 // route through the EventSink (single serialized writer), so the loop's
 // events and the approval lifecycle events share one total order.
 
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import { serve } from "@hono/node-server";
@@ -43,7 +43,9 @@ import type { LaneQueue, Scheduler } from "@nyx/runtime";
 import {
   ChannelManager,
   ChannelSessionStore,
+  TelegramApprovalBridge,
   TelegramChannel,
+  WebhookApprovalPresenter,
   WebhookChannel,
   createHttpTelegramClient,
   replyTextFromEvents,
@@ -52,6 +54,7 @@ import type {
   ChannelAdapter,
   ChannelTurnHandle,
   ChannelTurnRunner,
+  TelegramClient,
 } from "@nyx/channels";
 import {
   ContentBlockSchema,
@@ -86,6 +89,8 @@ export interface ServerDeps {
    * engagement-creation DNS resolution (offline, deterministic tests).
    */
   engagement_resolver?: DnsResolver;
+  /** 2.1 test injection: replaces the Telegram Bot API client (mock updates). */
+  telegram_client?: TelegramClient;
 }
 
 export interface NyxServer {
@@ -325,20 +330,53 @@ export function createServer(deps: ServerDeps): NyxServer {
     }
   };
 
-  // ── channel ingress (Phase 1 §1.2) ──
+  // ── channel ingress (Phase 1 §1.2, approvals Phase 2 §2.1) ──
   // Channels drive the SAME machinery the HTTP API does — lane queue, agent
   // loop, policy, approvals — through the runner below; there is no separate
   // policy path for channel traffic. Identity, session mapping, and command
-  // handling live in @nyx/channels' manager.
+  // handling live in @nyx/channels' manager; approval PRESENTATION lives in
+  // the channel presenters registered per turn below.
+  const webhookApprovalPresenter = new WebhookApprovalPresenter();
+  let telegramBridge: TelegramApprovalBridge | undefined;
+
+  const presenterFor = (channel: { id: string; thread_id?: string } | undefined) => {
+    if (channel === undefined) return undefined;
+    if (channel.id === "telegram" && telegramBridge !== undefined && channel.thread_id !== undefined) {
+      return {
+        presenter: telegramBridge.presenterFor(channel.thread_id),
+        ttl: config.channels?.telegram?.approval_ttl_ms,
+      };
+    }
+    if (channel.id === "webhook") {
+      return {
+        presenter: webhookApprovalPresenter,
+        ttl: config.channels?.webhook?.approval_ttl_ms,
+      };
+    }
+    return undefined;
+  };
+
   const startChannelTurn = (input: {
     session_id: string;
     owner_id: string;
     content: ContentBlock[];
+    channel?: { id: string; thread_id?: string };
   }): ChannelTurnHandle => {
     const turn_id = nanoid(12);
     const controller = new AbortController();
     const handlers = new Set<(event: SessionEvent) => void>();
     const events: SessionEvent[] = [];
+    // 2.1: while this turn runs, its session's approvals present on the
+    // originating channel (inline keyboard / approval_required body) with
+    // the channel TTL (default 5 min).
+    const presented = presenterFor(input.channel);
+    if (presented !== undefined) {
+      approvalEngineHandle.engine.registerPresenter(
+        input.session_id,
+        presented.presenter,
+        presented.ttl !== undefined ? { ttl_ms: presented.ttl } : {},
+      );
+    }
     const completion = lanes
       .enqueue({
         session_id: input.session_id,
@@ -353,7 +391,13 @@ export function createServer(deps: ServerDeps): NyxServer {
       .then(
         () => ({ ok: true, text: replyTextFromEvents(events) }),
         () => ({ ok: false, text: "" }),
-      );
+      )
+      .finally(() => {
+        // No orphaned presenter: pending approvals are denied + withdrawn.
+        if (presented !== undefined) {
+          approvalEngineHandle.engine.unregisterPresenter(input.session_id);
+        }
+      });
     return {
       turn_id,
       completion,
@@ -435,22 +479,41 @@ export function createServer(deps: ServerDeps): NyxServer {
         config: config.channels.webhook,
         manager: channelManager,
         logger,
+        approvalPresenter: webhookApprovalPresenter,
       });
       channelAdapters.push(adapter);
       await adapter.start();
     }
     if (config.channels?.telegram?.enabled === true) {
       const token = process.env[config.channels.telegram.bot_token_env] ?? "";
-      if (token === "") {
+      const client =
+        deps.telegram_client ??
+        (token !== ""
+          ? createHttpTelegramClient(token)
+          : undefined);
+      if (client === undefined) {
         throw new Error(
           `channels.telegram is enabled but ${config.channels.telegram.bot_token_env} is not set`,
         );
       }
+      // 2.1: callback queries (approval buttons) route through the bridge;
+      // identity is gated by allowed_user_ids, resolution goes through the
+      // engine — the adapter never decides.
+      telegramBridge = new TelegramApprovalBridge({
+        client,
+        allowedUserIds: config.channels.telegram.allowed_user_ids,
+        resolve: (approvalId, decision, actor) =>
+          approvalEngineHandle.engine.resolve(approvalId, decision, actor),
+        logger,
+      });
       const adapter = new TelegramChannel({
         config: config.channels.telegram,
         manager: channelManager,
-        client: createHttpTelegramClient(token),
+        client,
         logger,
+        onCallbackQuery: (query) => {
+          void telegramBridge!.handleCallbackQuery(query);
+        },
       });
       channelAdapters.push(adapter);
       await adapter.start();
@@ -689,9 +752,9 @@ export function createServer(deps: ServerDeps): NyxServer {
     return c.json(await approvals.pending(session_id));
   });
 
-  app.post("/v1/approvals/:id", async (c) => {
+  const resolveApprovalHandler = async (c: Context) => {
     const actor = c.get("actor");
-    const id = c.req.param("id");
+    const id = c.req.param("id") ?? "";
     const parsed = ResolveBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
       return badRequest("validation_failed", 'body must be {decision: "allow" | "deny"}');
@@ -714,7 +777,12 @@ export function createServer(deps: ServerDeps): NyxServer {
           : "approval_denied";
       return c.json(errorBody(code, err instanceof Error ? err.message : String(err)), 409);
     }
-  });
+  };
+
+  app.post("/v1/approvals/:id", resolveApprovalHandler);
+  // 2.1.3: the canonical channel-facing path (the resolve_url handed out in
+  // approval_required bodies). Same handler, same auth, same R4 gate.
+  app.post("/v1/approvals/:id/resolve", resolveApprovalHandler);
 
   app.get("/v1/models", async (c) => {
     return c.json(await router.listModels());
@@ -781,6 +849,11 @@ export function createServer(deps: ServerDeps): NyxServer {
       heartbeatStore.close();
       for (const controller of turnControllers.values()) controller.abort();
       turnControllers.clear();
+      // 2.1: session close with a pending approval — withdraw + auto-deny,
+      // no orphans (presenters learn their requests died).
+      for (const session_id of approvalEngineHandle.engine.presenterSessions()) {
+        approvalEngineHandle.engine.unregisterPresenter(session_id);
+      }
       await wsHub?.close();
       await new Promise<void>((resolve) => {
         if (httpServer === undefined) return resolve();

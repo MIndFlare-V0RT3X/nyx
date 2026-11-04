@@ -21,7 +21,7 @@ const ALLOWED = {
   "packages/tools": ["@nyx/protocol", "@nyx/policy", "@nyx/scope", "@nyx/sandbox"],
   "packages/agent": ["@nyx/protocol"],
   "packages/runtime": ["@nyx/protocol"],
-  "packages/channels": ["@nyx/protocol"],
+  "packages/channels": ["@nyx/protocol", "@nyx/policy"],
   "packages/db": ["@nyx/protocol", "@nyx/policy", "@nyx/session", "@nyx/channels", "@nyx/runtime"],
   "apps/server": ["@nyx/protocol", "@nyx/config", "@nyx/kernel", "@nyx/session", "@nyx/model", "@nyx/tools", "@nyx/policy", "@nyx/scope", "@nyx/sandbox", "@nyx/memory", "@nyx/persona", "@nyx/agent", "@nyx/runtime", "@nyx/channels", "@nyx/db"],
   "apps/cli": ["@nyx/protocol", "@nyx/config", "@nyx/kernel", "@nyx/session", "@nyx/model", "@nyx/tools", "@nyx/policy", "@nyx/scope", "@nyx/sandbox", "@nyx/memory", "@nyx/persona", "@nyx/agent", "@nyx/db"],

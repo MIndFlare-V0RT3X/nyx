@@ -55,14 +55,30 @@ class StubTelegramClient implements TelegramClient {
     });
   }
 
-  async sendMessage(chat_id: string, text: string): Promise<{ message_id: number }> {
+  async sendMessage(
+    chat_id: string,
+    text: string,
+    _opts?: { reply_markup?: unknown },
+  ): Promise<{ message_id: number }> {
+    void _opts;
     const message_id = this.sent.length + 1;
     this.sent.push({ chat_id, text, kind: "send", message_id });
     return { message_id };
   }
 
-  async editMessageText(chat_id: string, message_id: number, text: string): Promise<void> {
+  async editMessageText(
+    chat_id: string,
+    message_id: number,
+    text: string,
+    _opts?: { reply_markup?: unknown },
+  ): Promise<void> {
+    void _opts;
     this.sent.push({ chat_id, text, kind: "edit", message_id });
+  }
+
+  async answerCallbackQuery(_callback_query_id: string, _text?: string): Promise<void> {
+    void _callback_query_id;
+    void _text;
   }
 }
 
