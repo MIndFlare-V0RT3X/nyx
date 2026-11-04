@@ -7,7 +7,15 @@
 
 import { afterAll, describe, expect, it } from "vitest";
 import { SECTION_ORDER } from "@nyx/protocol";
-import type { ContentBlock, Message, RunInput, SessionEvent, StoredEvent } from "@nyx/protocol";
+import type {
+  ContentBlock,
+  Message,
+  ModelChunk,
+  RunInput,
+  SessionEvent,
+  StoredEvent,
+  ToolDefinition,
+} from "@nyx/protocol";
 import { mockFailTurn, mockTextAndToolTurn, mockTextTurn, mockToolTurn } from "@nyx/model";
 import { AgentError } from "./errors.js";
 import { closeAllHarnesses, makeHarness } from "./harness.test.js";
@@ -568,5 +576,104 @@ describe("agent loop", () => {
       const stored = await h.store.read(h.session.session_id, 1);
       expect(types(stored)).toEqual(["session.created"]);
     });
+  });
+});
+
+describe("parallel-round dispatch (Phase 3 §2.3)", () => {
+  const parallelDef = (name: string): ToolDefinition => ({
+    name,
+    description: "parallel test tool",
+    input_schema: { type: "object" },
+    risk: "R0",
+    capabilities: [],
+    handler: `builtin:${name}`,
+    concurrency: "parallel",
+  });
+
+  const twoParallelCalls: ModelChunk[] = [
+    { type: "tool_call.delta", index: 0, id: "c1", name: "spawn.x", arguments_delta: '{"n":1}' },
+    { type: "tool_call.delta", index: 1, id: "c2", name: "spawn.x", arguments_delta: '{"n":2}' },
+    { type: "usage", usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } },
+    { type: "done", finish_reason: "tool_calls" },
+  ];
+
+  it("runs every call of an all-parallel round concurrently, results in call order", async () => {
+    const h = await makeHarness({
+      script: [twoParallelCalls, mockTextTurn("done")],
+      tools: [parallelDef("spawn.x")],
+    });
+    const timing: Record<string, { start: number; end: number }> = {};
+    h.runtimeSpy.setHandler(async (call) => {
+      const n = (call.input as { n: number }).n;
+      timing[call.call_id] = { start: Date.now(), end: NaN };
+      await new Promise((r) => setTimeout(r, n === 1 ? 60 : 10));
+      timing[call.call_id]!.end = Date.now();
+      return { kind: "text", text: `out-${n}` };
+    });
+
+    const events = await h.run();
+
+    // Overlap proof: call 2 (10ms) finished BEFORE call 1 (60ms) ended —
+    // impossible under sequential dispatch.
+    expect(timing.c2!.end).toBeLessThan(timing.c1!.end);
+    expect(timing.c2!.start).toBeLessThan(timing.c1!.end);
+
+    // Both tool.call events precede both tool.result events; c2's result
+    // lands before c1's (it finished first).
+    const toolCalls = byType(events, "tool.call");
+    const toolResults = byType(events, "tool.result");
+    expect(toolCalls.map((e) => e.call_id)).toEqual(["c1", "c2"]);
+    expect(toolResults.map((e) => e.call_id)).toEqual(["c2", "c1"]);
+    const lastCallIdx = Math.max(...toolCalls.map((e) => events.indexOf(e)));
+    const firstResultIdx = Math.min(...toolResults.map((e) => events.indexOf(e)));
+    expect(lastCallIdx).toBeLessThan(firstResultIdx);
+
+    // The model still receives the results in CALL order (c1, c2) — the
+    // parallelism is execution, not presentation.
+    const final = h.provider.requests[h.provider.requests.length - 1]!;
+    expect(toolResultBlockOf(final.messages, "c1").output).toMatchObject({
+      kind: "text",
+      text: "out-1",
+    });
+    const order = final.messages
+      .flatMap((m) => m.content)
+      .filter((b): b is Extract<ContentBlock, { type: "tool_result" }> => b.type === "tool_result")
+      .map((b) => b.call_id);
+    expect(order).toEqual(["c1", "c2"]);
+
+    expect(types(events).filter((t) => t === "tool.error")).toEqual([]);
+    expect(events[events.length - 1]!.type).toBe("turn.completed");
+  });
+
+  it("keeps rounds with any serial-classified call strictly sequential", async () => {
+    const serialDef: ToolDefinition = {
+      name: "serial.x",
+      description: "serial test tool",
+      input_schema: { type: "object" },
+      risk: "R0",
+      capabilities: [],
+      handler: "builtin:serial.x",
+    };
+    const mixedRound: ModelChunk[] = [
+      { type: "tool_call.delta", index: 0, id: "c1", name: "spawn.x", arguments_delta: '{"n":1}' },
+      { type: "tool_call.delta", index: 1, id: "c2", name: "serial.x", arguments_delta: '{"n":2}' },
+      { type: "usage", usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } },
+      { type: "done", finish_reason: "tool_calls" },
+    ];
+    const h = await makeHarness({
+      script: [mixedRound, mockTextTurn("done")],
+      tools: [parallelDef("spawn.x"), serialDef],
+    });
+    const timing: Record<string, { start: number; end: number }> = {};
+    h.runtimeSpy.setHandler(async (call) => {
+      const n = (call.input as { n: number }).n;
+      timing[call.call_id] = { start: Date.now(), end: NaN };
+      await new Promise((r) => setTimeout(r, n === 1 ? 60 : 5));
+      timing[call.call_id]!.end = Date.now();
+      return { kind: "text", text: "ok" };
+    });
+    await h.run();
+    // c2 only started after c1 finished — the round stayed sequential.
+    expect(timing.c2!.start).toBeGreaterThanOrEqual(timing.c1!.end);
   });
 });

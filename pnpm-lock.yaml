@@ -497,6 +497,58 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.5)
 
+  packages/subagents:
+    dependencies:
+      '@nyx/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@nyx/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@nyx/model':
+        specifier: workspace:*
+        version: link:../model
+      '@nyx/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@nyx/session':
+        specifier: workspace:*
+        version: link:../session
+      '@nyx/tools':
+        specifier: workspace:*
+        version: link:../tools
+      nanoid:
+        specifier: ^5.0.9
+        version: 5.1.16
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+    devDependencies:
+      '@nyx/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@nyx/persona':
+        specifier: workspace:*
+        version: link:../persona
+      '@nyx/policy':
+        specifier: workspace:*
+        version: link:../policy
+      '@nyx/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
+      '@types/better-sqlite3':
+        specifier: ^7.6.12
+        version: 7.6.13
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.20.5
+      better-sqlite3:
+        specifier: ^11.8.1
+        version: 11.10.0
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.5)
+
   packages/tools:
     dependencies:
       '@nyx/policy':

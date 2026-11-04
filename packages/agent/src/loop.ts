@@ -432,8 +432,14 @@ export class AgentLoopImpl implements AgentLoop {
         }
 
         // -- 10. dispatch every tool call, in order --
-        const toolResults: ContentBlock[] = [];
-        for (const call of stream.toolCalls) {
+        // One dispatch pipeline per call (hooks → runtime → hooks), shared by
+        // both execution modes. `emitRound` routes the call's events into the
+        // pump; the sequential mode flushes after each call, the parallel
+        // mode's racing loop flushes on every emit.
+        const dispatchToolCall = async (
+          call: { call_id: string; name: string; input: unknown },
+          emitRound: (e: SessionEvent) => void,
+        ): Promise<ContentBlock> => {
           // a. action request from the curated definition (unknown tool → R3, no caps)
           const def = ctx.tools.get(call.name)?.def;
           const action: ActionRequest = {
@@ -454,7 +460,7 @@ export class AgentLoopImpl implements AgentLoop {
           const veto = decisions.find(isDecisionOf("veto"));
           if (veto !== undefined) {
             const detail = `vetoed by hook: ${veto.reason}`;
-            emit({
+            emitRound({
               type: "action.denied",
               session_id: input.session_id,
               turn_id: input.turn_id,
@@ -463,13 +469,11 @@ export class AgentLoopImpl implements AgentLoop {
               detail,
               ts: Date.now(),
             });
-            yield* flush();
-            toolResults.push({
+            return {
               type: "tool_result",
               call_id: call.call_id,
               output: denialToolOutput(detail),
-            });
-            continue; // no execution, no action.after
+            }; // no execution, no action.after
           }
           const rewrite = decisions.find(isDecisionOf("rewrite"));
           const effectiveCall: ToolCall =
@@ -488,7 +492,7 @@ export class AgentLoopImpl implements AgentLoop {
             sandbox: ctx.sandbox,
             signal: ctx.signal,
             logger: ctx.logger,
-            emit,
+            emit: emitRound,
           };
           let output: ToolOutput;
           try {
@@ -501,7 +505,7 @@ export class AgentLoopImpl implements AgentLoop {
             // The runtime is contractually expected to contain tool failures;
             // a thrown error is a runtime defect — surface it and keep the turn.
             const ser = toSerializedError(err);
-            emit({
+            emitRound({
               type: "tool.error",
               session_id: input.session_id,
               turn_id: input.turn_id,
@@ -511,7 +515,6 @@ export class AgentLoopImpl implements AgentLoop {
             });
             output = { kind: "text", text: `tool failed: ${ser.message}` };
           }
-          yield* flush();
 
           // d. action.after hooks: observability only — never fail the turn
           try {
@@ -524,11 +527,73 @@ export class AgentLoopImpl implements AgentLoop {
           }
 
           // e. model-facing tool_result: untrusted-data framing
-          toolResults.push({
+          return {
             type: "tool_result",
             call_id: call.call_id,
             output: wrapToolOutput(output),
-          });
+          };
+        };
+
+        const toolResults: ContentBlock[] = [];
+        // A round runs in parallel when it has ≥2 calls and EVERY call's
+        // definition opts in with concurrency: "parallel" (spawn_subagent is
+        // the first such tool — "multiple calls in one round run in
+        // parallel", Phase 3 §2.3). Any serial-classified call keeps the
+        // whole round sequential: two shell.exec calls must never overlap.
+        const parallelRound =
+          stream.toolCalls.length >= 2 &&
+          stream.toolCalls.every(
+            (call) => ctx.tools.get(call.name)?.def?.concurrency === "parallel",
+          );
+
+        if (parallelRound) {
+          // Incremental-flush racing loop: every emitted event (or a call
+          // settling) wakes this loop, which appends + yields the pump. The
+          // re-arm is synchronous with the wake, so no event can arrive
+          // between arming and the next race.
+          let pendingCalls = stream.toolCalls.length;
+          let wake: (() => void) | undefined;
+          const arm = (): Promise<void> => new Promise<void>((resolve) => (wake = resolve));
+          let woken = arm();
+          const emitRound = (e: SessionEvent): void => {
+            emit(e);
+            wake?.();
+          };
+          const results: Array<ContentBlock | undefined> = new Array(
+            stream.toolCalls.length,
+          ).fill(undefined);
+          let dispatchFailure: { err: unknown } | undefined;
+          const running = stream.toolCalls.map((call, i) =>
+            dispatchToolCall(call, emitRound)
+              .then((r) => {
+                results[i] = r;
+              })
+              .finally(() => {
+                pendingCalls -= 1;
+                wake?.();
+              }),
+          );
+          const allSettledOrFailed = Promise.all(running).then(
+            () => undefined,
+            (err: unknown) => {
+              // A dispatch defect (throwing hook) fails the turn exactly as
+              // it would in a sequential round — after the flush below.
+              dispatchFailure = { err };
+            },
+          );
+          while (pendingCalls > 0) {
+            await Promise.race([allSettledOrFailed, woken]);
+            woken = arm();
+            yield* flush();
+            if (dispatchFailure !== undefined) throw dispatchFailure.err;
+          }
+          if (dispatchFailure !== undefined) throw dispatchFailure.err;
+          toolResults.push(...(results as ContentBlock[]));
+        } else {
+          for (const call of stream.toolCalls) {
+            toolResults.push(await dispatchToolCall(call, emit));
+            yield* flush();
+          }
         }
 
         messages.push(assistantMessage);

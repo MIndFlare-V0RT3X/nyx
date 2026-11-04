@@ -1,0 +1,43 @@
+{
+  "name": "@nyx/subagents",
+  "version": "0.1.0",
+  "description": "NYX — subagent system (context-isolated child sessions)",
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@nyx/protocol": "workspace:*",
+    "@nyx/agent": "workspace:*",
+    "@nyx/tools": "workspace:*",
+    "@nyx/memory": "workspace:*",
+    "@nyx/model": "workspace:*",
+    "@nyx/session": "workspace:*",
+    "nanoid": "^5.0.9",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.8",
+    "@types/node": "^22.10.2",
+    "@nyx/policy": "workspace:*",
+    "@nyx/kernel": "workspace:*",
+    "@nyx/sandbox": "workspace:*",
+    "@nyx/persona": "workspace:*",
+    "better-sqlite3": "^11.8.1",
+    "@types/better-sqlite3": "^7.6.12"
+  }
+}
