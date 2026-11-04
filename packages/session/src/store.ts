@@ -64,6 +64,20 @@ export interface SessionStoreOptions {
    * and read. Off by default — validation never runs on the hot path.
    */
   validate?: boolean;
+  /**
+   * 2.0.1 transactionality: invoked INSIDE the write transaction, after the
+   * event rows, projections, and session touch have been written but BEFORE
+   * the transaction commits. This is where the hash-chained audit append
+   * hooks in (@nyx/policy appendEventAudit on the shared handle): event and
+   * audit land in one ACID transaction, so a crash between them leaves
+   * NEITHER row. Throwing here rolls the whole append back — audit failures
+   * are loud, never silent, and never partial.
+   *
+   * The hook sees every stored event of the batch with its assigned seq.
+   * It runs for create()/append()/fork() writes alike (fork re-appends are
+   * real event-log rows and get their audit cross-references too).
+   */
+  onEventsCommitted?: (stored: StoredEvent[]) => void;
 }
 
 interface SessionRow {
@@ -101,6 +115,7 @@ export class SessionStoreImpl implements SessionStore {
   private readonly dz: BetterSQLite3Database;
   private readonly ownsDb: boolean;
   private readonly validate: boolean;
+  private readonly onEventsCommitted: ((stored: StoredEvent[]) => void) | undefined;
   private readonly projectionStmts: ProjectionStatements;
   private readonly stmts: {
     insertEvent: SqliteStatement;
@@ -120,11 +135,15 @@ export class SessionStoreImpl implements SessionStore {
     // Pragmas are idempotent; WAL is a no-op (returns "memory") for :memory:.
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
-    this.db.pragma("synchronous = NORMAL");
+    // 2.0.1: FULL per the unified-DB directive — an event+audit batch that
+    // reported commit must survive power loss. NORMAL can lose the tail of
+    // the WAL on OS crash; FULL fsyncs on every commit.
+    this.db.pragma("synchronous = FULL");
     this.db.pragma("busy_timeout = 5000");
     migrate(this.db);
     this.dz = drizzle(this.db);
     this.validate = opts.validate ?? false;
+    this.onEventsCommitted = opts.onEventsCommitted;
     this.projectionStmts = prepareProjectionStatements(this.db);
     this.stmts = {
       // Hot path: raw prepared statements. payload_json is the canonical JSON
@@ -515,7 +534,9 @@ export class SessionStoreImpl implements SessionStore {
     }
   }
 
-  /** Inserts events + maintains projections + touches the session. Runs inside a transaction. */
+  /** Inserts events + maintains projections + touches the session + runs the
+   * in-transaction commit hook. Runs inside a transaction: everything here
+   * commits or rolls back together, audit included (2.0.1). */
   private insertEvents(
     session_id: string,
     events: readonly SessionEvent[],
@@ -529,6 +550,7 @@ export class SessionStoreImpl implements SessionStore {
       stored.push(se);
     }
     if (events.length > 0) this.stmts.touchSession.run(now, session_id);
+    if (stored.length > 0) this.onEventsCommitted?.(stored);
     return stored;
   }
 }

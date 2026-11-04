@@ -26,6 +26,7 @@
   "dependencies": {
     "@nyx/agent": "workspace:*",
     "@nyx/config": "workspace:*",
+    "@nyx/db": "workspace:*",
     "@nyx/kernel": "workspace:*",
     "@nyx/memory": "workspace:*",
     "@nyx/model": "workspace:*",

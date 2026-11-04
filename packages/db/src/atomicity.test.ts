@@ -14,8 +14,13 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
 import { openSessionStore } from "@nyx/session";
-import { appendEventAudit, reconcileEventAudit, verifyAuditChain } from "@nyx/policy";
-import type { SessionEvent, StoredEvent } from "@nyx/protocol";
+import {
+  appendEventAudit,
+  ensureAuditTable,
+  reconcileEventAudit,
+  verifyAuditChain,
+} from "@nyx/policy";
+import type { SessionEvent } from "@nyx/protocol";
 
 let dir: string;
 
@@ -74,8 +79,10 @@ describe("2.0.1 unified database transactionality", () => {
     // before appending the audit row, the transaction rolls back.
     const store = openSessionStore(dbPath, {
       db,
-      onEventsCommitted: () => {
-        throw new Error("simulated crash between event insert and audit append");
+      onEventsCommitted: (stored) => {
+        if (stored.some((ev) => ev.type === "tool.call")) {
+          throw new Error("simulated crash between event insert and audit append");
+        }
       },
     });
     const meta = await store.create({ owner_id: "owner", persona_id: "default" });
@@ -85,6 +92,9 @@ describe("2.0.1 unified database transactionality", () => {
     store.close();
 
     const check = new Database(dbPath);
+    // Any real opener (engine / unified-db) ensures the audit table shape;
+    // the rollback also rolled back the ALTER TABLE that would have added it.
+    ensureAuditTable(check);
     const events = check
       .prepare("SELECT COUNT(*) AS n FROM events WHERE type = 'tool.call'")
       .get() as { n: number };
@@ -104,8 +114,10 @@ describe("2.0.1 unified database transactionality", () => {
       db,
       onEventsCommitted: (stored) => {
         for (const ev of stored) appendEventAudit(db, ev, ev.seq);
-        appended = true;
-        throw new Error("simulated crash after audit append, before commit");
+        if (stored.some((ev) => ev.type === "tool.call")) {
+          appended = true;
+          throw new Error("simulated crash after audit append, before commit");
+        }
       },
     });
     const meta = await store.create({ owner_id: "owner", persona_id: "default" });
@@ -116,6 +128,8 @@ describe("2.0.1 unified database transactionality", () => {
     store.close();
 
     const check = new Database(dbPath);
+    // The rollback also rolled back the ALTER TABLE (DDL is transactional).
+    ensureAuditTable(check);
     const events = check
       .prepare("SELECT COUNT(*) AS n FROM events WHERE type = 'tool.call'")
       .get() as { n: number };

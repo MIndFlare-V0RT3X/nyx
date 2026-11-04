@@ -53,10 +53,12 @@ describe("ApprovalEngineImpl", () => {
     new ApprovalEngineImpl(db, { now: () => 0 });
     const tables = db
       .prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('approvals','audit')",
+        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('policy_approvals','audit')",
       )
       .all() as Array<{ name: string }>;
-    expect(tables.map((t) => t.name).sort()).toEqual(["approvals", "audit"]);
+    // 2.0.1: the engine table is policy_approvals (the name `approvals` in the
+    // unified db belongs to the session store's projection).
+    expect(tables.map((t) => t.name).sort()).toEqual(["audit", "policy_approvals"]);
   });
 
   it("request → pending visible → resolve allow → promise resolves allow", async () => {

@@ -115,7 +115,7 @@ describe("channels (webhook, full stack)", () => {
     // Unknown user: 403, audited into the hash chain, nothing ran.
     const bad = await post({ channel_user_id: "owner:intruder", text: "let me in" });
     expect(bad.status).toBe(403);
-    const auditDb = new Database(join(dataDir, "policy.db"));
+    const auditDb = new Database(join(dataDir, "nyx.db"));
     try {
       const rows = auditDb
         .prepare(

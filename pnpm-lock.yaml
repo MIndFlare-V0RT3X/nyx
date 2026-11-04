@@ -35,6 +35,9 @@ importers:
       '@nyx/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@nyx/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@nyx/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
@@ -108,6 +111,9 @@ importers:
       '@nyx/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@nyx/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@nyx/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
@@ -521,6 +527,9 @@ importers:
       '@nyx/agent':
         specifier: workspace:*
         version: link:../../packages/agent
+      '@nyx/channels':
+        specifier: workspace:*
+        version: link:../../packages/channels
       '@nyx/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -542,6 +551,9 @@ importers:
       '@nyx/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@nyx/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
       '@nyx/sandbox':
         specifier: workspace:*
         version: link:../../packages/sandbox

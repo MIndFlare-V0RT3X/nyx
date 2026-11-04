@@ -37,7 +37,7 @@ async function pendingRowFor(db: DB, digest: string): Promise<{ id: string }> {
   for (let i = 0; i < 50; i += 1) {
     const row = db
       .prepare(
-        "SELECT id FROM approvals WHERE action_digest = ? AND decision = 'pending'",
+        "SELECT id FROM policy_approvals WHERE action_digest = ? AND decision = 'pending'",
       )
       .get(digest) as { id: string } | undefined;
     if (row !== undefined) return row;
@@ -92,7 +92,7 @@ describe("approval-lifecycle (Phase 0 verification 0.2)", () => {
     const pending = engine.request(verdict("digest-E"), CTX);
     const row = await pendingRowFor(db, "digest-E");
     const { expires_at } = db
-      .prepare("SELECT expires_at FROM approvals WHERE id = ?")
+      .prepare("SELECT expires_at FROM policy_approvals WHERE id = ?")
       .get(row.id) as { expires_at: number };
     await engine.resolve(row.id, "allow", "owner");
     await expect(pending).resolves.toBe("allow");

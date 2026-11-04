@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Session-event audit: tool executions and denials land in the hash-chained
 // audit log with an event_seq cross-reference, so an operator can prove not
-// only what they approved but what the agent actually did. The audit row is
-// written by the app-layer EventSink immediately after the store assigns the
-// event's seq, inside the sink's serialized append chain (single-writer,
-// ordered). The event log and the audit log are separate SQLite databases, so
-// the two writes are not one ACID transaction; the residual (a crash between
-// event append and audit append leaves an event without an audit row) is
-// detectable — reconcileEventAudit reports exactly that.
+// only what they approved but what the agent actually did. Since 2.0.1 the
+// event log and the audit log live in ONE SQLite database and the audit row
+// is written by the session store's in-transaction commit hook
+// (onEventsCommitted): event and audit commit atomically, and the crash
+// window that used to leave an event without an audit row is structurally
+// closed. reconcileEventAudit stays as belt-and-braces detection.
 
 import type { SessionEvent, StoredEvent } from "@nyx/protocol";
 import { appendAudit } from "./audit.js";

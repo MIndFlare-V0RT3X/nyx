@@ -20,7 +20,11 @@ export {
   replyTextFromEvents,
 } from "./manager.js";
 export type { ChannelManagerDeps, HandleResult } from "./manager.js";
-export { ChannelSessionStore, channelKey } from "./sessions-store.js";
+export {
+  ChannelSessionStore,
+  channelKey,
+  ensureChannelSessionsTable,
+} from "./sessions-store.js";
 export { WebhookChannel, textContent } from "./webhook.js";
 export {
   createHttpTelegramClient,

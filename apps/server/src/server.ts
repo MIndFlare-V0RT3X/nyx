@@ -21,6 +21,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { createKernel } from "@nyx/kernel";
 import { BRAND, type NyxConfig } from "@nyx/config";
+import { openUnifiedDatabase } from "@nyx/db";
 import { openSessionStore } from "@nyx/session";
 import { openApprovalEngine, PolicyEngineImpl } from "@nyx/policy";
 import { EngagementOwnershipError, assertEngagementOwnership } from "@nyx/policy";
@@ -50,7 +51,6 @@ import type {
   ChannelTurnHandle,
   ChannelTurnRunner,
 } from "@nyx/channels";
-import Database from "better-sqlite3";
 import {
   ContentBlockSchema,
   EngagementSchema,
@@ -63,6 +63,7 @@ import {
   type Sandbox,
   type SandboxProvider,
   type SessionEvent,
+  type StoredEvent,
 } from "@nyx/protocol";
 import { validateTargets } from "@nyx/scope";
 import { authenticate, resolveAuth, type Actor, type ResolvedAuth } from "./auth.js";
@@ -125,26 +126,29 @@ const ResolveBody = z.object({ decision: z.enum(["allow", "deny"]) }).strict();
 export function createServer(deps: ServerDeps): NyxServer {
   const { config } = deps;
 
-  // ── wiring (order matters: sink → engine callbacks → kernel services) ──
+  // ── wiring (order matters: unified db → sink → engine callbacks → kernel services) ──
   mkdirSync(deps.data_dir, { recursive: true });
   const logger = createLogger(config.logging);
-  const store = openSessionStore(join(deps.data_dir, "nyx.db"));
-  // Late-bound: the approval engine (which owns the audit db) opens after
-  // the sink because its callbacks append through the sink; the tool-event
-  // audit hook binds as soon as the engine exists (the holder is mutated
-  // in place — the sink closure reads it at call time).
-  const audit: {
-    event?: (event: SessionEvent, seq: number) => void;
+  // 2.0.1: ONE SQLite file. The unified opener migrates any Phase 0/1 split
+  // layout (policy.db / channels.db / heartbeat.db) in a single verified
+  // transaction before anything else runs, then hands the shared handle to
+  // every store below. synchronous=FULL, WAL, busy_timeout 5000.
+  const unified = openUnifiedDatabase(join(deps.data_dir, "nyx.db"), { logger });
+  // Late-bound in-transaction audit hook: the store invokes it INSIDE the
+  // append transaction (event + audit commit atomically); the holder is
+  // mutated in place once the approval engine exists.
+  const auditHook: {
+    onEventsCommitted?: (stored: StoredEvent[]) => void;
   } = {};
-  const sink = createEventSink(store, {
-    onAppended: (stored) => {
-      for (const storedEvent of stored) audit.event?.(storedEvent, storedEvent.seq);
-    },
+  const store = openSessionStore(join(deps.data_dir, "nyx.db"), {
+    db: unified.db,
+    onEventsCommitted: (stored) => auditHook.onEventsCommitted?.(stored),
   });
+  const sink = createEventSink(store);
 
   let wsHub: WebSocketHub | undefined;
 
-  const approvalEngineHandle = openApprovalEngine(join(deps.data_dir, "policy.db"), {
+  const approvalEngineHandle = openApprovalEngine(unified.db, {
     onCreated: (rec) => {
       void sink
         .append(rec.session_id, [
@@ -183,8 +187,12 @@ export function createServer(deps: ServerDeps): NyxServer {
     },
   });
   const approvals = approvalEngineHandle.engine;
-  // Tool events now audit into the same hash chain as approval decisions.
-  audit.event = approvalEngineHandle.auditEvent;
+  // Tool events audit into the same hash chain as approval decisions — since
+  // 2.0.1 in the SAME transaction as the event append (see onEventsCommitted
+  // above); a crash between the two writes is structurally impossible now.
+  auditHook.onEventsCommitted = (stored) => {
+    for (const storedEvent of stored) approvalEngineHandle.auditEvent(storedEvent, storedEvent.seq);
+  };
 
   const providers = deps.providers ?? buildProviders(config, logger);
   const providerRegistry = new ProviderRegistryImpl();
@@ -372,7 +380,7 @@ export function createServer(deps: ServerDeps): NyxServer {
       ...(config.channels?.telegram !== undefined ? { telegram: config.channels.telegram } : {}),
     },
     runner: channelRunner,
-    sessions: new ChannelSessionStore(new Database(join(deps.data_dir, "channels.db"))),
+    sessions: new ChannelSessionStore(unified.db),
     audit: (entry) => approvalEngineHandle.audit(entry),
     logger,
   });
@@ -381,9 +389,10 @@ export function createServer(deps: ServerDeps): NyxServer {
   // ── heartbeat / cron (Phase 1 §1.3) ──
   // Scheduled system turns, enqueued at heartbeat priority into the session
   // lane (the same serialization point as API turns and channel turns).
-  // State persists in data_dir/heartbeat.db; missed fires are logged, never
-  // re-fired. Disabled unless the operator opts in via config.heartbeat.
-  const heartbeatStore = new HeartbeatStore(new Database(join(deps.data_dir, "heartbeat.db")));
+  // State persists in the unified nyx.db (heartbeat tables); missed fires are
+  // logged, never re-fired. Disabled unless the operator opts in via
+  // config.heartbeat.
+  const heartbeatStore = new HeartbeatStore(unified.db, { ownsDb: false });
   const heartbeatScheduler = createHeartbeatScheduler({
     store: heartbeatStore,
     specs: config.heartbeat?.specs ?? [],
@@ -740,7 +749,8 @@ export function createServer(deps: ServerDeps): NyxServer {
       }
       sessionSandboxes.clear();
       store.close();
-      approvalEngineHandle.close();
+      approvalEngineHandle.close(); // no-op on the shared handle
+      unified.close(); // the one owner of the nyx.db handle
     },
   };
 }

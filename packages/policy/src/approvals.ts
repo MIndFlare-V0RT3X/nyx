@@ -51,12 +51,42 @@ interface ApprovalRow {
   used_at: number | null;
 }
 
-const APPROVALS_DDL = `CREATE TABLE IF NOT EXISTS approvals (
+const APPROVALS_DDL = `CREATE TABLE IF NOT EXISTS policy_approvals (
   id TEXT PRIMARY KEY, session_id TEXT NOT NULL, turn_id TEXT NOT NULL,
   action_digest TEXT NOT NULL, summary TEXT NOT NULL, risk TEXT NOT NULL,
   decision TEXT NOT NULL DEFAULT 'pending', decided_by TEXT,
   created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, used_at INTEGER
 )`;
+
+/**
+ * 2.0.1: create the approval engine's tables on any handle (shared or
+ * dedicated). The engine table is named `policy_approvals` because the
+ * unified nyx.db already has a session-store PROJECTION table named
+ * `approvals` (rebuildable from events, different row space) — one name,
+ * one owner.
+ */
+export function ensureApprovalEngineTables(db: Database.Database): void {
+  db.exec(APPROVALS_DDL);
+  ensureAuditTable(db);
+}
+
+/**
+ * 2.0.1: a dedicated policy.db from the split-DB era names its engine table
+ * `approvals`. On a file that has no session-store tables (no `events`
+ * table), that table is unambiguously the engine's — rename it in place. On
+ * the unified nyx.db the `approvals` table is the session-store projection
+ * and is never touched.
+ */
+function renameLegacyApprovalsTable(db: Database.Database): void {
+  const tables = db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+    .all() as Array<{ name: string }>;
+  const names = new Set(tables.map((t) => t.name));
+  if (names.has("events")) return; // session-store db: `approvals` is the projection
+  if (!names.has("approvals")) return; // nothing to rename
+  if (names.has("policy_approvals")) return; // already migrated
+  db.exec("ALTER TABLE approvals RENAME TO policy_approvals");
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -106,8 +136,7 @@ export class ApprovalEngineImpl implements ApprovalEngine {
     this.onCreated = opts.onCreated;
     this.onResolved = opts.onResolved;
     // Idempotent: works against any db handle, including a fresh one.
-    db.exec(APPROVALS_DDL);
-    ensureAuditTable(db);
+    ensureApprovalEngineTables(db);
   }
 
   /** Insert a pending approval (plus its audit row) and block until it is resolved or expired. */
@@ -120,7 +149,7 @@ export class ApprovalEngineImpl implements ApprovalEngine {
     this.db.transaction(() => {
       this.db
         .prepare(
-          `INSERT INTO approvals
+          `INSERT INTO policy_approvals
              (id, session_id, turn_id, action_digest, summary, risk, decision, decided_by, created_at, expires_at, used_at)
            VALUES (?, ?, ?, ?, ?, ?, 'pending', NULL, ?, ?, NULL)`,
         )
@@ -165,14 +194,14 @@ export class ApprovalEngineImpl implements ApprovalEngine {
     for (;;) {
       await sleep(this.pollMs);
       const row = this.db
-        .prepare("SELECT decision, expires_at FROM approvals WHERE id = ?")
+        .prepare("SELECT decision, expires_at FROM policy_approvals WHERE id = ?")
         .get(id) as Pick<ApprovalRow, "decision" | "expires_at"> | undefined;
       if (row && row.decision !== "pending") return row.decision as "allow" | "deny";
       if (this.now() >= expiresAt) {
         this.db.transaction(() => {
           this.db
             .prepare(
-              "UPDATE approvals SET decision = 'deny', decided_by = 'system:expiry' WHERE id = ? AND decision = 'pending'",
+              "UPDATE policy_approvals SET decision = 'deny', decided_by = 'system:expiry' WHERE id = ? AND decision = 'pending'",
             )
             .run(id);
           appendAudit(this.db, {
@@ -222,7 +251,7 @@ export class ApprovalEngineImpl implements ApprovalEngine {
         throw new CodedError("approval_expired", `approval ${id} expired`);
       }
       this.db
-        .prepare("UPDATE approvals SET decision = ?, decided_by = ? WHERE id = ?")
+        .prepare("UPDATE policy_approvals SET decision = ?, decided_by = ? WHERE id = ?")
         .run(decision, decidedBy, id);
       // Same transaction as the update: commits or rolls back together.
       appendAudit(this.db, {
@@ -261,7 +290,7 @@ export class ApprovalEngineImpl implements ApprovalEngine {
         throw new CodedError("approval_denied", "digest mismatch");
       }
       const usedAt = this.now();
-      this.db.prepare("UPDATE approvals SET used_at = ? WHERE id = ?").run(usedAt, id);
+      this.db.prepare("UPDATE policy_approvals SET used_at = ? WHERE id = ?").run(usedAt, id);
       appendAudit(this.db, {
         actor: "system:policy",
         action: "approval.consumed",
@@ -282,7 +311,7 @@ export class ApprovalEngineImpl implements ApprovalEngine {
   async pending(sessionId: string): Promise<ApprovalRecord[]> {
     const rows = this.db
       .prepare(
-        `SELECT * FROM approvals
+        `SELECT * FROM policy_approvals
           WHERE session_id = ? AND decision = 'pending' AND expires_at > ?
           ORDER BY created_at DESC, rowid DESC`,
       )
@@ -291,15 +320,18 @@ export class ApprovalEngineImpl implements ApprovalEngine {
   }
 
   private getRow(id: string): ApprovalRow | undefined {
-    return this.db.prepare("SELECT * FROM approvals WHERE id = ?").get(id) as
+    return this.db.prepare("SELECT * FROM policy_approvals WHERE id = ?").get(id) as
       ApprovalRow | undefined;
   }
 }
 
 /**
- * Opens a dedicated SQLite file (or ":memory:") for the approval engine and
- * audit chain. Surfaces use this so no package outside @nyx/policy needs a
- * better-sqlite3 dependency just to construct the engine.
+ * Opens the approval engine's SQLite storage — either a dedicated file path
+ * (":memory:" works; legacy `approvals` tables are renamed in place) or an
+ * already-open handle (the 2.0.1 unified nyx.db; the handle is never closed
+ * by the engine — the provider owns it). Surfaces use this so no package
+ * outside @nyx/policy needs a better-sqlite3 dependency just to construct
+ * the engine.
  *
  * The hash chain is verified on load: tamper-evidence only means something if
  * verification actually runs, so every surface that opens the persistent
@@ -308,9 +340,9 @@ export class ApprovalEngineImpl implements ApprovalEngine {
  * verification.
  *
  * `auditEvent` exposes the tool-event audit path on the same db handle: the
- * app-layer EventSink calls it after the session store assigns an event's
- * seq, landing tool.call / tool.result / tool.error / action.denied rows in
- * the same hash chain (see event-audit.ts).
+ * session store's in-transaction commit hook calls it (2.0.1), landing
+ * tool.call / tool.result / tool.error / action.denied rows in the same hash
+ * chain as approval decisions (see event-audit.ts).
  */
 export interface OpenedApprovalEngine {
   engine: ApprovalEngineImpl;
@@ -322,29 +354,35 @@ export interface OpenedApprovalEngine {
 }
 
 export function openApprovalEngine(
-  dbPath: string,
+  dbOrPath: string | Database.Database,
   opts: ApprovalEngineOptions = {},
 ): OpenedApprovalEngine {
-  const db = new Database(dbPath);
+  const shared = typeof dbOrPath !== "string";
+  const db = shared ? dbOrPath : new Database(dbOrPath);
   try {
+    if (!shared) renameLegacyApprovalsTable(db);
     const engine = new ApprovalEngineImpl(db, opts);
     const verification = verifyAuditChain(db);
     if (!verification.ok) {
       throw new CodedError(
         "validation_failed",
         `audit chain verification failed at row ${verification.first_bad_id ?? "?"} ` +
-          `(${verification.checked} rows verified) in ${dbPath}: ` +
+          `(${verification.checked} rows verified) in ${shared ? "the unified database" : dbOrPath}: ` +
           "the audit log may have been tampered with",
       );
     }
     return {
       engine,
-      close: () => db.close(),
+      // A shared handle is closed by its provider (the unified-db opener),
+      // never by the engine.
+      close: () => {
+        if (!shared) db.close();
+      },
       auditEvent: (event, seq) => appendEventAudit(db, event, seq),
       audit: (entry) => appendAudit(db, entry),
     };
   } catch (err) {
-    db.close();
+    if (!shared) db.close();
     throw err;
   }
 }

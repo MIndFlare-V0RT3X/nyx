@@ -2,7 +2,7 @@
 // Heartbeat integration (Phase 1 §1.3): a triggered heartbeat enqueues a
 // turn at heartbeat priority into a (new) session's lane and it runs the
 // normal agent loop; a disabled config registers no specs; the persisted
-// state lands in heartbeat.db.
+// state lands in the unified nyx.db.
 import { afterAll, describe, expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -91,8 +91,8 @@ describe("heartbeat (server integration)", () => {
       store.close();
     }
 
-    // The manual fire is persisted in heartbeat.db history.
-    const hbDb = new Database(join(rig.dataDir, "heartbeat.db"));
+    // The manual fire is persisted in the unified nyx.db history.
+    const hbDb = new Database(join(rig.dataDir, "nyx.db"));
     try {
       const rows = hbDb
         .prepare("SELECT spec_id, status, source FROM heartbeat_history")

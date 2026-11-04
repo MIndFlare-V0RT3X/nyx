@@ -66,12 +66,28 @@ CREATE TABLE IF NOT EXISTS heartbeat_history (
   source TEXT NOT NULL
 )`;
 
+/** 2.0.1: create the heartbeat tables on any handle (shared unified db). */
+export function ensureHeartbeatTables(db: Database.Database): void {
+  db.exec(DDL);
+}
+
+export interface HeartbeatStoreOptions {
+  /**
+   * 2.0.1: when the store runs on a shared unified-db handle it must not
+   * close the handle on close() — the unified-db provider owns it.
+   * Default true (dedicated handle).
+   */
+  ownsDb?: boolean;
+}
+
 export class HeartbeatStore {
   private readonly db: Database.Database;
+  private readonly ownsDb: boolean;
 
-  constructor(db: Database.Database) {
-    db.exec(DDL);
+  constructor(db: Database.Database, opts: HeartbeatStoreOptions = {}) {
+    ensureHeartbeatTables(db);
     this.db = db;
+    this.ownsDb = opts.ownsDb ?? true;
   }
 
   state(spec_id: string): { last_fired_at: number | null; next_fire_at: number } | null {
@@ -111,7 +127,7 @@ export class HeartbeatStore {
   }
 
   close(): void {
-    this.db.close();
+    if (this.ownsDb) this.db.close();
   }
 }
 

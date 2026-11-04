@@ -27,6 +27,11 @@ const DDL = `CREATE TABLE IF NOT EXISTS channel_sessions (
   updated_at INTEGER NOT NULL
 )`;
 
+/** 2.0.1: create the channel-session table on any handle (shared unified db). */
+export function ensureChannelSessionsTable(db: Database.Database): void {
+  db.exec(DDL);
+}
+
 export class ChannelSessionStore {
   private readonly stmts: {
     get: Database.Statement;

@@ -17,6 +17,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createKernel } from "@nyx/kernel";
 import type { NyxConfig } from "@nyx/config";
+import { openUnifiedDatabase } from "@nyx/db";
 import { openSessionStore } from "@nyx/session";
 import {
   EngagementOwnershipError,
@@ -50,6 +51,7 @@ import type {
   SessionEvent,
   SessionMeta,
   SessionStore,
+  StoredEvent,
 } from "@nyx/protocol";
 import { toSerializedError } from "@nyx/protocol";
 import { CliError } from "./errors.js";
@@ -132,24 +134,25 @@ export interface LocalRuntime {
 export function createLocalRuntime(deps: LocalRuntimeDeps): LocalRuntime {
   const { config } = deps;
 
-  // ── wiring (order matters: sink → engine callbacks → kernel services) ──
+  // ── wiring (order matters: unified db → sink → engine callbacks → kernel services) ──
   mkdirSync(deps.data_dir, { recursive: true });
   const logger = createCliLogger(config.logging, {
     ...(deps.log_sink !== undefined ? { sink: deps.log_sink } : {}),
   });
-  const store = openSessionStore(join(deps.data_dir, "nyx.db"));
-  // Late-bound: the approval engine (which owns the audit db) opens after
-  // the sink because its callbacks append through the sink; the tool-event
-  // audit hook binds as soon as the engine exists (the holder is mutated
-  // in place — the sink closure reads it at call time).
-  const audit: {
-    event?: (event: SessionEvent, seq: number) => void;
+  // 2.0.1: ONE SQLite file — the unified opener migrates any Phase 0/1 split
+  // layout (policy.db / channels.db / heartbeat.db) before anything runs.
+  const unified = openUnifiedDatabase(join(deps.data_dir, "nyx.db"), { logger });
+  // Late-bound in-transaction audit hook: the store invokes it INSIDE the
+  // append transaction (event + audit commit atomically); the holder is
+  // mutated in place once the approval engine exists.
+  const auditHook: {
+    onEventsCommitted?: (stored: StoredEvent[]) => void;
   } = {};
-  const sink = createEventSink(store, {
-    onAppended: (stored) => {
-      for (const storedEvent of stored) audit.event?.(storedEvent, storedEvent.seq);
-    },
+  const store = openSessionStore(join(deps.data_dir, "nyx.db"), {
+    db: unified.db,
+    onEventsCommitted: (stored) => auditHook.onEventsCommitted?.(stored),
   });
+  const sink = createEventSink(store);
 
   const approvalMode = deps.approval_mode ?? "interactive";
   const autoDenyMs = deps.auto_deny_ms ?? DEFAULT_AUTO_DENY_MS;
@@ -163,7 +166,7 @@ export function createLocalRuntime(deps: LocalRuntimeDeps): LocalRuntime {
     });
   };
 
-  const approvalHandle = openApprovalEngine(join(deps.data_dir, "policy.db"), {
+  const approvalHandle = openApprovalEngine(unified.db, {
     onCreated: (rec) => {
       const event: SessionEvent = {
         type: "approval.requested",
@@ -220,8 +223,12 @@ export function createLocalRuntime(deps: LocalRuntimeDeps): LocalRuntime {
     },
   });
   const approvals = approvalHandle.engine;
-  // Tool events now audit into the same hash chain as approval decisions.
-  audit.event = approvalHandle.auditEvent;
+  // Tool events audit into the same hash chain as approval decisions — since
+  // 2.0.1 in the SAME transaction as the event append (see onEventsCommitted
+  // above); a crash between the two writes is structurally impossible now.
+  auditHook.onEventsCommitted = (stored) => {
+    for (const storedEvent of stored) approvalHandle.auditEvent(storedEvent, storedEvent.seq);
+  };
 
   const providers = deps.providers ?? buildProviders(config, logger, deps.env ?? process.env);
   const providerRegistry = new ProviderRegistryImpl();
@@ -405,7 +412,8 @@ export function createLocalRuntime(deps: LocalRuntimeDeps): LocalRuntime {
       // sandbox GC is a deferred item. The server destroys its sandboxes on
       // shutdown; the CLI keeps them under config.sandbox.workdir_root.
       store.close();
-      approvalHandle.close();
+      approvalHandle.close(); // no-op on the shared handle
+      unified.close(); // the one owner of the nyx.db handle
     },
   };
 }

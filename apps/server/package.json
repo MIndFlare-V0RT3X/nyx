@@ -1,7 +1,7 @@
 {
   "name": "@nyx/server",
   "version": "0.1.0",
-  "description": "NYX — server package",
+  "description": "NYX \u2014 server package",
   "type": "module",
   "license": "AGPL-3.0-or-later",
   "main": "./dist/index.js",
@@ -25,6 +25,7 @@
     "@nyx/agent": "workspace:*",
     "@nyx/channels": "workspace:*",
     "@nyx/config": "workspace:*",
+    "@nyx/db": "workspace:*",
     "@nyx/kernel": "workspace:*",
     "@nyx/memory": "workspace:*",
     "@nyx/model": "workspace:*",

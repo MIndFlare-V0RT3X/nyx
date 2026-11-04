@@ -8,12 +8,13 @@
 
 import { join } from "node:path";
 import { openApprovalEngine } from "@nyx/policy";
+import { openUnifiedDatabase } from "@nyx/db";
 import { openSessionStore } from "@nyx/session";
 import type {
   ApprovalEngine,
   ApprovalRecord,
-  SessionEvent,
   SessionStore,
+  StoredEvent,
 } from "@nyx/protocol";
 import { toSerializedError } from "@nyx/protocol";
 import { CliError } from "./errors.js";
@@ -30,20 +31,18 @@ export interface ApprovalSurface {
 }
 
 export function openApprovalSurface(data_dir: string): ApprovalSurface {
-  const store = openSessionStore(join(data_dir, "nyx.db"));
-  // Same late-bound tool-event audit hook as the runtime: consistent wiring
-  // across every surface that opens the sink + approval engine pair. The
-  // holder is mutated once the engine exists (the sink closure needs it
-  // before that).
-  const audit: {
-    event?: (event: SessionEvent, seq: number) => void;
+  // 2.0.1: same unified-db wiring as the runtime — one nyx.db, audit inside
+  // the append transaction. The opener migrates any split layout first.
+  const unified = openUnifiedDatabase(join(data_dir, "nyx.db"));
+  const auditHook: {
+    onEventsCommitted?: (stored: StoredEvent[]) => void;
   } = {};
-  const sink = createEventSink(store, {
-    onAppended: (stored) => {
-      for (const storedEvent of stored) audit.event?.(storedEvent, storedEvent.seq);
-    },
+  const store = openSessionStore(join(data_dir, "nyx.db"), {
+    db: unified.db,
+    onEventsCommitted: (stored) => auditHook.onEventsCommitted?.(stored),
   });
-  const handle = openApprovalEngine(join(data_dir, "policy.db"), {
+  const sink = createEventSink(store);
+  const handle = openApprovalEngine(unified.db, {
     onCreated: (rec) => {
       void sink
         .append(rec.session_id, [
@@ -76,14 +75,17 @@ export function openApprovalSurface(data_dir: string): ApprovalSurface {
         .catch(() => undefined);
     },
   });
-  audit.event = handle.auditEvent;
+  auditHook.onEventsCommitted = (stored) => {
+    for (const storedEvent of stored) handle.auditEvent(storedEvent, storedEvent.seq);
+  };
   return {
     store,
     sink,
     approvals: handle.engine,
     close: () => {
       store.close();
-      handle.close();
+      handle.close(); // no-op on the shared handle
+      unified.close(); // the one owner of the nyx.db handle
     },
   };
 }

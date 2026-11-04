@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@nyx/agent": "workspace:*",
+    "@nyx/channels": "workspace:*",
     "@nyx/config": "workspace:*",
     "@nyx/kernel": "workspace:*",
     "@nyx/memory": "workspace:*",
@@ -16,6 +17,7 @@
     "@nyx/persona": "workspace:*",
     "@nyx/policy": "workspace:*",
     "@nyx/protocol": "workspace:*",
+    "@nyx/runtime": "workspace:*",
     "@nyx/sandbox": "workspace:*",
     "@nyx/scope": "workspace:*",
     "@nyx/server": "workspace:*",

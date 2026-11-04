@@ -180,13 +180,13 @@ describe("tool events in the hash-chained audit log", () => {
       const pending = engine.request(verdict, CTX);
       for (let spin = 0; spin < 200; spin++) {
         const row = db
-          .prepare("SELECT id FROM approvals WHERE action_digest = ? AND decision = 'pending'")
+          .prepare("SELECT id FROM policy_approvals WHERE action_digest = ? AND decision = 'pending'")
           .get(verdict.action_digest) as { id: string } | undefined;
         if (row !== undefined) break;
         await new Promise((r) => setTimeout(r, 1));
       }
       const row = db
-        .prepare("SELECT id FROM approvals WHERE action_digest = ? AND decision = 'pending'")
+        .prepare("SELECT id FROM policy_approvals WHERE action_digest = ? AND decision = 'pending'")
         .get(verdict.action_digest) as { id: string };
       await engine.resolve(row.id, "allow", "owner");
       await expect(pending).resolves.toBe("allow");
