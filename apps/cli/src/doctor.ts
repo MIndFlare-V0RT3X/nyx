@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { configSchema, type NyxConfig } from "@nyx/config";
 import { isDomainOnlyEngagement } from "@nyx/policy";
 import { checkDocker } from "@nyx/sandbox";
+import { LEGACY_DB_FILES } from "@nyx/db";
 import { openSessionStore } from "@nyx/session";
 import type { ModelProvider } from "@nyx/protocol";
 import { resolveCliConfig, resolveDataDir } from "./config.js";
@@ -351,6 +352,41 @@ async function checkEngagements(dataDir: string): Promise<DoctorCheck> {
   }
 }
 
+/**
+ * 2.0.1/2.2: the database report — nyx.db is the single store; any legacy
+ * split-DB file still present will migrate on the next start (originals are
+ * renamed, never deleted).
+ */
+function checkDatabase(dataDir: string): DoctorCheck {
+  const nyxDb = join(dataDir, "nyx.db");
+  if (!existsSync(nyxDb)) {
+    return {
+      name: "database",
+      status: "ok",
+      detail: "no sessions database yet (created on first run)",
+      critical: false,
+    };
+  }
+  const legacy = LEGACY_DB_FILES.filter((name) => existsSync(join(dataDir, name)));
+  if (legacy.length > 0) {
+    return {
+      name: "database",
+      status: "warn",
+      detail:
+        `nyx.db (unified) present; ${legacy.length} legacy file(s) pending migration ` +
+        `(${legacy.join(", ")}) — the next server/CLI start migrates them in one ` +
+        "chain-verified transaction and renames the originals, never deletes them",
+      critical: false,
+    };
+  }
+  return {
+    name: "database",
+    status: "ok",
+    detail: "nyx.db — unified (events, audit, approvals, channels, heartbeat)",
+    critical: false,
+  };
+}
+
 /** Run every doctor check and compute the exit code. */
 export async function doctorChecks(opts: DoctorOptions = {}): Promise<DoctorReport> {
   const env = opts.env ?? process.env;
@@ -371,8 +407,10 @@ export async function doctorChecks(opts: DoctorOptions = {}): Promise<DoctorRepo
   });
   checks.push(...(await checkProviders(config, env, timeoutMs)));
   checks.push(checkSandbox(config, env, docker));
+  const dataDir = opts.data_dir ?? resolveDataDir(env);
+  checks.push(checkDatabase(dataDir));
   // 2.0.4: surface domain-only engagements from the operator's data dir.
-  checks.push(await checkEngagements(opts.data_dir ?? resolveDataDir(env)));
+  checks.push(await checkEngagements(dataDir));
 
   const failed = checks.some((check) => check.critical && check.status === "fail");
   return { checks, exit_code: failed ? 1 : 0 };

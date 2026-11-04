@@ -149,14 +149,41 @@ link breaks), and deleted middle rows — including tampering with the
 the event log and reports missing or orphaned rows. Channel identity
 rejections (`channel.identity.rejected`) land in the same chain.
 
-One documented limitation: the event log and the audit log are separate
-SQLite files, so the event append and the audit append are **not one ACID
-transaction** — a crash between the two writes leaves an event without an
-audit row, which `reconcileEventAudit` detects (writes are ordered through
-the sink's serialized chain, so ordering itself is guaranteed).
+**Transactionality is structural since Phase 2 (2.0.1), not approximated.**
+Everything lives in ONE SQLite file — `nyx.db` (WAL, `synchronous=FULL`,
+`busy_timeout=5000`): the event log, its projections, the approval engine
+(`policy_approvals`), the audit chain, channel session mappings, and
+heartbeat state. The session store's `onEventsCommitted` hook writes the
+matching audit rows **inside the append's own transaction**, so a crash
+between the event insert and the audit insert leaves **neither** row — there
+is no inconsistency window. `reconcileEventAudit` remains as belt-and-braces
+(and finds nothing under normal operation). The Phase 0/1 split layout
+migrates on startup inside one transaction: audit rows copy with `id`,
+`prev_hash` linkage, and every column (including `event_seq`); the chain is
+verified **before commit** (the new head must equal the old file's head and
+the whole chain must re-verify) or the migration aborts and the legacy files
+stay untouched; after commit each legacy file is renamed
+`<name>.migrated-<ts>` — never deleted — and a `db.migrated` row is chained
+onto the previous head as the first row the unified database writes for
+itself. Concurrent appends on the one connection serialize naturally
+(4 workers × 25 appends land 100 events + 100 audit rows with a valid
+chain). Emergency compaction truncations (strategy `emergency-degrade`) land
+on the same chain with actor `system:compaction`; ordinary compaction is
+event-log-only.
 Documented blind spots: deleting the **last** row leaves a valid chain, and a
 full rewrite that recomputes every hash is undetectable without an externally
-anchored checkpoint — Phase 1 does not anchor.
+anchored checkpoint — Phase 2 does not anchor.
+
+### Engagement-creation audit (Phase 2)
+
+Every session created WITH an engagement writes an `engagement.created` row
+on the chain. Domain-only engagements (domains declared, no CIDR constraint)
+record the **initial DNS resolution** (node:dns, 2s cap) — post-hoc
+validation material for what the runtime pin will trust; CIDR-constrained
+engagements record the constraint. Resolution failures are recorded in the
+row, never thrown. `nyx doctor` warns when any **active** (unexpired)
+engagement is domain-only. No runtime behavior changes: the pin still
+resolves and authorizes at connection time.
 
 ### DNS-rebinding defense (Phase 1)
 

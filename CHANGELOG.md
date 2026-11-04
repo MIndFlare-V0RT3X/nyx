@@ -6,6 +6,84 @@ SemVer once 0.1.0 ships.
 
 ## [Unreleased]
 
+### Added — Phase 2 (unified DB, channel approvals, compaction)
+
+**2.0 Carryover gate** (the four items the Phase 1 review flagged):
+
+- **Unified database (2.0.1).** One `nyx.db` (WAL, `synchronous=FULL`,
+  `busy_timeout=5000`) owns every table: the event log and projections, the
+  approval engine (`policy_approvals`) and the hash-chained audit, channel
+  session mappings, heartbeat state. New package `@nyx/db`:
+  `openUnifiedDatabase` migrates the Phase 0/1 split layout (policy.db /
+  channels.db / heartbeat.db) in ONE transaction — audit rows copied with
+  `id`, `prev_hash` linkage, and every column (incl. `event_seq`); chain
+  verified in-transaction before commit (head must match, whole chain must
+  re-verify) or the migration aborts with originals intact; legacy files
+  renamed `<name>.migrated-<ts>`, never deleted; a `db.migrated` row is
+  chained onto the previous head. **Transactionality is now structural:**
+  the session store's `onEventsCommitted` hook writes audit rows inside the
+  append's own transaction — a crash between event and audit writes leaves
+  neither row (TDD: red atomicity test first). Concurrency: 4 workers × 25
+  appends land 100 events + 100 audit rows with a valid chain. e2e: a
+  Phase-1 data dir migrates on server open and turns keep working.
+- **Per-session abort route (2.0.2).** `DELETE /v1/sessions/:id/turns`
+  aborts the running turn and clears that session's queued turns only,
+  returning `{aborted_running, cleared_queued}`; pending approvals are
+  withdrawn (deny, `system:withdrawn`, audited — no orphans); the aborted
+  turn ends `turn.failed` reason `aborted` (new round-top abort check in the
+  loop); other sessions unaffected; the lane stays usable.
+- **Heartbeat timezone (2.0.3).** `HeartbeatSpec.timezone` (IANA, default
+  UTC); `nextFire` interprets cron in the spec's zone via `Intl.DateTimeFormat`
+  (full ICU). DST gaps skip (vixie-cron); fall-back ambiguity fires once
+  (first occurrence). Tested: PKT offset, New York spring-forward (no skip,
+  no double), 02:30 gap skip, fall-back single-fire, UTC-default unchanged.
+- **Engagement-creation audit (2.0.4).** Every engagement binding writes an
+  `engagement.created` row; domain-only engagements record the initial DNS
+  resolution (post-hoc validation of what the pin trusts); CIDR-constrained
+  ones record the constraint; resolution failures recorded, never thrown.
+  `nyx doctor` warns on active domain-only engagements and reports the
+  database unified/pending-migration state.
+
+**2.1 Channel approvals** — an `ask` verdict on a channel surface is
+interactive instead of a TTL death:
+
+- `ApprovalPresenter` (`present`/`withdraw`) + `ApprovalRequest` in
+  `@nyx/policy`; `registerPresenter`/`unregisterPresenter` on the engine
+  (the frozen protocol interface is untouched). Channel TTL 5 minutes
+  (TTY stays 10); `channels.<id>.approval_ttl_ms` overrides. `present()`
+  failure never breaks a turn; expiry auto-denies AND withdraws; abort and
+  session teardown withdraw (no orphans).
+- Telegram: inline keyboard `[✅ Allow] [❌ Deny]`; `callback_query` routed
+  through `TelegramApprovalBridge` (allowed_user_ids gate → engine.resolve →
+  answer + keyboard edit); expiry message "⏱ approval expired — action
+  denied"; a text message during a pending approval is NOT a decision (it
+  queues as a normal turn).
+- Webhook: the pending HTTP POST returns `approval_required` with
+  `resolve_url`; the client resolves via `POST /v1/approvals/:id/resolve`
+  (alias of the resolve route: same auth, same R4 owner gate).
+  Presentations buffered per session (no arrival-order race).
+
+**2.2 Compaction pipeline** — the four tiers the ROADMAP promised
+(`packages/agent/src/compaction-pipeline.ts`, kernel service
+`agent.compaction`, config `context.compaction`):
+
+- Tier 1 elision (Phase 0's strategy promoted), Tier 2 session memory
+  (cheap low-effort summary of everything before the last 5 completed turns,
+  written to `@nyx/memory` scope `session`, restart-safe), Tier 3 LLM
+  summary (K=10 before the current ask; decisions/state/open-questions
+  shape; the current ask is never summarized away), Tier 4 emergency
+  (still > 95% after 1–3: drop the oldest half, keep the last 10, persona
+  preamble survives, operator warning, hash-chained audit row).
+- Post-compaction re-read: up to 5 recently-edited files re-read into
+  context capped at 5000 tokens (mid-edit continuity).
+- Compaction never loses events — only the model-facing list changes;
+  recovery is `session.read()`. Golden-file tests for tiers 1/3/4; e2e
+  large-session smoke; small sessions no-op.
+
+Phase 2 test total: **816 passing, 0 failing** (Phase 1: 744), typecheck
+clean, lint clean, build 16/16 packages.
+
+
 ### Added — Phase 1 (hardening, lanes, channels, heartbeat)
 
 **1.0 Hardening** (the four items the Phase 0 review flagged):

@@ -94,3 +94,16 @@ Two recommendations live commented in `nyx.config.example.yaml`, both
 
 Both prompts are plain user messages to the persona — the harness adds no
 special authority to heartbeat turns.
+
+
+## Timezones (Phase 2)
+
+Each spec may name an IANA `timezone` (default `UTC`); the cron expression is
+interpreted in that zone via `Intl.DateTimeFormat` (Node's full ICU). A spec
+with `timezone: "Asia/Karachi"` and `schedule: "0 3 * * *"` fires at 03:00
+PKT (22:00 UTC the previous day). DST semantics: spring-forward gaps skip
+(vixie-cron behavior); fall-back ambiguity fires the wall time **once** (the
+first occurrence) — a personal harness does not double-run heartbeats.
+Missed-fire detection compares instants, so it uses the same zone
+automatically. Unknown zone names are hard errors at registration and in the
+config schema.

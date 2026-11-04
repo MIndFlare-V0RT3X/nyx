@@ -92,13 +92,45 @@ implementation talks to `api.telegram.org`, and the test suite runs entirely
 against a stub — no network in CI, and the first real network call happens on
 the operator's first run.
 
+## Approvals (Phase 2)
+
+An `ask` verdict on a channel turn is **interactive**, not a TTL death: the
+approval engine routes `request()` through the presenter registered for the
+session (channel TTL: 5 minutes; `channels.<id>.approval_ttl_ms` overrides;
+the TTY default stays 10 minutes).
+
+- **Telegram:** the presenter sends the request with an inline keyboard
+  `[✅ Allow] [❌ Deny]`. The button press arrives as a `callback_query` and
+  routes through the `TelegramApprovalBridge`: the identity gate
+  (`allowed_user_ids`) → `engine.resolve()` → `answerCallbackQuery` + a
+  keyboard edit recording the decision. **A text message while an approval
+  is pending is NOT a decision** — text always queues as a normal turn;
+  only the explicit button click resolves (no ambiguous "reply yes"
+  binding). On expiry the engine auto-denies and the chat gets
+  "⏱ approval expired — action denied".
+- **Webhook:** there is no push channel — the pending HTTP request itself
+  becomes the presentation: the POST returns
+  `{status: "approval_required", approval_id, summary, risk, expires_at,
+  resolve_url}` and the external client resolves via
+  `POST /v1/approvals/<id>/resolve` (bearer auth; same handler and R4
+  owner-only gate as the canonical resolve route). Presentations are
+  buffered per session, so a fast turn cannot race the response.
+- **Abort/close:** `DELETE /v1/sessions/:id/turns` (and session teardown)
+  withdraw pending approvals — the presenter is notified, the row resolves
+  deny (`system:withdrawn`, audited), and no orphan survives. The aborted
+  turn ends `turn.failed` with reason `aborted`.
+
+Decision authority never moves into an adapter: presenters show requests and
+relay clicks; the engine and the resolve route decide.
+
 ## What channels may never do
 
 - No telemetry: adapters make no outbound calls except the platform the
   operator enabled and the model providers the operator configured.
 - No policy weakening: an "ask" verdict on a channel turn waits for approval
-  exactly like an API turn (in practice these surface to the owner out of
-  band; un-approved turns time out to deny, never to allow).
+  exactly like an API turn — since Phase 2 it presents interactively (see
+  "Approvals" above), and un-approved turns time out to deny, never to
+  allow.
 - No secret material in config: the Telegram token is env-indirect.
 - No interpretation of `raw` platform payloads beyond the fields needed to
   build the inbound message; the raw payload is stored for audit only.

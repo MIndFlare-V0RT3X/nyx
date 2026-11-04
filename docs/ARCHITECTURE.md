@@ -15,7 +15,7 @@ no analytics, no phone-home.
 
 ## The package graph
 
-Fourteen library packages, three applications, and an end-to-end test workspace.
+Fifteen library packages, three applications, and an end-to-end test workspace.
 `@nyx/protocol` is the frozen contract: every type that crosses a package or
 process boundary lives there, and it imports nothing. Dependency direction is
 machine-enforced by ESLint `no-restricted-imports` in `eslint.config.mjs`.
@@ -42,7 +42,8 @@ flowchart TD
     TOOLS["@nyx/tools"]
     AGENT["@nyx/agent"]
     RUNTIME["@nyx/runtime<br/>lane queue · cron · heartbeat"]
-    CHANNELS["@nyx/channels<br/>webhook · Telegram · manager"]
+    CHANNELS["@nyx/channels<br/>webhook · Telegram · manager<br/>approval presenters"]
+    DB["@nyx/db<br/>unified nyx.db · split-DB migration"]
   end
 
   E2E["tests/e2e — @nyx/e2e"]
@@ -63,6 +64,12 @@ flowchart TD
   TOOLS --> SANDBOX
   RUNTIME --> PROTOCOL
   CHANNELS --> PROTOCOL
+  CHANNELS --> POLICY
+  DB --> PROTOCOL
+  DB --> POLICY
+  DB --> SESSION
+  DB --> CHANNELS
+  DB --> RUNTIME
 
   SERVER -->|"imports every @nyx/* package"| libs
   CLI -->|"imports every @nyx/* package"| libs
@@ -84,12 +91,21 @@ What the arrows encode:
   fairness) and the heartbeat scheduler (hand-rolled cron + SQLite state) hold
   no secrets and make no decisions — they sequence work that other packages
   already authorized.
-- **channels → protocol only.** Adapters are transport (webhook listener,
+- **channels → protocol, policy.** Adapters are transport (webhook listener,
   Telegram long-poll) plus a manager that checks identity against config
   allow lists, maps conversations to sessions, and handles `/new` and
   `/fork`. Every channel turn is driven through the host's TurnRunner — the
   same lane, loop, policy, and approvals as the HTTP API. Channels add no
-  parallel policy path.
+  parallel policy path. Since Phase 2 they also carry the approval
+  *presenters* (pure surface: inline keyboards, `approval_required` bodies)
+  — the decision authority stays in the engine and the resolve route.
+- **db → protocol, policy, session, channels, runtime.** The unified
+  database (Phase 2 §2.0.1): one `nyx.db` file, one connection, one
+  transaction per event+audit append. `@nyx/db` is the only package that
+  knows every table owner — it ensures each owner's schema on the shared
+  handle and migrates the Phase 0/1 split layout (policy.db, channels.db,
+  heartbeat.db) in a single chain-verified transaction, renaming the legacy
+  files (never deleting them).
 - **agent → protocol only, via DI.** The loop imports types; every collaborator
   — kernel, session store, model router, tool registry and router, policy and
   approval engines, sandbox, memory, persona runtime — arrives through the
@@ -103,9 +119,11 @@ What the arrows encode:
 - **tests/e2e** drives the composed packages the way surfaces will: smoke,
   approval, replay, and scope scenarios against the real implementations.
 
-Current state (Phase 1): all packages implemented with test suites — including
-`@nyx/runtime` (lane queue, cron, heartbeat) and `@nyx/channels` (webhook,
-Telegram). See `docs/ROADMAP.md` for Phase 2 scope.
+Current state (Phase 2): all packages implemented with test suites — including
+`@nyx/db` (unified database), `@nyx/runtime` (lane queue, cron, heartbeat,
+timezone-aware schedules), `@nyx/channels` (webhook, Telegram, interactive
+approvals), and the four-tier compaction pipeline in `@nyx/agent`
+(`docs/COMPACTION.md`). See `docs/ROADMAP.md` for Phase 3 scope.
 
 ## The trust boundary
 
@@ -153,8 +171,16 @@ defend against, is `docs/SECURITY-MODEL.md`.
 The append-only event log is the only source of truth; everything else is a
 projection (`@nyx/session` on better-sqlite3 + drizzle, WAL mode).
 
-- **Append.** `SessionStore.append(session_id, events)` inserts events and
-  updates projections in one transaction. `seq` is assigned by the store — a
+- **One database (2.0.1).** Everything lives in `nyx.db` (WAL,
+  `synchronous=FULL`, `busy_timeout=5000`): the event log and its
+  projections, the approval engine and the hash-chained audit table, channel
+  session mappings, and heartbeat state. `@nyx/db` opens the shared handle
+  and migrates any Phase 0/1 split layout in one verified transaction.
+- **Append.** `SessionStore.append(session_id, events)` inserts events,
+  updates projections, and — through the `onEventsCommitted` hook — writes
+  the matching hash-chain audit rows, all in ONE transaction: a crash
+  between the event and audit writes leaves neither row. `seq` is assigned
+  by the store — a
   single global, monotonic, never-reused `AUTOINCREMENT` across all sessions
   (per-session seqs are strictly increasing but not contiguous under
   interleaved appends). Payloads are stored as canonical JSON (sorted keys,
