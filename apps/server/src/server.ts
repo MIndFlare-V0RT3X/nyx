@@ -50,7 +50,6 @@ import type { LaneQueue, Scheduler } from "@nyx/runtime";
 import {
   createTaskManager,
   TaskWorkerPool,
-  RETENTION_TASK_ID,
   type TaskManager,
   type TaskRunner,
 } from "@nyx/tasks";
