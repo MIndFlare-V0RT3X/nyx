@@ -172,3 +172,60 @@ describe("HeartbeatScheduler", () => {
     expect(() => h.scheduler.register(spec({ schedule: "not cron" }))).toThrow(/5 fields/);
   });
 });
+
+describe("HeartbeatScheduler timezone (2.0.3)", () => {
+  it("a spec with timezone Asia/Karachi schedules 03:00 PKT, not 03:00 UTC", async () => {
+    const fired: Array<{ spec_id: string; scheduledFor: number }> = [];
+    const { scheduler, store } = makeScheduler({
+      specs: [
+        spec({
+          id: "hb-pkt",
+          schedule: "0 3 * * *",
+          timezone: "Asia/Karachi",
+        }),
+      ],
+      now: Date.UTC(2026, 10, 4, 10, 0), // 2026-11-04 10:00 UTC
+      fired,
+    });
+    await scheduler.start();
+    // Next fire: 2026-11-04 22:00 UTC = Nov 5, 03:00 PKT (UTC+5, no DST).
+    expect(store.state("hb-pkt")?.next_fire_at).toBe(Date.UTC(2026, 10, 4, 22, 0));
+    await scheduler.stop();
+  });
+
+  it("default UTC behavior is unchanged when no timezone is given", async () => {
+    const { scheduler, store } = makeScheduler({
+      specs: [spec({ id: "hb-utc", schedule: "0 3 * * *" })],
+      now: Date.UTC(2026, 10, 4, 10, 0),
+    });
+    await scheduler.start();
+    expect(store.state("hb-utc")?.next_fire_at).toBe(Date.UTC(2026, 10, 5, 3, 0));
+    await scheduler.stop();
+  });
+
+  it("registering a spec with an unknown timezone is a hard error", () => {
+    expect(() =>
+      new HeartbeatScheduler({
+        specs: [spec({ id: "hb-bad", timezone: "Mars/Olympus" })],
+        store: new HeartbeatStore(freshDb()),
+        sink: { fire: () => undefined },
+      }),
+    ).toThrow(/unknown IANA timezone/);
+  });
+
+  it("a zoned spec fires when the wall clock reaches the local time", async () => {
+    const fired: Array<{ spec_id: string; scheduledFor: number }> = [];
+    const { scheduler, advance } = makeScheduler({
+      specs: [spec({ id: "hb-pkt2", schedule: "30 9 * * *", timezone: "Asia/Karachi" })],
+      now: Date.UTC(2026, 0, 1, 0, 0), // 05:00 PKT Jan 1
+      fired,
+    });
+    await scheduler.start();
+    // Next fire: Jan 1, 09:30 PKT = 04:30 UTC.
+    await advance(4 * 3_600_000 + 30 * 60_000); // to exactly 04:30 UTC
+    // poll happens on advance in these tests? No — poll() is manual here:
+    await scheduler.poll();
+    expect(fired).toEqual([{ spec_id: "hb-pkt2", scheduledFor: Date.UTC(2026, 0, 1, 4, 30) }]);
+    await scheduler.stop();
+  });
+});

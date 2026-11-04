@@ -9,13 +9,20 @@
 
 import type { Logger } from "@nyx/protocol";
 import type Database from "better-sqlite3";
-import { nextFire, parseCron } from "./cron.js";
+import { nextFire, isValidTimeZone, parseCron } from "./cron.js";
 import type { CronSchedule } from "./cron.js";
 
 export interface HeartbeatSpec {
   id: string;
-  /** 5-field cron expression (minute hour dom month dow, UTC). */
+  /** 5-field cron expression (minute hour dom month dow). */
   schedule: string;
+  /**
+   * 2.0.3: IANA timezone the cron expression is interpreted in (default
+   * "UTC"). "0 3 * * *" with timezone "Asia/Karachi" fires at 03:00 PKT
+   * (22:00 UTC the previous day). DST gaps skip (vixie-cron semantics);
+   * fall-back ambiguity resolves to the first occurrence.
+   */
+  timezone?: string;
   /** Default: the session's persona / the configured default persona. */
   persona_id?: string;
   /** Default: a new session per fire. */
@@ -152,6 +159,12 @@ export class HeartbeatScheduler implements Scheduler {
 
   register(spec: HeartbeatSpec): void {
     const schedule = parseCron(spec.schedule); // invalid specs are a hard error
+    const tz = spec.timezone ?? "UTC";
+    if (!isValidTimeZone(tz)) {
+      throw new RangeError(
+        `heartbeat spec "${spec.id}": unknown IANA timezone "${tz}"`,
+      );
+    }
     this.specs.set(spec.id, spec);
     this.schedules.set(spec.id, schedule);
   }
@@ -165,6 +178,11 @@ export class HeartbeatScheduler implements Scheduler {
     return [...this.specs.values()].map((s) => ({ ...s }));
   }
 
+  /** Next fire for a spec, in the spec's timezone (2.0.3). */
+  private nextFireOf(specId: string, afterMs: number): number {
+    return nextFire(this.schedules.get(specId)!, afterMs, this.specs.get(specId)?.timezone ?? "UTC");
+  }
+
   async start(): Promise<void> {
     if (this.timer !== undefined) return;
     const now = this.now();
@@ -172,7 +190,7 @@ export class HeartbeatScheduler implements Scheduler {
       if (!spec.enabled) continue;
       const state = this.store.state(spec.id);
       if (state === null) {
-        this.store.saveState(spec.id, null, nextFire(this.schedules.get(spec.id)!, now));
+        this.store.saveState(spec.id, null, this.nextFireOf(spec.id, now));
         continue;
       }
       if (state.next_fire_at <= now) {
@@ -186,7 +204,7 @@ export class HeartbeatScheduler implements Scheduler {
         this.store.saveState(
           spec.id,
           state.last_fired_at,
-          nextFire(this.schedules.get(spec.id)!, now),
+          this.nextFireOf(spec.id, now),
         );
       }
     }
@@ -211,7 +229,7 @@ export class HeartbeatScheduler implements Scheduler {
       if (!spec.enabled) continue;
       const state = this.store.state(spec.id);
       if (state === null) {
-        this.store.saveState(spec.id, null, nextFire(this.schedules.get(spec.id)!, now));
+        this.store.saveState(spec.id, null, this.nextFireOf(spec.id, now));
         continue;
       }
       if (state.next_fire_at > now) continue;
@@ -220,7 +238,7 @@ export class HeartbeatScheduler implements Scheduler {
       this.store.saveState(
         spec.id,
         scheduledFor,
-        nextFire(this.schedules.get(spec.id)!, scheduledFor),
+        this.nextFireOf(spec.id, scheduledFor),
       );
       this.store.record(spec.id, scheduledFor, "fired", "schedule");
       this.log?.info("heartbeat.fired", {

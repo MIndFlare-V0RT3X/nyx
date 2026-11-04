@@ -253,7 +253,11 @@ owner_id: owner
 #   enabled: false
 #   specs:
 #     - id: memory-review
-#       schedule: "0 3 * * *"              # daily at 03:00 UTC
+#       schedule: "0 3 * * *"              # daily at 03:00
+#       timezone: "Asia/Karachi"           # 2.0.3: IANA zone the cron expression
+#                                          # is interpreted in (default UTC).
+#                                          # DST gaps skip (vixie-cron); fall-back
+#                                          # ambiguity fires once (first occurrence).
 #       prompt: "Review the last 24 hours of memory and consolidate duplicates, expire stale episodes, surface anything that should have been escalated."
 #       priority: heartbeat
 #       enabled: false

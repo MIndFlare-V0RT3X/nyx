@@ -199,6 +199,16 @@ function expandTilde(p: string): string {
   return p;
 }
 
+/** 2.0.3: IANA timezone validation without importing @nyx/runtime. */
+function isValidIanaTimeZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const tildePathSchema = z.string().min(1).transform(expandTilde);
 
 const sandboxSchema = z
@@ -289,7 +299,8 @@ export const configSchema = z
       .strict()
       .optional(),
     // Optional (Phase 1): heartbeat / cron — scheduled system turns. Disabled
-    // unless opted in; specs default to none.
+    // unless opted in; specs default to none. 2.0.3: each spec may name an
+    // IANA timezone the cron expression is interpreted in (default UTC).
     heartbeat: z
       .object({
         enabled: z.boolean(),
@@ -299,6 +310,13 @@ export const configSchema = z
               .object({
                 id: z.string().min(1),
                 schedule: z.string().min(1),
+                timezone: z
+                  .string()
+                  .min(1)
+                  .refine(isValidIanaTimeZone, {
+                    message: "timezone must be a valid IANA timezone name",
+                  })
+                  .optional(),
                 persona_id: z.string().min(1).optional(),
                 session_id: z.string().min(1).optional(),
                 prompt: z.string().min(1),

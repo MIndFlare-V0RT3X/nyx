@@ -344,4 +344,43 @@ describe("Phase 1 sections: lanes, channels, heartbeat (optional)", () => {
       configSchema.safeParse({ ...MINIMAL, unknown_section: {} }).success,
     ).toBe(false);
   });
+
+  it("heartbeat spec timezone must be a valid IANA name (2.0.3)", () => {
+    expect(
+      configSchema.safeParse({
+        ...MINIMAL,
+        heartbeat: {
+          enabled: true,
+          specs: [
+            {
+              id: "memory-review",
+              schedule: "0 3 * * *",
+              timezone: "Asia/Karachi",
+              prompt: "review",
+              priority: "heartbeat",
+              enabled: false,
+            },
+          ],
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      configSchema.safeParse({
+        ...MINIMAL,
+        heartbeat: {
+          enabled: true,
+          specs: [
+            {
+              id: "memory-review",
+              schedule: "0 3 * * *",
+              timezone: "Mars/Olympus",
+              prompt: "review",
+              priority: "heartbeat",
+              enabled: false,
+            },
+          ],
+        },
+      }).success,
+    ).toBe(false);
+  });
 });

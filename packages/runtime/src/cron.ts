@@ -5,6 +5,11 @@
 // accepting `*`, numbers, ranges `a-b`, steps `*/n` and `a-b/n`, and
 // comma-separated lists. Vixie-cron dom/dow semantics: both restricted →
 // union; exactly one restricted → intersection; neither → every day.
+//
+// 2.0.3: expressions are interpreted in a target IANA timezone (default
+// UTC) via Intl.DateTimeFormat — Node ships full ICU. Wall times that do
+// not exist (a DST spring-forward gap) are skipped, vixie-cron style;
+// ambiguous wall times (fall-back) resolve to the FIRST occurrence.
 
 export interface CronSchedule {
   minutes: number[];
@@ -16,6 +21,16 @@ export interface CronSchedule {
   domRestricted: boolean;
   /** True when the dow field is not `*`. */
   dowRestricted: boolean;
+}
+
+/** Throws RangeError for unknown IANA timezone names. */
+export function isValidTimeZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const FIELD_BOUNDS: Array<[number, number]> = [
@@ -89,9 +104,18 @@ export function parseCron(expr: string): CronSchedule {
 }
 
 function dayMatches(s: CronSchedule, year: number, month0: number, day: number): boolean {
+  return dayMatchesParts(s, year, month0, day, new Date(Date.UTC(year, month0, day)).getUTCDay());
+}
+
+function dayMatchesParts(
+  s: CronSchedule,
+  year: number,
+  month0: number,
+  day: number,
+  jsDay: number,
+): boolean {
   if (!s.months.includes(month0 + 1)) return false;
   const domHit = s.doms.includes(day);
-  const jsDay = new Date(Date.UTC(year, month0, day)).getUTCDay();
   const dowHit = s.dows.includes(jsDay);
   if (s.domRestricted && s.dowRestricted) return domHit || dowHit; // union
   if (s.domRestricted) return domHit;
@@ -103,13 +127,113 @@ const MINUTE_MS = 60_000;
 /** Safety bound: give up (throw) if no fire exists within ~4 years. */
 const MAX_DAY_SCAN = 366 * 4;
 
+// ---------------------------------------------------------------------------
+// Timezone-aware wall-clock arithmetic (2.0.3). Node's Intl carries full ICU;
+// Intl.DateTimeFormat with `timeZone` is the only portable source of
+// zone-local wall time and offsets.
+// ---------------------------------------------------------------------------
+
+interface WallParts {
+  y: number;
+  m0: number;
+  d: number;
+  h: number;
+  min: number;
+  s: number;
+  weekday: number; // 0 = Sunday
+}
+
+const WEEKDAY_BY_NAME: ReadonlyMap<string, number> = new Map([
+  ["Sun", 0],
+  ["Mon", 1],
+  ["Tue", 2],
+  ["Wed", 3],
+  ["Thu", 4],
+  ["Fri", 5],
+  ["Sat", 6],
+]);
+
+const partsCache = new Map<string, Intl.DateTimeFormat>();
+function formatterFor(tz: string): Intl.DateTimeFormat {
+  let fmt = partsCache.get(tz);
+  if (fmt === undefined) {
+    fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      weekday: "short",
+    });
+    partsCache.set(tz, fmt);
+  }
+  return fmt;
+}
+
+/** Wall-clock components of a UTC instant, in `tz`. */
+function wallParts(utcMs: number, tz: string): WallParts {
+  const parts = formatterFor(tz).formatToParts(new Date(utcMs));
+  const by = new Map<string, string>();
+  for (const p of parts) by.set(p.type, p.value);
+  return {
+    y: Number(by.get("year")),
+    m0: Number(by.get("month")) - 1,
+    d: Number(by.get("day")),
+    h: Number(by.get("hour")),
+    min: Number(by.get("minute")),
+    s: Number(by.get("second")),
+    weekday: WEEKDAY_BY_NAME.get(by.get("weekday") ?? "") ?? -1,
+  };
+}
+
+/** The zone's offset at `utcMs` (ms east of UTC), derived from wall parts.
+ * Real-zone offsets are whole minutes, so second-granularity rounding is
+ * harmless; zonedWallToUtc verifies its result regardless. */
+function tzOffsetMs(utcMs: number, tz: string): number {
+  const w = wallParts(utcMs, tz);
+  const asUtc = Date.UTC(w.y, w.m0, w.d, w.h, w.min, w.s);
+  return asUtc - utcMs;
+}
+
 /**
- * The next fire time strictly after `afterMs`, in epoch ms. Uses UTC so
- * schedules are stable across the host's local timezone changes (a personal
- * harness runs on one machine; DST transitions are the operator's problem to
- * schedule around, and UTC keeps the guarantee testable).
+ * The instant of a wall time in `tz`, or null when that wall time does not
+ * exist (DST spring-forward gap). Ambiguous times (fall-back) resolve to the
+ * FIRST occurrence — one fire, never two.
  */
-export function nextFire(s: CronSchedule, afterMs: number): number {
+function zonedWallToUtc(y: number, m0: number, d: number, h: number, min: number, tz: string): number | null {
+  const guess = Date.UTC(y, m0, d, h, min);
+  const off1 = tzOffsetMs(guess, tz);
+  let t = guess - off1;
+  const off2 = tzOffsetMs(t, tz);
+  if (off2 !== off1) t = guess - off2; // refine once across a transition edge
+  const w = wallParts(t, tz);
+  if (w.y !== y || w.m0 !== m0 || w.d !== d || w.h !== h || w.min !== min) return null;
+  return t;
+}
+
+/** Local-date arithmetic: advance a (y, m0, d) by `days`, normalized. */
+function addDays(y: number, m0: number, d: number, days: number): { y: number; m0: number; d: number } {
+  const norm = new Date(Date.UTC(y, m0, d + days));
+  return { y: norm.getUTCFullYear(), m0: norm.getUTCMonth(), d: norm.getUTCDate() };
+}
+
+/**
+ * The next fire time strictly after `afterMs`, in epoch ms. The expression is
+ * interpreted in `timeZone` (IANA name, default "UTC"): a spec with
+ * `timezone: "Asia/Karachi"` and `schedule: "0 3 * * *"` fires at 03:00 PKT,
+ * not 03:00 UTC. Missed-fire detection compares instants, so it uses the
+ * same zone automatically.
+ */
+export function nextFire(s: CronSchedule, afterMs: number, timeZone = "UTC"): number {
+  if (timeZone !== "UTC") {
+    if (!isValidTimeZone(timeZone)) {
+      throw new RangeError(`unknown IANA timezone "${timeZone}"`);
+    }
+    return nextFireZoned(s, afterMs, timeZone);
+  }
   const after = new Date(afterMs);
   // Start at the next minute boundary strictly after `afterMs`.
   let cursor = Date.UTC(after.getUTCFullYear(), after.getUTCMonth(), after.getUTCDate(), after.getUTCHours(), after.getUTCMinutes()) + MINUTE_MS;
@@ -134,6 +258,29 @@ export function nextFire(s: CronSchedule, afterMs: number): number {
     }
     // All of today's candidates passed already — next matching day.
     cursor = dayStart + 86_400_000;
+  }
+  throw new Error("cron schedule never fires within 4 years — refusing to spin forever");
+}
+
+/** Day-scan in the target zone: candidate local wall times → instants. */
+function nextFireZoned(s: CronSchedule, afterMs: number, tz: string): number {
+  // Start from the local date of afterMs; candidates today with an instant
+  // strictly after afterMs are eligible, later days follow.
+  const start = wallParts(afterMs, tz);
+  for (let dayOffset = 0; dayOffset <= MAX_DAY_SCAN; dayOffset++) {
+    const date = addDays(start.y, start.m0, start.d, dayOffset);
+    // Weekday in the target zone: probe local noon, which exists in every
+    // real zone (DST shifts are ≤ 2h).
+    const noon = zonedWallToUtc(date.y, date.m0, date.d, 12, 0, tz);
+    const jsDay = noon === null ? -1 : wallParts(noon, tz).weekday;
+    if (jsDay >= 0 && dayMatchesParts(s, date.y, date.m0, date.d, jsDay)) {
+      for (const hour of s.hours) {
+        for (const minute of s.minutes) {
+          const t = zonedWallToUtc(date.y, date.m0, date.d, hour, minute, tz);
+          if (t !== null && t > afterMs) return t;
+        }
+      }
+    }
   }
   throw new Error("cron schedule never fires within 4 years — refusing to spin forever");
 }

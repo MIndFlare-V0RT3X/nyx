@@ -7,7 +7,7 @@ export type {
   LaneStatus,
   LaneTask,
 } from "./lanes.js";
-export { parseCron, nextFire } from "./cron.js";
+export { isValidTimeZone, parseCron, nextFire } from "./cron.js";
 export type { CronSchedule } from "./cron.js";
 export {
   createHeartbeatScheduler,
