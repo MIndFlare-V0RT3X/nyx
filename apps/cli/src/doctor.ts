@@ -359,7 +359,19 @@ async function checkEngagements(dataDir: string): Promise<DoctorCheck> {
  */
 function checkDatabase(dataDir: string): DoctorCheck {
   const nyxDb = join(dataDir, "nyx.db");
+  const legacy = LEGACY_DB_FILES.filter((name) => existsSync(join(dataDir, name)));
   if (!existsSync(nyxDb)) {
+    if (legacy.length > 0) {
+      return {
+        name: "database",
+        status: "warn",
+        detail:
+          `no nyx.db yet, but ${legacy.length} legacy file(s) present (${legacy.join(", ")}) — ` +
+          "the next server/CLI start migrates them into one nyx.db " +
+          "(chain-verified; originals renamed, never deleted)",
+        critical: false,
+      };
+    }
     return {
       name: "database",
       status: "ok",
@@ -367,7 +379,6 @@ function checkDatabase(dataDir: string): DoctorCheck {
       critical: false,
     };
   }
-  const legacy = LEGACY_DB_FILES.filter((name) => existsSync(join(dataDir, name)));
   if (legacy.length > 0) {
     return {
       name: "database",
