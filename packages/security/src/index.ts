@@ -69,3 +69,32 @@ export {
   type SecurityToolMeta,
 } from "./scope/tool_filter.js";
 export { SecurityRateLimiter, type RateLimiterDeps, type RateTarget } from "./scope/rate_limiter.js";
+
+// ── findings (Phase 5 §2.2) ─────────────────────────────────────────────────
+export {
+  severityRank,
+  severityFromScore,
+  cvssSeverityLabel,
+  compareFindingsForReport,
+  type Finding,
+  type FindingSeverity,
+  type FindingStatus,
+  type FindingEvidence,
+  type FindingTarget,
+  type FindingSessionBinding,
+} from "./findings/schema.js";
+export {
+  FindingStore,
+  FindingStoreError,
+  orderFindingsForReport,
+  type FindingStoreDeps,
+  type FindingListOptions,
+} from "./findings/store.js";
+export {
+  scoreCvss3,
+  scoreCvss3Vector,
+  parseCvss3,
+  Cvss3Error,
+  type Cvss3Metrics,
+} from "./findings/cvss3.js";
+export { scoreCvss4, Cvss4Vector, Cvss4Error } from "./findings/cvss4.js";
