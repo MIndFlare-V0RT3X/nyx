@@ -50,6 +50,7 @@ import {
   registerLoadSkillTool,
   registerSkillsHook,
 } from "@nyx/skills";
+import { buildEngagementTooling } from "@nyx/security";
 import type {
   ApprovalEngine,
   ApprovalRecord,
@@ -363,11 +364,18 @@ export function createLocalRuntime(deps: LocalRuntimeDeps): LocalRuntime {
       if (meta === null) {
         throw new CliError("not_found", `session ${input.session_id} not found`);
       }
+      // Phase 5 §1.3 layer 1 (mirrors apps/server): the session's engagement
+      // scopes the tool surface STRUCTURALLY; the kernel's "tools.runtime"
+      // executes over the filtered view.
+      const engagementTooling = buildEngagementTooling(
+        { tools: toolRegistry, kernel, policy, approvals },
+        meta.engagement,
+      );
       const ctx: RunContext = {
-        kernel,
+        kernel: engagementTooling.kernel,
         session: sink.wrapped,
         model: router,
-        tools: toolRegistry,
+        tools: engagementTooling.tools,
         tool_router: toolRouter,
         policy,
         approvals,

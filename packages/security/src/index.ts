@@ -47,3 +47,25 @@ export {
   engagementSummary,
   parseUrlTarget,
 } from "./engagement/matcher.js";
+
+// ── scope engine (Phase 5 §1.3/§1.5) ────────────────────────────────────────
+export {
+  createScopeEngine,
+  actionDigest,
+  type ScopeAction,
+  type ScopeCheckOutcome,
+  type ScopeEngine,
+  type ScopeEngineDeps,
+} from "./scope/engine.js";
+export {
+  registerSecurityToolMeta,
+  clearSecurityToolMeta,
+  securityToolMeta,
+  isSecurityTool,
+  engagementToolAllowlist,
+  EngagementToolRegistry,
+  EngagementKernelView,
+  buildEngagementTooling,
+  type SecurityToolMeta,
+} from "./scope/tool_filter.js";
+export { SecurityRateLimiter, type RateLimiterDeps, type RateTarget } from "./scope/rate_limiter.js";

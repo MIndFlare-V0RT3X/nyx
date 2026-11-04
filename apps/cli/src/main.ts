@@ -96,7 +96,7 @@ async function main(): Promise<void> {
     )
     .argument("<message>", "the user message for the turn")
     .option("--persona <id>", "persona id for a new session")
-    .option("--engagement <file>", "engagement JSON file bound at session creation")
+    .option("--engagement <file>", "engagement YAML file bound at session creation (JSON also accepted)")
     .option("--session <id>", "reuse an existing session")
     .action(
       async (
@@ -105,7 +105,9 @@ async function main(): Promise<void> {
       ) => {
         const { config } = await resolveCliConfig();
         const engagement =
-          opts.engagement !== undefined ? await loadEngagementFile(opts.engagement) : undefined;
+          opts.engagement !== undefined
+            ? (await loadEngagementFile(opts.engagement)).engagement
+            : undefined;
         const result = await runOneShot({
           config,
           data_dir: resolveDataDir(),
@@ -125,7 +127,7 @@ async function main(): Promise<void> {
     )
     .option("--session <id>", "reuse an existing session (a new one is created by default)")
     .option("--persona <id>", "persona id for a new session")
-    .option("--engagement <file>", "engagement JSON file bound at session creation")
+    .option("--engagement <file>", "engagement YAML file bound at session creation (JSON also accepted)")
     .action(async (opts: { session?: string; persona?: string; engagement?: string }) => {
       if (process.stdin.isTTY !== true) {
         fatal(
@@ -134,7 +136,9 @@ async function main(): Promise<void> {
       }
       const { config } = await resolveCliConfig();
       const engagement =
-        opts.engagement !== undefined ? await loadEngagementFile(opts.engagement) : undefined;
+        opts.engagement !== undefined
+          ? (await loadEngagementFile(opts.engagement)).engagement
+          : undefined;
       let driver: ReturnType<typeof createChatDriver> | undefined;
       const runtime = createLocalRuntime({
         config,

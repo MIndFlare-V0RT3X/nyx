@@ -62,6 +62,7 @@ import {
   type TaskManager,
   type TaskRunner,
 } from "@nyx/tasks";
+import { buildEngagementTooling } from "@nyx/security";
 import {
   ChannelManager,
   ChannelSessionStore,
@@ -487,11 +488,21 @@ export function createServer(deps: ServerDeps): NyxServer {
         log.error("turn.session_missing");
         return;
       }
+      // Phase 5 §1.3 layer 1: the session's engagement scopes the tool
+      // surface STRUCTURALLY — security tools whose technique is not
+      // authorized are absent from the registry view, and the kernel's
+      // "tools.runtime" executes over that view. A session with no
+      // engagement sees no offensive tools at all. Non-security tools pass
+      // through untouched.
+      const engagementTooling = buildEngagementTooling(
+        { tools: toolRegistry, kernel, policy, approvals },
+        meta.engagement,
+      );
       const ctx: RunContext = {
-        kernel,
+        kernel: engagementTooling.kernel,
         session: sink.wrapped,
         model: router,
-        tools: toolRegistry,
+        tools: engagementTooling.tools,
         tool_router: toolRouter,
         policy,
         approvals,
