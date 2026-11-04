@@ -6,6 +6,9 @@ import {
   MessageSchema,
   SessionEventSchema,
   StoredEventSchema,
+  SubagentInfoSchema,
+  SubagentResultSchema,
+  SubagentSpecSchema,
   ToolOutputSchema,
 } from "./schemas.js";
 
@@ -220,5 +223,104 @@ describe("EngagementSchema", () => {
 
   it("rejects an empty engagement id", () => {
     expect(EngagementSchema.safeParse({ ...engagement, id: "" }).success).toBe(false);
+  });
+});
+
+describe("Subagent boundary schemas (Phase 3)", () => {
+  it("parses the four subagent lifecycle events", () => {
+    expect(
+      SessionEventSchema.safeParse({
+        type: "subagent.spawned",
+        session_id: "child-1",
+        subagent_session_id: "child-1",
+        turn_id: "sub-t1",
+        parent_session_id: "parent-1",
+        parent_turn_id: "t1",
+        task: "review the thing",
+        depth: 1,
+        ts: 1,
+      }).success,
+    ).toBe(true);
+    expect(
+      SessionEventSchema.safeParse({
+        type: "subagent.completed",
+        session_id: "parent-1",
+        subagent_session_id: "child-1",
+        parent_session_id: "parent-1",
+        summary: "done",
+        tokens_used: 10,
+        duration_ms: 5,
+        ts: 2,
+      }).success,
+    ).toBe(true);
+    expect(
+      SessionEventSchema.safeParse({
+        type: "subagent.failed",
+        session_id: "child-1",
+        subagent_session_id: "child-1",
+        parent_session_id: "parent-1",
+        error: { name: "E", message: "m" },
+        ts: 3,
+      }).success,
+    ).toBe(true);
+    expect(
+      SessionEventSchema.safeParse({
+        type: "subagent.aborted",
+        session_id: "parent-1",
+        subagent_session_id: "child-1",
+        parent_session_id: "parent-1",
+        reason: "parent turn aborted",
+        ts: 4,
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects a subagent.spawned event without the child id", () => {
+    expect(
+      SessionEventSchema.safeParse({
+        type: "subagent.spawned",
+        session_id: "parent-1",
+        turn_id: "t1",
+        parent_session_id: "parent-1",
+        parent_turn_id: "t1",
+        task: "x",
+        depth: 1,
+        ts: 1,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("round-trips a SubagentSpec, result, and info", () => {
+    const spec = SubagentSpecSchema.parse({
+      task: "research X",
+      tools: ["fs.read"],
+      budget_tokens: 2048,
+    });
+    expect(spec.task).toBe("research X");
+    expect(SubagentSpecSchema.safeParse({ task: "" }).success).toBe(false);
+    expect(SubagentSpecSchema.safeParse({ task: "x", bogus: 1 }).success).toBe(false);
+    expect(SubagentSpecSchema.safeParse({ task: "x", budget_tokens: 10 }).success).toBe(false);
+
+    const result = SubagentResultSchema.parse({
+      session_id: "child-1",
+      summary: "found 3 issues",
+      state: "completed",
+      tokens_used: 512,
+      duration_ms: 12,
+    });
+    expect(result.state).toBe("completed");
+    expect(
+      SubagentResultSchema.safeParse({ session_id: "c", summary: "", state: "weird" }).success,
+    ).toBe(false);
+
+    const info = SubagentInfoSchema.parse({
+      session_id: "child-1",
+      parent_session_id: "parent-1",
+      parent_turn_id: "t1",
+      spawned_at: 1,
+      state: "running",
+      task: "review",
+    });
+    expect(info.state).toBe("running");
   });
 });

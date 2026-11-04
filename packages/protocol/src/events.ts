@@ -111,6 +111,49 @@ export type SessionEvent =
       new_session_id: string;
       at_seq: number;
       ts: number;
+    }
+  // ── Phase 3: subagent lifecycle ──
+  // Every subagent.* event is mirrored on BOTH logs: appended to the child's
+  // session (session_id = child) and to the parent's session (session_id =
+  // parent). `subagent_session_id` identifies the child on the parent's copy;
+  // `parent_session_id` is denormalized on the child's copy for query
+  // convenience (the child session's parent_id column also carries it).
+  | {
+      type: "subagent.spawned";
+      session_id: string;
+      subagent_session_id: string;
+      turn_id: string;
+      parent_session_id: string;
+      parent_turn_id: string;
+      task: string;
+      depth: number;
+      ts: number;
+    }
+  | {
+      type: "subagent.completed";
+      session_id: string;
+      subagent_session_id: string;
+      parent_session_id: string;
+      summary: string;
+      tokens_used: number;
+      duration_ms: number;
+      ts: number;
+    }
+  | {
+      type: "subagent.failed";
+      session_id: string;
+      subagent_session_id: string;
+      parent_session_id: string;
+      error: SerializedError;
+      ts: number;
+    }
+  | {
+      type: "subagent.aborted";
+      session_id: string;
+      subagent_session_id: string;
+      parent_session_id: string;
+      reason: string;
+      ts: number;
     };
 
 /** An event as stored: the caller's payload plus the store-assigned seq. */

@@ -17,6 +17,10 @@ export const sessions = sqliteTable("sessions", {
   updatedAt: integer("updated_at").notNull(),
   engagementJson: text("engagement_json"),
   metadataJson: text("metadata_json"),
+  /** Lineage (0001): 'session' | 'fork' | 'subagent'. */
+  kind: text("kind").notNull().default("session"),
+  /** Set by archiveSession(); null while live. */
+  archivedAt: integer("archived_at"),
 });
 
 export const events = sqliteTable("events", {

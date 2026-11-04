@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Memory store contracts. Phase 0 retrieval is lexical (FTS5/BM25); the
 // embedding path is a seam with a no-op default.
+//
+// Phase 3 adds the "subagent" scope: entries a subagent session wrote, namespaced
+// by their source.session_id (the child session id). A subagent's memory view
+// (@nyx/subagents SubagentMemory) is the only reader/writer of that scope — it
+// maps the child's "session"-scope traffic onto "subagent" so a child can
+// never read or write its parent's session memory, structurally.
 
-export type MemoryScope = "session" | "persona" | "owner" | "global";
+export type MemoryScope = "session" | "persona" | "owner" | "global" | "subagent";
 
 export interface MemoryEntry {
   id: string;

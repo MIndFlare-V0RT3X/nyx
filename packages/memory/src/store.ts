@@ -50,7 +50,7 @@ interface RowWithRank extends MemoryRow {
   rank: number;
 }
 
-const SCOPES: readonly MemoryScope[] = ["session", "persona", "owner", "global"];
+const SCOPES: readonly MemoryScope[] = ["session", "persona", "owner", "global", "subagent"];
 const KINDS: readonly MemoryEntry["kind"][] = [
   "fact",
   "preference",

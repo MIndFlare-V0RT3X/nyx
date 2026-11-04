@@ -21,3 +21,4 @@ export type * from "./kernel.js";
 export type * from "./persona.js";
 export type * from "./session.js";
 export type * from "./agent.js";
+export type * from "./subagents.js";

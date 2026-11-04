@@ -3,7 +3,7 @@
 // projections, implementing @nyx/protocol's SessionStore contract.
 
 import Database from "better-sqlite3";
-import { eq, desc } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, type SQL } from "drizzle-orm";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { nanoid } from "nanoid";
 import { canonicalJson, mergeUsage, SessionEventSchema, StoredEventSchema } from "@nyx/protocol";
@@ -15,6 +15,8 @@ import type {
   Projection,
   RiskTier,
   SessionEvent,
+  SessionKind,
+  SessionListOptions,
   SessionMeta,
   SessionStore,
   StoredEvent,
@@ -90,6 +92,8 @@ interface SessionRow {
   updated_at: number;
   engagement_json: string | null;
   metadata_json: string | null;
+  kind: string;
+  archived_at: number | null;
 }
 
 interface EventRow {
@@ -108,6 +112,12 @@ interface UsageEventRow {
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+const SESSION_KINDS: readonly SessionKind[] = ["session", "fork", "subagent"];
+
+function isSessionKind(value: string): value is SessionKind {
+  return (SESSION_KINDS as readonly string[]).includes(value);
+}
 
 export class SessionStoreImpl implements SessionStore {
   /** The underlying better-sqlite3 handle (shared-DB access for other packages). */
@@ -167,7 +177,7 @@ export class SessionStoreImpl implements SessionStore {
         "SELECT payload_json FROM events WHERE session_id = ? AND type = 'turn.completed' ORDER BY seq",
       ),
       selectSession: this.db.prepare(
-        "SELECT id, parent_id, owner_id, persona_id, title, created_at, updated_at, engagement_json, metadata_json FROM sessions WHERE id = ?",
+        "SELECT id, parent_id, owner_id, persona_id, title, created_at, updated_at, engagement_json, metadata_json, kind, archived_at FROM sessions WHERE id = ?",
       ),
       selectLastSeq: this.db.prepare("SELECT last_seq FROM projection_version WHERE name = ?"),
       touchSession: this.db.prepare("UPDATE sessions SET updated_at = ? WHERE id = ?"),
@@ -180,6 +190,7 @@ export class SessionStoreImpl implements SessionStore {
     title?: string;
     parent_id?: string;
     engagement?: Engagement | null;
+    kind?: SessionKind;
   }): Promise<SessionMeta> {
     this.assertOpen();
     if (typeof input.owner_id !== "string" || input.owner_id.length === 0) {
@@ -207,10 +218,17 @@ export class SessionStoreImpl implements SessionStore {
         "create: engagement must be an object or null",
       );
     }
+    if (input.kind !== undefined && !isSessionKind(input.kind)) {
+      throw new SessionStoreError(
+        "validation_failed",
+        `create: kind must be one of session|fork|subagent, got ${JSON.stringify(input.kind)}`,
+      );
+    }
     const id = nanoid();
     const now = Date.now();
     const parentId = input.parent_id ?? null;
     const engagement = input.engagement ?? null;
+    const kind: SessionKind = input.kind ?? "session";
     const event: SessionEvent = {
       type: "session.created",
       session_id: id,
@@ -234,6 +252,8 @@ export class SessionStoreImpl implements SessionStore {
           updatedAt: now,
           engagementJson: engagement === null ? null : canonicalJson(engagement),
           metadataJson: null,
+          kind,
+          archivedAt: null,
         })
         .run();
       this.insertEvents(id, [event], now);
@@ -309,6 +329,8 @@ export class SessionStoreImpl implements SessionStore {
           updatedAt: now,
           engagementJson: parent.engagement_json,
           metadataJson: null,
+          kind: "fork",
+          archivedAt: null,
         })
         .run();
       // Re-append the parent's prefix under the child: fresh global seqs,
@@ -344,32 +366,64 @@ export class SessionStoreImpl implements SessionStore {
     return row === undefined ? null : this.rowToMeta(row);
   }
 
-  async list(opts?: { limit?: number; owner_id?: string }): Promise<SessionMeta[]> {
+  async list(opts: SessionListOptions = {}): Promise<SessionMeta[]> {
     this.assertOpen();
-    const limit = opts?.limit ?? LIST_DEFAULT_LIMIT;
+    const limit = opts.limit ?? LIST_DEFAULT_LIMIT;
     if (limit < 0) {
       throw new SessionStoreError("validation_failed", "list: limit must be >= 0");
     }
-    const rows = this.dz
+    const filters: SQL[] = [];
+    if (opts.owner_id !== undefined) {
+      filters.push(eq(schema.sessions.ownerId, opts.owner_id));
+    }
+    // Phase 3: lineage filter + archived exclusion. Defaults keep the store
+    // neutral (all kinds; archived hidden unless asked for) — surfaces apply
+    // their own policies on top.
+    if (opts.kinds !== undefined && opts.kinds.length > 0) {
+      filters.push(inArray(schema.sessions.kind, opts.kinds));
+    }
+    if (opts.include_archived !== true) {
+      filters.push(isNull(schema.sessions.archivedAt));
+    }
+    const rows = await this.dz
       .select()
       .from(schema.sessions)
-      .where(opts?.owner_id !== undefined ? eq(schema.sessions.ownerId, opts.owner_id) : undefined)
+      .where(filters.length > 0 ? and(...filters) : undefined)
       .orderBy(desc(schema.sessions.updatedAt), schema.sessions.id)
       .limit(limit)
       .all();
-    return rows.map((row) =>
-      this.rowToMeta({
-        id: row.id,
-        parent_id: row.parentId,
-        owner_id: row.ownerId,
-        persona_id: row.personaId,
-        title: row.title,
-        created_at: row.createdAt,
-        updated_at: row.updatedAt,
-        engagement_json: row.engagementJson,
-        metadata_json: row.metadataJson,
-      }),
-    );
+    return rows.map((row) => this.rowToMeta({
+      id: row.id,
+      parent_id: row.parentId,
+      owner_id: row.ownerId,
+      persona_id: row.personaId,
+      title: row.title,
+      created_at: row.createdAt,
+      updated_at: row.updatedAt,
+      engagement_json: row.engagementJson,
+      metadata_json: row.metadataJson,
+      kind: row.kind,
+      archived_at: row.archivedAt,
+    }));
+  }
+
+  async archiveSession(session_id: string): Promise<SessionMeta> {
+    this.assertOpen();
+    const row = this.requireSessionRow(session_id);
+    if (row.kind !== "subagent") {
+      throw new SessionStoreError(
+        "validation_failed",
+        `archiveSession: only subagent sessions may be archived (session ${session_id} is kind "${row.kind}")`,
+      );
+    }
+    if (row.archived_at !== null) {
+      return this.rowToMeta(row); // idempotent
+    }
+    const now = Date.now();
+    this.db
+      .prepare("UPDATE sessions SET archived_at = ? WHERE id = ?")
+      .run(now, session_id);
+    return this.rowToMeta(this.requireSessionRow(session_id));
   }
 
   async projection(session_id: string): Promise<Projection> {
@@ -490,6 +544,8 @@ export class SessionStoreImpl implements SessionStore {
       updated_at: row.updated_at,
       engagement:
         row.engagement_json === null ? null : (JSON.parse(row.engagement_json) as Engagement),
+      kind: isSessionKind(row.kind) ? row.kind : "session",
+      archived_at: row.archived_at,
     };
   }
 

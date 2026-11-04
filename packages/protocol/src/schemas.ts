@@ -80,6 +80,46 @@ export const ToolCallSchema = z.object({
   input: z.unknown(),
 });
 
+// ── Phase 3: subagent boundary schemas ──
+
+export const SessionKindSchema = z.enum(["session", "fork", "subagent"]);
+
+export const SubagentStateSchema = z.enum([
+  "running",
+  "completed",
+  "failed",
+  "aborted",
+  "budget_exceeded",
+]);
+
+export const SubagentSpecSchema = z
+  .object({
+    task: z.string().min(1),
+    tools: z.array(z.string().min(1)).optional(),
+    model: z.string().min(1).optional(),
+    budget_tokens: z.number().int().min(1024).optional(),
+    max_depth_override: z.number().int().min(0).optional(),
+  })
+  .strict();
+
+export const SubagentResultSchema = z.object({
+  session_id: z.string(),
+  summary: z.string(),
+  state: z.enum(["completed", "failed", "aborted", "budget_exceeded"]),
+  tokens_used: z.number().int().nonnegative(),
+  duration_ms: z.number().int().nonnegative(),
+  error: SerializedErrorSchema.optional(),
+});
+
+export const SubagentInfoSchema = z.object({
+  session_id: z.string(),
+  parent_session_id: z.string(),
+  parent_turn_id: z.string(),
+  spawned_at: z.number().int().nonnegative(),
+  state: SubagentStateSchema,
+  task: z.string(),
+});
+
 export const ScopeTargetsSchema = z.object({
   cidrs: z.array(z.string()),
   domains: z.array(z.string()),
@@ -193,6 +233,43 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
     session_id: z.string(),
     new_session_id: z.string(),
     at_seq: z.number().int().nonnegative(),
+    ts: z.number().int().nonnegative(),
+  }),
+  z.object({
+    type: z.literal("subagent.spawned"),
+    session_id: z.string(),
+    subagent_session_id: z.string(),
+    turn_id: z.string(),
+    parent_session_id: z.string(),
+    parent_turn_id: z.string(),
+    task: z.string(),
+    depth: z.number().int().nonnegative(),
+    ts: z.number().int().nonnegative(),
+  }),
+  z.object({
+    type: z.literal("subagent.completed"),
+    session_id: z.string(),
+    subagent_session_id: z.string(),
+    parent_session_id: z.string(),
+    summary: z.string(),
+    tokens_used: z.number().int().nonnegative(),
+    duration_ms: z.number().int().nonnegative(),
+    ts: z.number().int().nonnegative(),
+  }),
+  z.object({
+    type: z.literal("subagent.failed"),
+    session_id: z.string(),
+    subagent_session_id: z.string(),
+    parent_session_id: z.string(),
+    error: SerializedErrorSchema,
+    ts: z.number().int().nonnegative(),
+  }),
+  z.object({
+    type: z.literal("subagent.aborted"),
+    session_id: z.string(),
+    subagent_session_id: z.string(),
+    parent_session_id: z.string(),
+    reason: z.string(),
     ts: z.number().int().nonnegative(),
   }),
 ]);

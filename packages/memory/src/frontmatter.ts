@@ -27,7 +27,7 @@ export class MemoryValidationError extends Error {
   }
 }
 
-const SCOPES: readonly string[] = ["session", "persona", "owner", "global"];
+const SCOPES: readonly string[] = ["session", "persona", "owner", "global", "subagent"];
 const KINDS: readonly string[] = ["fact", "preference", "procedure", "episode", "skill-note"];
 const SOURCE_KEYS = ["session_id", "turn_id", "path"] as const;
 
