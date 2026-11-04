@@ -65,6 +65,9 @@ importers:
       '@nyx/session':
         specifier: workspace:*
         version: link:../../packages/session
+      '@nyx/subagents':
+        specifier: workspace:*
+        version: link:../../packages/subagents
       '@nyx/tools':
         specifier: workspace:*
         version: link:../../packages/tools
@@ -144,6 +147,9 @@ importers:
       '@nyx/session':
         specifier: workspace:*
         version: link:../../packages/session
+      '@nyx/subagents':
+        specifier: workspace:*
+        version: link:../../packages/subagents
       '@nyx/tools':
         specifier: workspace:*
         version: link:../../packages/tools

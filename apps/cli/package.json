@@ -36,6 +36,7 @@
     "@nyx/sandbox": "workspace:*",
     "@nyx/scope": "workspace:*",
     "@nyx/session": "workspace:*",
+    "@nyx/subagents": "workspace:*",
     "@nyx/tools": "workspace:*",
     "commander": "^12.1.0",
     "ink": "^5.2.0",

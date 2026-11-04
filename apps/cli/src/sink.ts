@@ -63,6 +63,7 @@ export function createEventSink(store: SessionStore, opts: EventSinkOptions = {}
     list: (opts) => store.list(opts),
     projection: (session_id) => store.projection(session_id),
     rebuildProjections: () => store.rebuildProjections(),
+    archiveSession: (session_id) => store.archiveSession(session_id),
     close: () => store.close(),
   };
 

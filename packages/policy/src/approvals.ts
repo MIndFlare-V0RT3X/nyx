@@ -211,6 +211,17 @@ export class ApprovalEngineImpl implements ApprovalEngine {
     return [...this.presenters.keys()];
   }
 
+  /**
+   * Phase 3: the presenter registered for a session, if any (with its TTL).
+   * Surfaces use this to COPY a parent session's presenter onto its
+   * subagent children, so an "ask" inside a child turn is presented on the
+   * originating channel instead of dying on the TTL.
+   */
+  presenterFor(session_id: string): { presenter: ApprovalPresenter; ttl_ms: number } | undefined {
+    const entry = this.presenters.get(session_id);
+    return entry === undefined ? undefined : { presenter: entry.presenter, ttl_ms: entry.ttlMs };
+  }
+
   /** Insert a pending approval (plus its audit row) and block until it is resolved or expired. */
   async request(v: PolicyVerdict, ctx: ApprovalContext): Promise<"allow" | "deny"> {
     const id = nanoid();

@@ -39,6 +39,12 @@ import {
 } from "@nyx/tools";
 import { createAgentLoop } from "@nyx/agent";
 import { COMPACTION_SERVICE, createCompactionPipeline } from "@nyx/agent";
+import {
+  createSubagentManager,
+  registerSubagentTool,
+  resolveSubagentsConfig,
+  type SubagentManager,
+} from "@nyx/subagents";
 import { createLaneQueue, createHeartbeatScheduler, HeartbeatStore } from "@nyx/runtime";
 import type { LaneQueue, Scheduler } from "@nyx/runtime";
 import {
@@ -104,6 +110,8 @@ export interface NyxServer {
   readonly approvals: ApprovalEngine;
   /** The heartbeat scheduler — registered specs, manual trigger, tests. */
   readonly heartbeats: Scheduler;
+  /** The subagent manager — spawn/list/abort, and tests. */
+  readonly subagents: SubagentManager;
 }
 
 const HEARTBEAT_MS = 15_000;
@@ -235,6 +243,39 @@ export function createServer(deps: ServerDeps): NyxServer {
     approvals,
   });
   kernel.services.set("tools.runtime", toolRuntime);
+
+  // ── subagents (Phase 3 §2) ──
+  // One manager per process. The spawn_subagent tool routes to it through
+  // the per-turn RunContext binding (bindTurn/unbindTurn bracket every turn
+  // below); children inherit policy/approvals/persona/sandbox and get a
+  // FILTERED tool registry + isolated memory view. A parent session's
+  // presenter is copied onto its children so an "ask" inside a child turn
+  // still reaches the originating channel instead of dying on the TTL.
+  const subagentsConfig = resolveSubagentsConfig(config.subagents);
+  if (subagentsConfig.sandbox_sharing === "fork") {
+    throw new Error(
+      'config subagents.sandbox_sharing "fork" is Phase 4+ — only "inherit" is supported',
+    );
+  }
+  const subagents = createSubagentManager({
+    store: sink.wrapped,
+    config: subagentsConfig,
+    db: unified.db,
+    onSpawned: ({ session_id, parent_session_id }) => {
+      const inherited = approvalEngineHandle.engine.presenterFor(parent_session_id);
+      if (inherited !== undefined) {
+        approvalEngineHandle.engine.registerPresenter(session_id, inherited.presenter, {
+          ttl_ms: inherited.ttl_ms,
+        });
+      }
+    },
+    onSettled: (session_id) => {
+      if (approvalEngineHandle.engine.presenterFor(session_id) !== undefined) {
+        approvalEngineHandle.engine.unregisterPresenter(session_id);
+      }
+    },
+  });
+  registerSubagentTool(toolRegistry, { manager: subagents, config: subagentsConfig });
   // 2.2: the four-tier compaction pipeline, configured from
   // context.compaction; the loop looks it up as a kernel service.
   kernel.services.set(
@@ -321,6 +362,8 @@ export function createServer(deps: ServerDeps): NyxServer {
         signal: controller.signal,
         logger: log,
       };
+      // The spawn_subagent tool resolves its parent through this binding.
+      subagents.bindTurn(session_id, turn_id, ctx);
       for await (const event of loop.run(
         { session_id, turn_id, user_message: { role: "user", content } },
         ctx,
@@ -335,6 +378,7 @@ export function createServer(deps: ServerDeps): NyxServer {
       // surface defect (missing service, broken persona load) — log it loud.
       log.error("turn.threw", { error: toSerializedError(err) });
     } finally {
+      subagents.unbindTurn(session_id);
       turnControllers.delete(session_id);
     }
   };
@@ -641,9 +685,13 @@ export function createServer(deps: ServerDeps): NyxServer {
   app.get("/v1/sessions", async (c) => {
     const limit = Number(c.req.query("limit") ?? "100");
     const owner_id = c.req.query("owner_id");
+    // Phase 3 §2.8: subagent sessions are hidden unless explicitly asked
+    // for (they clutter the list and are reachable via their parent).
+    const includeSubagents = c.req.query("include_subagents") === "true";
     const sessions = await store.list({
       ...(Number.isFinite(limit) && limit > 0 ? { limit } : {}),
       ...(owner_id !== undefined && owner_id.length > 0 ? { owner_id } : {}),
+      ...(includeSubagents ? {} : { kinds: ["session", "fork"] }),
     });
     return c.json(sessions);
   });
@@ -737,6 +785,56 @@ export function createServer(deps: ServerDeps): NyxServer {
     return c.json({ aborted_running: abortedRunning, cleared_queued: clearedQueued });
   });
 
+  // ── Phase 3 §3.1: subagent routes ──
+
+  // Children of one session (restart-safe: reconstructed from the event log).
+  app.get("/v1/sessions/:id/subagents", async (c) => {
+    const id = c.req.param("id");
+    const meta = await store.meta(id);
+    if (meta === null) return c.json(errorBody("not_found", `session ${id} not found`), 404);
+    return c.json(await subagents.list(id));
+  });
+
+  // Abort a running subagent (owner-only). In-process children abort
+  // directly; anything running elsewhere gets a control-row request in
+  // nyx.db that the owning process's manager drains (same pattern as the
+  // approval engine's poll).
+  app.delete("/v1/subagents/:id", async (c) => {
+    const actor = c.get("actor");
+    const id = c.req.param("id");
+    const meta = await store.meta(id);
+    if (meta === null) return c.json(errorBody("not_found", `subagent ${id} not found`), 404);
+    if (meta.kind !== "subagent") {
+      return badRequest("validation_failed", `session ${id} is not a subagent session`);
+    }
+    if (!actor.is_owner && actor.id !== meta.owner_id) {
+      return c.json(errorBody("forbidden", "only the owner may abort a subagent"), 403);
+    }
+    await subagents.abort(id);
+    return c.json({ aborted: id });
+  });
+
+  // Archive a subagent session (§2.8): aborts if running, marks archived —
+  // nothing is hard-deleted; the id stays resolvable and the log replayable.
+  app.delete("/v1/sessions/:id", async (c) => {
+    const actor = c.get("actor");
+    const id = c.req.param("id");
+    const meta = await store.meta(id);
+    if (meta === null) return c.json(errorBody("not_found", `session ${id} not found`), 404);
+    if (meta.kind !== "subagent") {
+      return badRequest(
+        "validation_failed",
+        `only subagent sessions can be archived (session ${id} is kind "${meta.kind}")`,
+      );
+    }
+    if (!actor.is_owner && actor.id !== meta.owner_id) {
+      return c.json(errorBody("forbidden", "only the owner may archive a subagent session"), 403);
+    }
+    await subagents.abort(id);
+    const archived = await store.archiveSession(id);
+    return c.json({ archived: true, session: archived });
+  });
+
   app.post("/v1/sessions/:id/fork", async (c) => {
     const id = c.req.param("id");
     const meta = await store.meta(id);
@@ -809,6 +907,9 @@ export function createServer(deps: ServerDeps): NyxServer {
     },
     get heartbeats() {
       return heartbeatScheduler;
+    },
+    get subagents() {
+      return subagents;
     },
     async start(opts = {}) {
       const port = opts.port ?? config.server?.port ?? 8787;

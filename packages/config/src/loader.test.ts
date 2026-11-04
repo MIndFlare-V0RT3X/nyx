@@ -165,6 +165,16 @@ describe("loadConfig — golden files", () => {
       memory: { root: "/var/lib/nyx/memory", episode_expiry_days: 14 },
       persona: { default_id: "main", root: "./personas" },
       logging: { level: "debug", redact: ["api_key", "authorization"] },
+      subagents: {
+        max_depth: 2,
+        max_total_per_turn: 150_000,
+        default_budget_tokens: 20_000,
+        max_budget_tokens: 40_000,
+        default_allowed_tools: ["fs.read", "fs.list", "web.fetch"],
+        forbidden_tools: ["spawn_subagent", "spawn_subagent_v2", "shell.exec"],
+        sandbox_sharing: "inherit",
+        retention_days: 14,
+      },
       owner_id: "owner",
     });
   });

@@ -331,6 +331,27 @@ export const configSchema = z
       })
       .strict()
       .optional(),
+    // Optional (Phase 3): the subagent system. Absent → code defaults
+    // (documented in docs/SUBAGENTS.md). max_depth 0 disables spawning
+    // entirely — the spawn_subagent tool is then never registered.
+    subagents: z
+      .object({
+        max_depth: z.number().int().min(0).max(10).default(3),
+        max_total_per_turn: z.number().int().positive().default(200_000),
+        default_budget_tokens: z.number().int().positive().default(32_768),
+        max_budget_tokens: z.number().int().positive().default(65_536),
+        default_allowed_tools: z
+          .array(z.string().min(1))
+          .default(["fs.read", "fs.write", "fs.list", "shell.exec", "web.fetch"]),
+        forbidden_tools: z
+          .array(z.string().min(1))
+          .default(["spawn_subagent", "spawn_subagent_v2"]),
+        sandbox_sharing: z.enum(["inherit", "fork"]).default("inherit"),
+        // Phase 4 GC knob (heartbeat task); documented, not yet consumed.
+        retention_days: z.number().int().positive().default(7),
+      })
+      .strict()
+      .default({}),
     // Optional (Phase 2 §2.2): the four-tier compaction pipeline. Absent →
     // code defaults (documented in docs/COMPACTION.md).
     context: z

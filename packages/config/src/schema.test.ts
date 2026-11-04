@@ -384,3 +384,36 @@ describe("Phase 1 sections: lanes, channels, heartbeat (optional)", () => {
     ).toBe(false);
   });
 });
+
+describe("subagents section (Phase 3)", () => {
+  it("fills every default when the section is absent", () => {
+    const cfg = configSchema.parse(MINIMAL);
+    expect(cfg.subagents).toEqual({
+      max_depth: 3,
+      max_total_per_turn: 200_000,
+      default_budget_tokens: 32_768,
+      max_budget_tokens: 65_536,
+      default_allowed_tools: ["fs.read", "fs.write", "fs.list", "shell.exec", "web.fetch"],
+      forbidden_tools: ["spawn_subagent", "spawn_subagent_v2"],
+      sandbox_sharing: "inherit",
+      retention_days: 7,
+    });
+  });
+
+  it("accepts max_depth 0 (spawning disabled) and rejects 11", () => {
+    expect(
+      configSchema.safeParse({ ...MINIMAL, subagents: { max_depth: 0 } }).success,
+    ).toBe(true);
+    expect(
+      configSchema.safeParse({ ...MINIMAL, subagents: { max_depth: 11 } }).success,
+    ).toBe(false);
+  });
+
+  it("rejects an unknown key inside subagents", () => {
+    const result = configSchema.safeParse({
+      ...MINIMAL,
+      subagents: { max_depth: 2, spawn_anywhere: true },
+    });
+    expect(result.success).toBe(false);
+  });
+});
