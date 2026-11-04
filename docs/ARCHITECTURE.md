@@ -15,7 +15,7 @@ no analytics, no phone-home.
 
 ## The package graph
 
-Seventeen library packages, three applications, and an end-to-end test workspace.
+Eighteen library packages, three applications, and an end-to-end test workspace.
 `@nyx/protocol` is the frozen contract: every type that crosses a package or
 process boundary lives there, and it imports nothing. Dependency direction is
 machine-enforced by ESLint `no-restricted-imports` in `eslint.config.mjs`.
