@@ -36,7 +36,7 @@ interface Rig {
 
 const rigs: Rig[] = [];
 
-function buildConfig(overrides: Partial<Parameters<typeof configSchema.parse>[0]> = {}): NyxConfig {
+function buildConfig(overrides: Record<string, unknown> = {}): NyxConfig {
   return configSchema.parse({
     server: {
       host: "127.0.0.1",
@@ -62,8 +62,8 @@ async function makeRig(
     sandbox: { provider: "local", workdir_root: sandboxRoot },
     memory: { root: memoryRoot },
     persona: { default_id: "default", root: resolve(process.cwd(), "../../personas") },
-    ...(overrides as object),
-  } as Parameters<typeof configSchema.parse>[0]);
+    ...overrides,
+  });
   const server = createNyxServer({
     config,
     data_dir: dataDir,

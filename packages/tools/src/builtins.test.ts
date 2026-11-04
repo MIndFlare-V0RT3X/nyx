@@ -48,11 +48,7 @@ interface Rig {
   runtime: ToolRuntime;
   events: SessionEvent[];
   sandbox: Sandbox;
-  exec: (
-    name: string,
-    input: unknown,
-    call_id?: string,
-  ) => Promise<ReturnType<ToolRuntime["execute"]>>;
+  exec: (name: string, input: unknown, call_id?: string) => Promise<ToolOutputLike>;
 }
 
 async function makeRig(): Promise<Rig> {
@@ -101,8 +97,8 @@ type ToolOutputLike = {
   artifact_id?: string;
 };
 
-function newDb(): { close(): void } {
-  const db: { close(): void } = new Database(":memory:") as { close(): void };
+function newDb(): InstanceType<typeof Database> {
+  const db = new Database(":memory:") as InstanceType<typeof Database>;
   dbs.push(db);
   return db;
 }

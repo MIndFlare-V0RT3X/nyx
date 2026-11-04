@@ -59,6 +59,14 @@ export interface RouterBudgets {
 
 const DEFAULT_FALLBACK_ON: FallbackCode[] = ["rate_limit", "server_error", "timeout"];
 
+/**
+ * Runtime allow-list of fallback codes. The config-file surface already
+ * constrains `fallback_on` to these transport-level codes via zod; this
+ * guard extends the invariant to programmatically constructed configs, so
+ * no content-derived error code can ever trigger a provider fallback.
+ */
+const TRANSPORT_FALLBACK_CODES: ReadonlySet<string> = new Set<string>(DEFAULT_FALLBACK_ON);
+
 interface ResolvedRoute {
   chain: ChainStep[];
   fallbackOn: Set<string>;
@@ -196,7 +204,11 @@ export class ModelRouterImpl implements ModelRouter {
     const chosen = rule ?? this.config.default;
     return {
       chain: chosen.chain,
-      fallbackOn: new Set(chosen.fallback_on ?? DEFAULT_FALLBACK_ON),
+      fallbackOn: new Set(
+        (chosen.fallback_on ?? DEFAULT_FALLBACK_ON).filter((code) =>
+          TRANSPORT_FALLBACK_CODES.has(code),
+        ),
+      ),
     };
   }
 }

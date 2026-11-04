@@ -6,11 +6,17 @@
 // every path field against the workdir, checked the engagement scope for
 // net.egress tools, and passed policy + approvals. web.fetch is the one
 // deliberate exception on I/O: it performs the HTTP exchange in-process (see
-// the README for the justification and the documented limitations).
+// the README for the justification and the documented limitations). Its HTTP
+// redirects are followed MANUALLY, one hop at a time, because every hop is a
+// fresh network action that must independently pass the engagement scope
+// check — fetch's built-in `redirect: "follow"` would connect to the
+// Location host with no check at all.
 
 import * as path from "node:path";
+import { makeScopeChecker } from "@nyx/scope";
 import type {
   Capability,
+  Engagement,
   RiskTier,
   ToolDefinition,
   ToolHandler,
@@ -36,6 +42,9 @@ import {
 const DEFAULT_FETCH_MAX_BYTES = 1_048_576;
 /** web.fetch gets a tighter wall clock than the 30s tool default. */
 const WEB_FETCH_TIMEOUT_MS = 15_000;
+/** Redirect hops are scope-checked individually; cap well under fetch's 20. */
+const MAX_REDIRECT_HOPS = 5;
+const REDIRECT_STATUSES: ReadonlySet<number> = new Set([301, 302, 303, 307, 308]);
 
 function builtinDef(
   name: string,
@@ -170,14 +179,76 @@ async function readBodyCapped(
   return { body: full.length > cap ? full.subarray(0, cap) : full, truncated };
 }
 
+/**
+ * Scope-check one redirect hop (deny-first). The Location target is a network
+ * action the operator never approved by name, so it faces the same engagement
+ * scope check the runtime applied to the original url — same host/port
+ * extraction semantics (default ports materialized, bracketed IPv6 kept for
+ * normalizeHost to unwrap). Returns a denial reason or null when allowed.
+ */
+function redirectScopeDenial(engagement: Engagement | null, target: URL): string | null {
+  if (engagement === null) {
+    return "no engagement declared for this session; network egress denied";
+  }
+  const port = target.port !== "" ? Number(target.port) : target.protocol === "https:" ? 443 : 80;
+  const verdict = makeScopeChecker(engagement)({ host: target.hostname, port });
+  if (!verdict.allowed) {
+    return `redirect to ${target.host} denied: ${verdict.reason}`;
+  }
+  return null;
+}
+
 const webFetchHandler: ToolHandler = {
   async execute(call, ctx) {
     const input = webFetchInput.parse(call.input);
     const cap = input.max_bytes ?? DEFAULT_FETCH_MAX_BYTES;
 
-    // ctx.signal is the runtime's timeout-linked signal, so the fetch dies
+    // Redirects are followed manually: fetch(redirect: "follow") would
+    // connect to the Location host with no scope check, letting an in-scope
+    // url pivot egress to any out-of-scope host. Each hop below re-validates
+    // scheme, userinfo, and engagement scope before any connection is made.
+    // ctx.signal is the runtime's timeout-linked signal, so every fetch dies
     // with the tool call.
-    const res = await fetch(input.url, { signal: ctx.signal, redirect: "follow" });
+    let current = new URL(input.url);
+    let res: Response;
+    for (let hop = 0; ; hop++) {
+      res = await fetch(current, { signal: ctx.signal, redirect: "manual" });
+      if (!REDIRECT_STATUSES.has(res.status)) break;
+      const location = res.headers.get("location");
+      if (location === null) break; // malformed redirect: surface as-is, like fetch
+      if (res.body !== null) await res.body.cancel().catch(() => undefined);
+      if (hop >= MAX_REDIRECT_HOPS) {
+        throw new Error(`too many redirects (limit ${MAX_REDIRECT_HOPS}) fetching ${input.url}`);
+      }
+      let next: URL;
+      try {
+        next = new URL(location, current);
+      } catch {
+        throw new Error(`invalid redirect location "${location}" from ${current.origin}`);
+      }
+      if (next.protocol !== "http:" && next.protocol !== "https:") {
+        throw new Error(`redirect to non-http(s) scheme ${next.protocol} is not allowed`);
+      }
+      if (next.username !== "" || next.password !== "") {
+        throw new Error("redirects to urls with embedded userinfo are not allowed");
+      }
+      const denial = redirectScopeDenial(ctx.engagement, next);
+      if (denial !== null) {
+        // Audit-truth first (same shape as the runtime's scope denials), then
+        // fail the call — denials never produce a tool.result.
+        ctx.emit({
+          type: "action.denied",
+          session_id: ctx.session_id,
+          turn_id: ctx.turn_id,
+          call_id: call.call_id,
+          reason: "scope",
+          detail: `denied by scope: ${denial}`,
+          ts: Date.now(),
+        });
+        throw new Error(`denied by scope: ${denial}`);
+      }
+      current = next;
+    }
     if (res.status >= 400) {
       throw new Error(`HTTP ${res.status} ${res.statusText}`.trim());
     }
@@ -245,7 +316,7 @@ export function registerBuiltinTools(registry: ToolRegistry): void {
   registry.register(
     builtinDef(
       "web.fetch",
-      'Fetch an HTTP(S) URL. Only http/https with no embedded userinfo is accepted, the target host must be inside the session\'s engagement scope, and every fetch passes the policy engine (an "ask" verdict pauses for operator approval). Text-like responses (text/*, JSON, XML, YAML) come back inline; binary responses are stored as an artifact file in the sandbox.',
+      'Fetch an HTTP(S) URL. Only http/https with no embedded userinfo is accepted, the target host must be inside the session\'s engagement scope, and every fetch passes the policy engine (an "ask" verdict pauses for operator approval). HTTP redirects are followed only when every hop stays inside the engagement scope (max 5). Text-like responses (text/*, JSON, XML, YAML) come back inline; binary responses are stored as an artifact file in the sandbox.',
       "R2",
       ["net.egress"],
       WEB_FETCH_TIMEOUT_MS,

@@ -9,6 +9,7 @@ import type {
 } from "@nyx/protocol";
 import { ProviderRegistryImpl } from "./registry.js";
 import { ModelRouterImpl } from "./router.js";
+import type { FallbackCode } from "./router.js";
 
 class FakeProvider implements ModelProvider {
   readonly id: string;
@@ -94,6 +95,49 @@ describe("ProviderRegistryImpl", () => {
 });
 
 describe("ModelRouterImpl", () => {
+  // CONTENT-NEUTRALITY CONTRACT: the model layer never inspects, classifies,
+  // or branches on completion *content*. A completion that reads like a
+  // refusal is a successful completion: it must be surfaced verbatim, with no
+  // retry, no fallback, and exactly one provider request. Fallback may key
+  // only off transport/infrastructure error codes.
+  it("returns a refusal-shaped completion verbatim — no retry, no fallback, single request", async () => {
+    const refusalText =
+      "I'm sorry, but I can't help with that request. " +
+      "As an AI language model, I must decline to answer.";
+    const first = new FakeProvider("first", () => textStream(refusalText));
+    const second = new FakeProvider("second", () => textStream("a perfectly helpful answer"));
+    const registry = new ProviderRegistryImpl();
+    registry.register(first);
+    registry.register(second);
+    const { logger, lines } = capturingLogger();
+    const router = new ModelRouterImpl(
+      registry,
+      {
+        default: {
+          chain: [
+            { provider: "first", model: "m1" },
+            { provider: "second", model: "m2" },
+          ],
+          // Every transport-level fallback code is enabled here on purpose:
+          // if any code path fell back on the refusal *text*, this test fails.
+          fallback_on: ["rate_limit", "server_error", "timeout"],
+        },
+      },
+      logger,
+    );
+
+    const chunks = await collect(router.complete(req));
+    expect(chunks).toEqual([
+      { type: "text.delta", text: refusalText },
+      { type: "done", finish_reason: "stop" },
+    ]);
+    // Exactly one request, served by the first provider; never fell back.
+    expect(first.calls).toBe(1);
+    expect(second.calls).toBe(0);
+    expect(lines.filter((l) => l.msg === "route.fallback")).toHaveLength(0);
+    expect(lines.filter((l) => l.msg === "route.selected")).toHaveLength(1);
+  });
+
   it("falls back to the second provider on a retryable rate_limit error", async () => {
     const first = new FakeProvider(
       "first",
@@ -176,6 +220,40 @@ describe("ModelRouterImpl", () => {
 
     await expect(collect(router.complete(req))).rejects.toMatchObject({
       code: "rate_limit",
+      retryable: true,
+    });
+    expect(second.calls).toBe(0);
+  });
+
+  it("ignores non-transport fallback codes smuggled in programmatically (transport-only invariant)", async () => {
+    const first = new FakeProvider(
+      "first",
+      throwObject({
+        name: "ProviderError",
+        message: "filtered",
+        code: "content_filter",
+        retryable: true,
+      }),
+    );
+    const second = new FakeProvider("second", () => textStream("unused"));
+    const registry = new ProviderRegistryImpl();
+    registry.register(first);
+    registry.register(second);
+    const router = new ModelRouterImpl(registry, {
+      default: {
+        chain: [
+          { provider: "first", model: "m1" },
+          { provider: "second", model: "m2" },
+        ],
+        // Simulates a programmatically constructed config bypassing the
+        // zod enum with a content-derived code: the runtime allow-list must
+        // still refuse to fall back on it.
+        fallback_on: ["content_filter"] as unknown as FallbackCode[],
+      },
+    });
+
+    await expect(collect(router.complete(req))).rejects.toMatchObject({
+      code: "content_filter",
       retryable: true,
     });
     expect(second.calls).toBe(0);

@@ -128,9 +128,9 @@ type EgressExtraction = { ok: true; target: EgressTarget } | { ok: false; reason
  * Extract the egress target from a tool input. web.fetch-style tools declare
  * a `url` (must be absolute http/https, no embedded userinfo — a scheme or
  * userinfo the operator never approved is a scope denial, not a validation
- * nit). Tools may alternatively declare `host` (+ optional `port`) directly.
- * Default http/https ports are materialized so engagement port allowlists
- * are actually checked.
+ * nit). Tools may alternatively declare `host` (+ optional `port`) directly;
+ * an inline "host:port" authority is split the same way. Default http/https
+ * ports are materialized so engagement port allowlists are actually checked.
  */
 function extractEgressTarget(input: unknown): EgressExtraction {
   if (input === null || typeof input !== "object" || Array.isArray(input)) {
@@ -170,13 +170,47 @@ function extractEgressTarget(input: unknown): EgressExtraction {
   }
 
   if (typeof obj.host === "string" && obj.host !== "") {
-    const port = typeof obj.port === "number" ? obj.port : undefined;
-    return { ok: true, target: { host: obj.host, port } };
+    let host = obj.host.trim();
+    let port = typeof obj.port === "number" ? obj.port : undefined;
+    // A URL-style authority may carry the port inline ("example.com:22",
+    // "[2001:db8::5]:443"). Materialize it so the engagement port policy is
+    // actually evaluated — the scope checker's normalizeHost would otherwise
+    // silently strip it, letting a denied port ride along unchecked. Bare
+    // IPv6 (multiple colons) and non-numeric suffixes pass through untouched.
+    const inline = splitInlinePort(host);
+    if (inline !== null) {
+      if (port !== undefined && port !== inline.port) {
+        return {
+          ok: false,
+          reason: `network egress input declares conflicting ports (host says ${inline.port}, port field says ${port})`,
+        };
+      }
+      host = inline.host;
+      port = inline.port;
+    }
+    return { ok: true, target: { host, port } };
   }
   return {
     ok: false,
     reason: "network egress requires a url (http/https) or a host field in the tool input",
   };
+}
+
+/** Split "host:port" / "[v6]:port" into its parts; null when there is no inline port. */
+function splitInlinePort(host: string): { host: string; port: number } | null {
+  if (host.startsWith("[")) {
+    const close = host.indexOf("]");
+    if (close > 0 && host.charAt(close + 1) === ":") {
+      const suffix = host.slice(close + 2);
+      if (/^\d+$/.test(suffix)) return { host: host.slice(0, close + 1), port: Number(suffix) };
+    }
+    return null;
+  }
+  const colon = host.indexOf(":");
+  if (colon !== -1 && host.indexOf(":", colon + 1) === -1 && /^\d+$/.test(host.slice(colon + 1))) {
+    return { host: host.slice(0, colon), port: Number(host.slice(colon + 1)) };
+  }
+  return null;
 }
 
 /** Rejects with the controller's abort reason the moment it fires (or immediately if it already has). */

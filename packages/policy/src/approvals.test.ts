@@ -337,4 +337,42 @@ describe("ApprovalEngineImpl", () => {
     reopened.close();
     await rm(dir, { recursive: true, force: true });
   });
+
+  it("REGRESSION: openApprovalEngine verifies the audit chain on load and refuses a tampered log", async () => {
+    const dir = await mkdtemp(tmpdir() + "/nyx-approval-tamper-");
+    const path = dir + "/policy.db";
+    // Build a real chain: one request + one resolution = audit rows.
+    const { engine, close } = openApprovalEngine(path, {
+      now: () => 9000,
+      ttl_ms: 60_000,
+      poll_ms: 2,
+    });
+    const v = verdict();
+    const p = engine.request(v, CTX);
+    await until(async () => (await engine.pending("s1")).length === 1);
+    const [rec] = await engine.pending("s1");
+    await engine.resolve(rec!.id, "deny", "owner");
+    await p;
+    close();
+
+    // Tamper with a committed audit row out-of-band (edit without rehashing).
+    const raw = new Database(path);
+    raw.prepare("UPDATE audit SET payload_json = '{\"hacked\":true}'").run();
+    expect((raw.prepare("SELECT COUNT(*) AS n FROM audit").get() as { n: number }).n).toBeGreaterThan(0);
+    raw.close();
+
+    // Loading the tampered store must fail loudly — tamper-evidence only
+    // counts if verification actually runs when the store is opened.
+    let err: unknown;
+    try {
+      openApprovalEngine(path);
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(Error);
+    expect((err as { code?: string }).code).toBe("validation_failed");
+    expect((err as Error).message).toContain("audit chain verification failed");
+    expect((err as Error).message).toContain(path);
+    await rm(dir, { recursive: true, force: true });
+  });
 });

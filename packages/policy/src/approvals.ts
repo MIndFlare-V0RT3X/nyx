@@ -4,7 +4,7 @@
 // Every state change writes an audit row in the same transaction.
 
 import { nanoid } from "nanoid";
-import { appendAudit, ensureAuditTable } from "./audit.js";
+import { appendAudit, ensureAuditTable, verifyAuditChain } from "./audit.js";
 import { CodedError } from "./errors.js";
 import type {
   ApprovalContext,
@@ -298,6 +298,12 @@ export class ApprovalEngineImpl implements ApprovalEngine {
  * Opens a dedicated SQLite file (or ":memory:") for the approval engine and
  * audit chain. Surfaces use this so no package outside @nyx/policy needs a
  * better-sqlite3 dependency just to construct the engine.
+ *
+ * The hash chain is verified on load: tamper-evidence only means something if
+ * verification actually runs, so every surface that opens the persistent
+ * approval/audit store (`nyx run`, `nyx chat`, `nyx approvals`, the server)
+ * checks the chain up front and refuses to operate on a log that fails
+ * verification.
  */
 export function openApprovalEngine(
   dbPath: string,
@@ -306,6 +312,15 @@ export function openApprovalEngine(
   const db = new Database(dbPath);
   try {
     const engine = new ApprovalEngineImpl(db, opts);
+    const verification = verifyAuditChain(db);
+    if (!verification.ok) {
+      throw new CodedError(
+        "validation_failed",
+        `audit chain verification failed at row ${verification.first_bad_id ?? "?"} ` +
+          `(${verification.checked} rows verified) in ${dbPath}: ` +
+          "the audit log may have been tampered with",
+      );
+    }
     return { engine, close: () => db.close() };
   } catch (err) {
     db.close();

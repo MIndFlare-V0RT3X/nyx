@@ -94,6 +94,18 @@ describe("loadPersona", () => {
     }
   });
 
+  it("nonexistent persona directory throws validation_failed naming the missing path", async () => {
+    try {
+      await loadPersona(realPersonasRoot, "does-not-exist");
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(PersonaLoadError);
+      const e = err as PersonaLoadError;
+      expect(e.code).toBe("validation_failed");
+      expect(e.message).toContain(path.join(realPersonasRoot, "does-not-exist", "persona.yaml"));
+    }
+  });
+
   it("invalid enum throws with the field path in the message", async () => {
     const { root } = tmpPersonaDir({
       "persona.yaml": VALID_YAML.replace("register: peer", "register: warm"),

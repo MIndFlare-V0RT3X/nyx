@@ -102,6 +102,27 @@ describe("buildSystemPrompt", () => {
     expect(contractSection.body).toContain(contractFile.replace(/\s+$/, ""));
   });
 
+  it("assembled prompt carries the contract's scope-discipline, honesty, verification and escalation clauses", async () => {
+    const runtime = await defaultRuntime();
+    const text = assemblePromptText(runtime.buildSystemPrompt(FIXED_INPUT));
+    // Scope discipline (CONTRACT.md §4): security work only inside the bound
+    // engagement; out-of-scope is refused in one line naming what would
+    // authorize it. Asserted on the assembled prompt, not the source file, so
+    // a regenerated golden snapshot cannot silently drop the clause.
+    expect(text).toContain("authorized only within the engagement bound");
+    expect(text).toContain("refuse in one line, name the reason");
+    expect(text).toContain("say what would authorize it");
+    // Honesty over compliance (§2) and verification before claims (§5)
+    expect(text).toContain("Never fabricate");
+    expect(text).toContain("must be verifiable");
+    // Escalation is rare and structural (§6)
+    expect(text).toContain("Escalate (request approval) only for irreversible operations");
+    // The same stance at the harness level (BASE_PREAMBLE scope paragraph)
+    expect(text).toContain("If a request falls outside the engagement, say so");
+    // And the live enforcement statement in SESSION_CONTEXT
+    expect(text).toContain("out-of-scope network actions are denied");
+  });
+
   it("renders memory, skills and tools catalog lines with risk markers", async () => {
     const runtime = await defaultRuntime();
     const sections = runtime.buildSystemPrompt(FIXED_INPUT);

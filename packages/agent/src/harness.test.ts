@@ -53,6 +53,7 @@ import type {
   ToolCall,
   ToolDefinition,
   ToolHandler,
+  ToolOutput,
   ToolRegistry,
   ToolRouter,
 } from "@nyx/protocol";
@@ -115,7 +116,7 @@ export class FakeHookBus implements HookBus {
       priority: opts?.priority ?? 0,
       seq: this.seq++,
       run: (args: unknown[]): Promise<unknown> =>
-        Promise.resolve(fn(...(args as Parameters<HookMap[K]>))),
+        Promise.resolve((fn as (...hookArgs: unknown[]) => unknown)(...args)),
     };
     this.regs.push(entry);
     return () => {

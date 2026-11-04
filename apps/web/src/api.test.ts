@@ -107,7 +107,7 @@ describe("createClient requests", () => {
     const sessions = await client.listSessions({ limit: 10 });
     expect(sessions).toEqual([meta]);
 
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("http://127.0.0.1:8787/v1/sessions?limit=10");
     expect(init.method).toBe("GET");
     expect((init.headers as Record<string, string>)["Authorization"]).toBe("Bearer tok");
@@ -121,7 +121,7 @@ describe("createClient requests", () => {
     const client = createClient({ baseUrl: "", token: "" });
 
     await client.getHealth();
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("/v1/health");
     expect((init.headers as Record<string, string>)["Authorization"]).toBeUndefined();
   });
@@ -141,7 +141,7 @@ describe("createClient requests", () => {
     const created = await client.createSession({ title: "T", persona_id: "default", engagement });
     expect(created.session_id).toBe("s1");
 
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("http://127.0.0.1:8787/v1/sessions");
     expect(init.method).toBe("POST");
     expect((init.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
@@ -163,7 +163,7 @@ describe("createClient requests", () => {
     const accepted = await client.postTurn("s1", { text: "hello" });
     expect(accepted).toEqual({ turn_id: "t1", session_id: "s1" });
 
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("http://127.0.0.1:8787/v1/sessions/s1/turns");
     expect(JSON.parse(init.body as string)).toEqual({ content: { text: "hello" } });
   });
@@ -176,7 +176,7 @@ describe("createClient requests", () => {
     const client = createClient({ baseUrl: "http://127.0.0.1:8787", token: "tok" });
 
     await client.resolveApproval("a1", "deny");
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("http://127.0.0.1:8787/v1/approvals/a1");
     expect(JSON.parse(init.body as string)).toEqual({ decision: "deny" });
   });
@@ -187,7 +187,7 @@ describe("createClient requests", () => {
     const client = createClient({ baseUrl: "http://127.0.0.1:8787", token: "tok" });
 
     await client.listApprovals("s1");
-    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("http://127.0.0.1:8787/v1/approvals?session_id=s1");
   });
 });

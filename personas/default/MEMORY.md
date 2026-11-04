@@ -2,8 +2,9 @@
 
 Human-readable index of durable memory. The machine index (SQLite FTS5) is
 the source of truth for retrieval; this file is the mirror the assistant
-can open directly with `fs.read`. Keep one line per entry. The memory store
-appends here automatically; prune by hand when entries go stale.
+can open directly with `fs.read`. Keep one line per entry. Entries are not
+auto-appended yet (planned); add them by hand and prune by hand when they
+go stale.
 
 ## Owner scope
 

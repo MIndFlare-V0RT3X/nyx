@@ -3,7 +3,7 @@
 // ApprovalEngineImpl from @nyx/policy (tests are exempt from package import
 // boundaries, so better-sqlite3 comes from the sibling workspace's
 // node_modules), LocalSandboxProvider sandboxes under os.tmpdir().
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { promises as fsp } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -495,5 +495,355 @@ describe("tool runtime pipeline", () => {
       expect(spec.input_schema.type).toBe("object");
       expect(spec.input_schema.properties).toBeTypeOf("object");
     }
+  });
+});
+
+describe("web.fetch scope enforcement (net.egress)", () => {
+  const WEB_RULES: PolicyRule[] = [
+    { id: "allow-web", match: { tool: "web.fetch" }, decision: "allow" },
+  ];
+
+  const now = Date.now();
+  const webEngagement: Engagement = {
+    id: "ENG-WEB",
+    operator_id: "owner",
+    authorized_at: now - 1000,
+    expires_at: now + 3_600_000,
+    targets: { cidrs: [], domains: ["in-scope.test"] },
+  };
+
+  /** Recorded URLs the handler actually fetched (the stubbed global fetch). */
+  let fetched: string[];
+
+  function redirectTo(location: string, status = 302): Response {
+    return new Response(null, { status, headers: { location } });
+  }
+
+  beforeEach(() => {
+    fetched = [];
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("no engagement → denied by scope before any fetch, action.denied reason scope", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("never")),
+    );
+    const h = await makeHarness({ rules: WEB_RULES, register: (r) => registerBuiltinTools(r) });
+
+    const out = await h.runtime.execute(
+      call("web.fetch", { url: "http://in-scope.test/a" }),
+      h.execCtx(), // engagement null
+    );
+    expect(out).toEqual({
+      kind: "text",
+      text: "denied by scope: no engagement declared for this session; network egress denied",
+    });
+    const denied = denials(h.events);
+    expect(denied).toHaveLength(1);
+    expect(denied[0]!.reason).toBe("scope");
+    expect(denied[0]!.detail).toContain("no engagement declared");
+    expect(results(h.events)).toEqual([]);
+    expect(fetched).toEqual([]);
+  });
+
+  it("expired engagement → denied by scope; no fetch happens", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("never")),
+    );
+    const h = await makeHarness({ rules: WEB_RULES, register: (r) => registerBuiltinTools(r) });
+    const expired: Engagement = { ...webEngagement, expires_at: now - 1 };
+
+    const out = await h.runtime.execute(
+      call("web.fetch", { url: "http://in-scope.test/a" }),
+      h.execCtx({ engagement: expired }),
+    );
+    expect(out.kind).toBe("text");
+    if (out.kind === "text") expect(out.text).toContain("denied by scope: engagement expired");
+    expect(denials(h.events)[0]!.reason).toBe("scope");
+    expect(denials(h.events)[0]!.detail).toContain("engagement expired");
+    expect(results(h.events)).toEqual([]);
+    expect(fetched).toEqual([]);
+  });
+
+  it("out-of-scope host → denied by scope without ever fetching", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("never")),
+    );
+    const h = await makeHarness({ rules: WEB_RULES, register: (r) => registerBuiltinTools(r) });
+
+    const out = await h.runtime.execute(
+      call("web.fetch", { url: "http://evil.example/steal" }),
+      h.execCtx({ engagement: webEngagement }),
+    );
+    expect(out.kind).toBe("text");
+    if (out.kind === "text") expect(out.text).toContain("denied by scope");
+    expect(denials(h.events)[0]!.detail).toContain("evil.example");
+    expect(results(h.events)).toEqual([]);
+    expect(fetched).toEqual([]);
+  });
+
+  it("in-scope host executes and returns the body (redirects: none)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        fetched.push(String(input));
+        return new Response("HELLO", { headers: { "content-type": "text/plain" } });
+      }),
+    );
+    const h = await makeHarness({ rules: WEB_RULES, register: (r) => registerBuiltinTools(r) });
+
+    const out = await h.runtime.execute(
+      call("web.fetch", { url: "http://in-scope.test/a" }),
+      h.execCtx({ engagement: webEngagement }),
+    );
+    expect(out.kind).toBe("text");
+    if (out.kind === "text") expect(out.text).toContain("HELLO");
+    expect(denials(h.events)).toEqual([]);
+    expect(results(h.events)).toHaveLength(1);
+    expect(fetched).toEqual(["http://in-scope.test/a"]);
+  });
+
+  it("REGRESSION: redirect to an out-of-scope host is denied, never followed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        fetched.push(url);
+        if (url === "http://in-scope.test/start")
+          return redirectTo("http://out-of-scope.example/secret");
+        return new Response("EXFILTRATED", { headers: { "content-type": "text/plain" } });
+      }),
+    );
+    const h = await makeHarness({ rules: WEB_RULES, register: (r) => registerBuiltinTools(r) });
+
+    const out = await h.runtime.execute(
+      call("web.fetch", { url: "http://in-scope.test/start" }),
+      h.execCtx({ engagement: webEngagement }),
+    );
+    // The out-of-scope target was never contacted.
+    expect(fetched).toEqual(["http://in-scope.test/start"]);
+    // The denial is on the record with reason scope, and no tool.result fired.
+    const denied = denials(h.events);
+    expect(denied).toHaveLength(1);
+    expect(denied[0]!.reason).toBe("scope");
+    expect(denied[0]!.detail).toContain("out-of-scope.example");
+    expect(results(h.events)).toEqual([]);
+    // The model sees a denial text, not the exfiltrated body.
+    expect(out.kind).toBe("text");
+    if (out.kind === "text") {
+      expect(out.text).toContain("denied by scope");
+      expect(out.text).not.toContain("EXFILTRATED");
+    }
+  });
+
+  it("redirect to an in-scope host is followed and returns the final body", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        fetched.push(url);
+        if (url === "http://in-scope.test/start") {
+          return redirectTo("http://alt.in-scope.test/final", 307);
+        }
+        return new Response("FINAL-BODY", { headers: { "content-type": "text/plain" } });
+      }),
+    );
+    const h = await makeHarness({ rules: WEB_RULES, register: (r) => registerBuiltinTools(r) });
+
+    const out = await h.runtime.execute(
+      call("web.fetch", { url: "http://in-scope.test/start" }),
+      h.execCtx({ engagement: webEngagement }),
+    );
+    expect(fetched).toEqual(["http://in-scope.test/start", "http://alt.in-scope.test/final"]);
+    expect(out.kind).toBe("text");
+    if (out.kind === "text") expect(out.text).toContain("FINAL-BODY");
+    expect(denials(h.events)).toEqual([]);
+    expect(results(h.events)).toHaveLength(1);
+  });
+
+  it("redirect chain past the hop cap fails the call instead of looping", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        fetched.push(url);
+        return redirectTo(`${url}x`);
+      }),
+    );
+    const h = await makeHarness({ rules: WEB_RULES, register: (r) => registerBuiltinTools(r) });
+
+    const out = await h.runtime.execute(
+      call("web.fetch", { url: "http://in-scope.test/a" }),
+      h.execCtx({ engagement: webEngagement }),
+    );
+    expect(out.kind).toBe("text");
+    if (out.kind === "text") expect(out.text).toContain("too many redirects");
+    expect(fetched).toHaveLength(6); // initial + 5 redirect hops
+    expect(results(h.events)).toEqual([]);
+    expect(denials(h.events)).toEqual([]);
+  });
+
+  it("redirect to a non-http scheme or embedded userinfo is refused", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        fetched.push(String(input));
+        return redirectTo("ftp://in-scope.test/f");
+      }),
+    );
+    const h = await makeHarness({ rules: WEB_RULES, register: (r) => registerBuiltinTools(r) });
+    const out = await h.runtime.execute(
+      call("web.fetch", { url: "http://in-scope.test/a" }),
+      h.execCtx({ engagement: webEngagement }),
+    );
+    expect(out.kind).toBe("text");
+    if (out.kind === "text") expect(out.text).toContain("non-http(s) scheme");
+    expect(fetched).toHaveLength(1);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        fetched.push(String(input));
+        return redirectTo("http://user:pass@in-scope.test/f");
+      }),
+    );
+    const h2 = await makeHarness({ rules: WEB_RULES, register: (r) => registerBuiltinTools(r) });
+    const out2 = await h2.runtime.execute(
+      call("web.fetch", { url: "http://in-scope.test/a" }),
+      h2.execCtx({ engagement: webEngagement }),
+    );
+    expect(out2.kind).toBe("text");
+    if (out2.kind === "text") expect(out2.text).toContain("embedded userinfo");
+    expect(results(h2.events)).toEqual([]);
+  });
+
+  it("port policy applies to redirect hops (default ports materialized)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        fetched.push(url);
+        if (url === "http://in-scope.test/start") return redirectTo("http://in-scope.test:8080/x");
+        return new Response("never");
+      }),
+    );
+    const portEngagement: Engagement = {
+      ...webEngagement,
+      targets: { cidrs: [], domains: ["in-scope.test"], ports: { allow: [80] } },
+    };
+    const h = await makeHarness({ rules: WEB_RULES, register: (r) => registerBuiltinTools(r) });
+
+    await h.runtime.execute(
+      call("web.fetch", { url: "http://in-scope.test/start" }),
+      h.execCtx({ engagement: portEngagement }),
+    );
+    expect(fetched).toEqual(["http://in-scope.test/start"]);
+    expect(denials(h.events)[0]!.reason).toBe("scope");
+    expect(denials(h.events)[0]!.detail).toContain("8080");
+    expect(results(h.events)).toEqual([]);
+  });
+});
+
+describe("host-field egress scope enforcement (net.egress)", () => {
+  const PROBE_RULES: PolicyRule[] = [
+    { id: "allow-probe", match: { tool: "net.probe" }, decision: "allow" },
+  ];
+
+  const now = Date.now();
+
+  /** Registers a fake net.egress tool that takes { host, port? } and would "connect". */
+  const registerProbe = (r: ToolRegistryImpl): void => {
+    r.register(
+      fakeDef("net.probe", { risk: "R2", capabilities: ["net.egress"] }),
+      {
+        execute: async () => ({ kind: "text", text: "connected" }) as ToolOutput,
+      },
+    );
+  };
+
+  it("REGRESSION: an inline host:port is checked against the engagement port policy", async () => {
+    const h = await makeHarness({ rules: PROBE_RULES, register: registerProbe });
+    const eng: Engagement = {
+      id: "ENG-HOST",
+      operator_id: "owner",
+      authorized_at: now - 1000,
+      expires_at: now + 3_600_000,
+      targets: { cidrs: [], domains: ["in-scope.test"], ports: { deny: [22] } },
+    };
+
+    // Port 22 is denied by the engagement: the inline port must be evaluated,
+    // not silently stripped by host normalization.
+    const denied = await h.runtime.execute(
+      call("net.probe", { host: "in-scope.test:22" }),
+      h.execCtx({ engagement: eng }),
+    );
+    expect(denied.kind).toBe("text");
+    if (denied.kind === "text") expect(denied.text).toContain("port 22 denied by engagement");
+    expect(denials(h.events)[0]!.reason).toBe("scope");
+    expect(results(h.events)).toEqual([]);
+
+    // A non-denied inline port on an in-scope host executes.
+    const ok = await h.runtime.execute(
+      call("net.probe", { host: "in-scope.test:443" }, "call-2"),
+      h.execCtx({ engagement: eng }),
+    );
+    expect(ok).toEqual({ kind: "text", text: "connected" });
+    expect(results(h.events)).toHaveLength(1);
+  });
+
+  it("REGRESSION: a bracketed IPv6 authority with an inline port is port-checked", async () => {
+    const h = await makeHarness({ rules: PROBE_RULES, register: registerProbe });
+    const eng: Engagement = {
+      id: "ENG-V6",
+      operator_id: "owner",
+      authorized_at: now - 1000,
+      expires_at: now + 3_600_000,
+      targets: { cidrs: ["2001:db8::/32"], domains: [], ports: { allow: [443] } },
+    };
+
+    const denied = await h.runtime.execute(
+      call("net.probe", { host: "[2001:db8::5]:23" }),
+      h.execCtx({ engagement: eng }),
+    );
+    expect(denied.kind).toBe("text");
+    if (denied.kind === "text")
+      expect(denied.text).toContain("port 23 not in engagement allowed ports");
+    expect(denials(h.events)[0]!.reason).toBe("scope");
+    expect(results(h.events)).toEqual([]);
+
+    const ok = await h.runtime.execute(
+      call("net.probe", { host: "[2001:db8::5]:443" }, "call-2"),
+      h.execCtx({ engagement: eng }),
+    );
+    expect(ok).toEqual({ kind: "text", text: "connected" });
+    expect(results(h.events)).toHaveLength(1);
+  });
+
+  it("REGRESSION: conflicting inline and field ports are denied as an ambiguous target", async () => {
+    const h = await makeHarness({ rules: PROBE_RULES, register: registerProbe });
+    const eng: Engagement = {
+      id: "ENG-CONF",
+      operator_id: "owner",
+      authorized_at: now - 1000,
+      expires_at: now + 3_600_000,
+      // Both ports individually allowed — the denial must come from the
+      // conflict itself, not from the port lists.
+      targets: { cidrs: [], domains: ["in-scope.test"], ports: { allow: [22, 443] } },
+    };
+
+    const out = await h.runtime.execute(
+      call("net.probe", { host: "in-scope.test:22", port: 443 }),
+      h.execCtx({ engagement: eng }),
+    );
+    expect(out.kind).toBe("text");
+    if (out.kind === "text") expect(out.text).toContain("conflicting ports");
+    expect(denials(h.events)[0]!.reason).toBe("scope");
+    expect(results(h.events)).toEqual([]);
   });
 });

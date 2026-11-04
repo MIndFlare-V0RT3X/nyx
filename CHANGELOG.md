@@ -58,3 +58,42 @@ SemVer once 0.1.0 ships.
   view, tool cards, approval panel.
 - End-to-end tests: smoke (tool-call turn), approval (allow/deny paths),
   replay (fork prefix identity), scope (out-of-scope egress denied).
+
+### Security & hardening — Phase 0 verification round
+
+A three-way parallel deep review (model layer, persona subsystem, security
+subsystem) against the design guarantees, followed by targeted fixes:
+
+- **Content-neutrality is now test-enforced.** Regression tests pin the
+  transport-only invariant at both the router and the OpenAI-compatible
+  transport: a refusal-shaped completion is streamed through verbatim with
+  exactly one request, no retry, no fallback (`@nyx/model`).
+- **Transport-only fallback allow-list at runtime.** `ModelRouterImpl`
+  filters `fallback_on` through a `rate_limit | server_error | timeout`
+  allow-list, so a programmatically constructed config cannot smuggle a
+  content-derived error code into the fallback path even where the Zod enum
+  on the config-file surface does not apply (`@nyx/model`).
+- **Audit-chain verification runs at load, not only in tests.**
+  `openApprovalEngine` verifies the hash chain when opening the approvals
+  database and refuses to start on a broken chain (typed
+  `validation_failed`), covering `nyx run`, `nyx chat`, `nyx approvals`,
+  and the server (`@nyx/policy`).
+- **Egress port-policy bypass closed.** Host-field egress inputs now parse
+  inline `host:port` and `[v6]:port` authority forms and reject conflicting
+  port declarations, so engagement port allow/deny lists are actually
+  checked on the host-field path (`@nyx/tools`).
+- **Persona honesty fixes.** `personas/default/MEMORY.md` no longer claims
+  automatic memory appends (the feature is deferred); the assembled
+  system prompt is now regression-tested to carry the contract's
+  scope-discipline, honesty, verification, and escalation clauses; a
+  nonexistent persona directory fails validation naming the path
+  (`@nyx/persona`).
+- **Type debt cleared.** All 16 workspace packages typecheck clean
+  (`tsc --noEmit`), including test files.
+- **Docs.** `SECURITY-MODEL.md` credential section now states keys are read
+  at startup (provider construction), matching the implementation.
+
+Verification status after this round: 29/29 test tasks green — 676 tests
+passed, 8 Docker-sandbox tests conditionally skipped (no Docker daemon);
+`pnpm build` 15/15; CLI smoke-tested end to end (`init`, `run` with valid /
+expired / malformed engagements, `doctor`).

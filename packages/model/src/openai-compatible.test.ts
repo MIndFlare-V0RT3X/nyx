@@ -219,6 +219,33 @@ describe("OpenAICompatibleProvider (local HTTP server)", () => {
     ]);
   });
 
+  // CONTENT-NEUTRALITY CONTRACT: the provider never inspects completion
+  // *content*. A completion that reads like a refusal is a successful
+  // completion: streamed through verbatim, exactly one HTTP request, no
+  // retry of any kind.
+  it("streams a refusal-shaped completion verbatim with exactly one request (content neutrality)", async () => {
+    const refusal = "I'm sorry, but I can't help with that request.";
+    let completionRequests = 0;
+    handler = (req, res) => {
+      if (req.url === "/v1/chat/completions") completionRequests += 1;
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      sse(res, {
+        ...baseChunk,
+        choices: [{ index: 0, delta: { content: refusal }, finish_reason: null }],
+      });
+      sse(res, { ...baseChunk, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] });
+      res.write("data: [DONE]\n\n");
+      res.end();
+    };
+    const provider = new OpenAICompatibleProvider({ id: "local", baseUrl });
+    const chunks = await collect(provider.complete({ model: "m", messages: testMessages }));
+    expect(chunks).toEqual([
+      { type: "text.delta", text: refusal },
+      { type: "done", finish_reason: "stop" },
+    ]);
+    expect(completionRequests).toBe(1);
+  });
+
   it("accepts a local base URL verbatim and derives models from GET /models", async () => {
     handler = (req, res) => {
       expect(req.url).toBe("/v1/models");

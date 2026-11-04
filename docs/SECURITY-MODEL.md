@@ -156,8 +156,9 @@ approval.
 ### Credential handling (Phase 0)
 
 Env-var indirection only: config carries env-var **names**
-(`providers.<id>.api_key_env`), keys are read from the environment at call
-time, `${VAR}` interpolation resolves at config load, and a missing variable
+(`providers.<id>.api_key_env`), keys are read from the environment at
+startup (when providers are constructed), `${VAR}` interpolation resolves at
+config load, and a missing variable
 is a hard error naming the field. No secrets in config files. Every error
 surface in `@nyx/model` passes through redaction: sensitive keys
 (`/api[-_]?key|authorization|token|secret|credential/i`) are replaced with
