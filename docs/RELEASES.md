@@ -37,6 +37,13 @@ The archive is deterministic — rebuilding it from the same tag with
 same hash — so the value above is not just a fingerprint, it is a
 reconstruction recipe.
 
+Tag history (honest): `v0.7.0` was first cut at `fb2e7af`, then moved to
+`7d80056` before any external publication — the CHANGELOG carried two
+stale 387-counts and an overclaimed "signed" (the tag is annotated, not
+GPG-signed). The pre-correction archive of `fb2e7af` hashes to
+`905d283c9a1942bb688903b2bc6848b88b149c12c417e98cc83342b71130bae5`; it
+is listed here only so the move is visible, not as a second artifact.
+
 Verify a download against it:
 
 ```sh
