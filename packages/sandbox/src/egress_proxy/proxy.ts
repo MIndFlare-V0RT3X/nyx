@@ -10,7 +10,7 @@
 // the same way. There is no TLS interception and no unix socket anywhere.
 
 import * as net from "node:net";
-import { cidrContains, isIPLiteral, parseCidr } from "@nyx/scope";
+import { cidrContains, isIPLiteral } from "@nyx/scope";
 import type {
   EgressDecisionProvider,
   EgressListenerContext,

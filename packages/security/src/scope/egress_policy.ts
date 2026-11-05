@@ -29,7 +29,7 @@ import type {
   EgressListenerInfo,
   SandboxEgressBinding,
 } from "@nyx/sandbox";
-import { EgressProxyServer } from "@nyx/sandbox";
+import type { EgressProxyServer } from "@nyx/sandbox";
 import type { EngagementAuditSink } from "../engagement/loader.js";
 import type { SecurityRateLimiter } from "./rate_limiter.js";
 

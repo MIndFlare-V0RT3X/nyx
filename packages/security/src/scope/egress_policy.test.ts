@@ -7,7 +7,7 @@
 // listener-attributed classes, exactly one audit row per decision, and the
 // binder's port mapping + env + rollback.
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import * as net from "node:net";
 import type { Engagement } from "@nyx/protocol";
 import type { EgressResolver, ResolvedEndpoint } from "@nyx/tools";
@@ -16,7 +16,6 @@ import { EgressProxyServer } from "@nyx/sandbox";
 import type {
   EgressDecision,
   EgressListenerContext,
-  EgressConnectRequest,
   SandboxEgressBinding,
 } from "@nyx/sandbox";
 import { createEgressBinder, createEgressPolicy } from "./egress_policy.js";

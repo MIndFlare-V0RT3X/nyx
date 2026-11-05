@@ -15,7 +15,7 @@ const ALLOWED = {
   "packages/model": ["@nyx/protocol"],
   "packages/scope": ["@nyx/protocol"],
   "packages/policy": ["@nyx/protocol"],
-  "packages/sandbox": ["@nyx/protocol"],
+  "packages/sandbox": ["@nyx/protocol", "@nyx/scope"],
   "packages/memory": ["@nyx/protocol"],
   "packages/persona": ["@nyx/protocol"],
   "packages/tools": ["@nyx/protocol", "@nyx/policy", "@nyx/scope", "@nyx/sandbox"],
@@ -26,7 +26,7 @@ const ALLOWED = {
   "packages/skills": ["@nyx/protocol"],
   "packages/subagents": ["@nyx/protocol", "@nyx/policy", "@nyx/sandbox", "@nyx/tools", "@nyx/agent"],
   "packages/tasks": ["@nyx/protocol", "@nyx/policy", "@nyx/session", "@nyx/runtime"],
-  "packages/security": ["@nyx/protocol", "@nyx/scope", "@nyx/tools"],
+  "packages/security": ["@nyx/protocol", "@nyx/scope", "@nyx/sandbox", "@nyx/tools"],
   "apps/server": ["@nyx/protocol", "@nyx/config", "@nyx/kernel", "@nyx/session", "@nyx/model", "@nyx/tools", "@nyx/policy", "@nyx/scope", "@nyx/sandbox", "@nyx/memory", "@nyx/persona", "@nyx/agent", "@nyx/runtime", "@nyx/channels", "@nyx/db", "@nyx/skills", "@nyx/subagents", "@nyx/tasks", "@nyx/security"],
   "apps/cli": ["@nyx/protocol", "@nyx/config", "@nyx/kernel", "@nyx/session", "@nyx/model", "@nyx/tools", "@nyx/policy", "@nyx/scope", "@nyx/sandbox", "@nyx/memory", "@nyx/persona", "@nyx/agent", "@nyx/db", "@nyx/skills", "@nyx/subagents", "@nyx/tasks", "@nyx/security"],
   "apps/web": [],
@@ -58,10 +58,17 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    // Repo scripts are Node ESM with the standard globals.
-    files: ["scripts/**/*.mjs"],
+    // Repo scripts and the plugin template's helper scripts are Node ESM
+    // with the standard globals.
+    files: ["scripts/**/*.mjs", "templates/**/*.mjs"],
     languageOptions: {
-      globals: { console: "readonly", process: "readonly", fetch: "readonly", URL: "readonly" },
+      globals: {
+        console: "readonly",
+        process: "readonly",
+        fetch: "readonly",
+        URL: "readonly",
+        Buffer: "readonly",
+      },
     },
   },
   {

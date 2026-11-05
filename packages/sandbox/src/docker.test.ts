@@ -5,7 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
-import type { SandboxSpec } from "@nyx/protocol";
+import type { Engagement, SandboxSpec } from "@nyx/protocol";
 import {
   containerRunArgs,
   DockerSandboxProvider,
@@ -362,7 +362,7 @@ describe("egress network + run arg builders (Phase 6.1)", () => {
   });
 });
 
-function fakeEngagement(): import("@nyx/protocol").Engagement {
+function fakeEngagement(): Engagement {
   return {
     id: "ENG-DOCKER-TEST",
     operator_id: "owner",

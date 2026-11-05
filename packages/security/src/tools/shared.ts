@@ -27,7 +27,7 @@ import type { EgressResolver } from "@nyx/tools";
 import { createScopeEngine } from "../scope/engine.js";
 import type { EngagementAuditSink } from "../engagement/loader.js";
 import type { SecurityToolMeta } from "../scope/tool_filter.js";
-import { SecurityRateLimiter } from "../scope/rate_limiter.js";
+import type { SecurityRateLimiter } from "../scope/rate_limiter.js";
 import { HostSecurityExecutor, SandboxSecurityExecutor } from "./executor.js";
 import type { SecurityExecutor } from "./executor.js";
 

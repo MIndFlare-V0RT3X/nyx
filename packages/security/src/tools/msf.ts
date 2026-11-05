@@ -29,8 +29,8 @@ import { resolveForExecutor, runSecurityTool } from "./shared.js";
 import type { SecurityToolDeps } from "./shared.js";
 import { assertSafeTokens, HostSecurityExecutor, SandboxSecurityExecutor } from "./executor.js";
 
-const OPTION_VALUE = /^[A-Za-z0-9._:\/\-]+$/;
-const MODULE_PATH = /^(exploit|auxiliary|post|payload|encoder|nop|evasion)\/[a-z0-9\/_\-]+$/;
+const OPTION_VALUE = /^[A-Za-z0-9._:/-]+$/;
+const MODULE_PATH = /^(exploit|auxiliary|post|payload|encoder|nop|evasion)\/[a-z0-9/_-]+$/;
 
 export const MSF_SEARCH_META: SecurityToolMeta = {
   technique: "exploitation",

@@ -20,6 +20,7 @@ import { parseActionUrl } from "../engagement/matcher.js";
 import type { SecurityToolMeta } from "../scope/tool_filter.js";
 import { egressProxyUrl, runSecurityTool } from "./shared.js";
 import type { SecurityToolDeps } from "./shared.js";
+import type { FindingStore } from "../findings/store.js";
 
 // ---------------------------------------------------------------------------
 // Shared pieces
@@ -203,7 +204,7 @@ export function sqlmapScanDefinition(): ToolDefinition {
 }
 
 export function sqlmapScanHandler(deps: SecurityToolDeps & {
-  store: import("../findings/store.js").FindingStore;
+  store: FindingStore;
 }): ToolHandler {
   return {
     async execute(call, ctx: ToolContext): Promise<ToolOutput> {

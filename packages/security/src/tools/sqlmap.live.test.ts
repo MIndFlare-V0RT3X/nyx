@@ -6,7 +6,6 @@
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { execFile } from "node:child_process";
-import * as sqlite3 from "better-sqlite3";
 import { createServer, type Server } from "node:http";
 import { promisify } from "node:util";
 import Database from "better-sqlite3";
