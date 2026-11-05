@@ -21,28 +21,41 @@ full detail; `docs/ROADMAP.md` has the phase history.
 - 1320 tests: 1299 passing + 21 docker-gated bypass proofs (the bypass
   proofs run live in the `test-docker` CI lane; locally without a docker
   daemon they skip, by design)
-- `pnpm -r typecheck` clean, `pnpm lint` clean
+- `pnpm -r typecheck` clean, `pnpm lint` clean, `pnpm format:check` clean
 - SPDX audit clean: 388/388 source files carry AGPL-3.0-or-later headers
   (`node scripts/check-spdx.mjs`)
 
 ### Artifact
 
-- **`nyx-0.7.0.tar.gz`** — the tagged tree via `git archive` (content
-  from commit `7d80056`, prefix `nyx-0.7.0/`, 691 files)
-- **sha256**:
-  `66fc0ec6efc6eed17ecf3a1a3c04acb453e7a9386a19311778c99bf67f461e21`
+- **`nyx-0.7.0.tar.gz`** — the tagged tree via `git archive`
+  (prefix `nyx-0.7.0/`)
+- **sha256**: published in the `v0.7.0` tag annotation and the GitHub
+  release body, and recorded in the main-tip copy of this file. The tagged
+  tree cannot contain the hash of its own archive — the hash covers the
+  bytes that would include it — so this copy intentionally points at those
+  anchors instead of embedding the value.
 
 The archive is deterministic — rebuilding it from the same tag with
 `git archive --format=tar.gz --prefix=nyx-0.7.0/ v0.7.0` reproduces the
-same hash — so the value above is not just a fingerprint, it is a
+same hash — so the published value is not just a fingerprint, it is a
 reconstruction recipe.
 
-Tag history (honest): `v0.7.0` was first cut at `fb2e7af`, then moved to
-`7d80056` before any external publication — the CHANGELOG carried two
-stale 387-counts and an overclaimed "signed" (the tag is annotated, not
-GPG-signed). The pre-correction archive of `fb2e7af` hashes to
-`905d283c9a1942bb688903b2bc6848b88b149c12c417e98cc83342b71130bae5`; it
-is listed here only so the move is visible, not as a second artifact.
+Tag history (honest): `v0.7.0` was cut three times, all before any
+external publication:
+
+1. at `fb2e7af` — the first cut (archive hashes to
+   `905d283c9a1942bb688903b2bc6848b88b149c12c417e98cc83342b71130bae5`);
+2. at `7d80056` — the CHANGELOG carried two stale 387-counts and an
+   overclaimed "signed" (the tag is annotated, not GPG-signed)
+   (archive hashes to
+   `66fc0ec6efc6eed17ecf3a1a3c04acb453e7a9386a19311778c99bf67f461e21`);
+3. finally at this commit — to fold in the repo-wide prettier
+   normalization (`e54c66d`, 211 files, provably inert: the full fresh
+   suite ran identical counts, 1299 passing + 21 docker-gated = 1320,
+   before and after) so the artifact matches the repo tip.
+
+The earlier archives are listed so the moves are visible, not offered as
+alternate artifacts.
 
 Verify a download against it:
 
@@ -63,10 +76,10 @@ NYX_SKIP_DOCKER=1 pnpm exec turbo run test   # hermetic lane
 
 The `v0.7.0` tag is an **annotated** tag — no GPG key is configured in
 this environment, so it carries no cryptographic signature. Until a
-signing key exists, the tarball sha256 above is the authenticity anchor:
+signing key exists, the tarball sha256 is the authenticity anchor:
 the tag names the commit, the commit builds the archive, the archive
-hashes to this value. A future release with a configured key will carry
-a GPG-signed tag and this note will say so.
+hashes to the published value. A future release with a configured key
+will carry a GPG-signed tag and this note will say so.
 
 ### Known residuals at release
 
