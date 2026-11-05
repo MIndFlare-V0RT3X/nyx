@@ -16,6 +16,9 @@ export type Capability =
   | "proc.kill"
   | "net.egress"
   | "net.listen"
+  /** Phase 6.3: fixed-host research egress (CVE databases) — NOT engagement
+   *  targets; the hosts are pinned in code, queries audit-logged. */
+  | "net.reference"
   | "browser.control"
   | "desktop.control"
   | "credential.use"

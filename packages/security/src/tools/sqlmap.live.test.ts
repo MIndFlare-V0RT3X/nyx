@@ -93,6 +93,10 @@ describe("sqlmap LIVE — the real binary end-to-end (hard rule 6)", () => {
     db = new Database(":memory:");
     openSessionStore(":memory:", { db });
     store = new FindingStore({ db, now: () => T0 });
+    // R2-5: create()/createInSession verify the session row; seed it.
+    db.prepare(
+      "INSERT OR REPLACE INTO sessions (id, owner_id, persona_id, title, created_at, updated_at, engagement_json) VALUES (?, 'owner', 'default', 'test', ?, ?, ?)",
+    ).run("sess-live", T0, T0, JSON.stringify(engagement()));
     const registry = new ToolRegistryImpl();
     registerSecurityTools(registry, {
       store,

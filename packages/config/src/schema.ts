@@ -32,6 +32,7 @@ const capabilitySchema = z.enum([
   "proc.kill",
   "net.egress",
   "net.listen",
+  "net.reference",
   "browser.control",
   "desktop.control",
   "credential.use",

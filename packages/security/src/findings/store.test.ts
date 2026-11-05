@@ -22,7 +22,25 @@ function makeStore(file = ":memory:"): { store: FindingStore; db: Database.Datab
   openSessionStore(file, { db }); // runs the drizzle migrations incl. 0004_findings
   const store = new FindingStore({ db, now: () => T0 });
   stacks.push(() => db.close());
+  // R2-5: create() now verifies the session→engagement binding against the
+  // sessions table; seed the sessions the fixtures use.
+  seedSession(db, "sess-1", { id: "ENG-2026-042" });
+  seedSession(db, "sess-2", { id: "ENG-2026-042" });
+  seedSession(db, "sess-other", { id: "ENG-OTHER" });
+  seedSession(db, "sess-9", { id: "ENG-BOUND" });
+  seedSession(db, "sess-none", null);
   return { store, db };
+}
+
+/** R2-5: create() verifies the session/engagement pair — seed the row. */
+function seedSession(
+  db: Database.Database,
+  sessionId: string,
+  engagement: { id: string } | null,
+): void {
+  db.prepare(
+    "INSERT OR REPLACE INTO sessions (id, owner_id, persona_id, title, created_at, updated_at, engagement_json) VALUES (?, 'owner', 'default', 'test', ?, ?, ?)",
+  ).run(sessionId, T0, T0, engagement === null ? null : JSON.stringify(engagement));
 }
 
 function fixture(overrides: Partial<Omit<Finding, "id" | "discovered_at">> = {}): Omit<
@@ -83,13 +101,13 @@ describe("FindingStore — list filters", () => {
     const { store } = makeStore();
     await store.create(fixture({ title: "a", severity: "critical", status: "confirmed" }));
     await store.create(
-      fixture({ title: "b", severity: "low", status: "false_positive", engagement_id: "OTHER" }),
+      fixture({ title: "b", severity: "low", status: "false_positive", engagement_id: "ENG-OTHER", session_id: "sess-other" }),
     );
     await store.create(fixture({ title: "c", severity: "high", status: "open" }));
     await store.create(fixture({ title: "d", severity: "critical", status: "open" }));
 
     expect((await store.list({ engagement_id: "ENG-2026-042" })).length).toBe(3);
-    expect((await store.list({ engagement_id: "OTHER" })).length).toBe(1);
+    expect((await store.list({ engagement_id: "ENG-OTHER" })).length).toBe(1);
     expect((await store.list({ severity: ["critical", "high"] })).length).toBe(3);
     expect((await store.list({ status: "open" })).length).toBe(2);
     expect((await store.list({ severity: ["critical"], status: "open" })).length).toBe(1);
@@ -160,7 +178,12 @@ describe("FindingStore — the structural session binding (§5 Reviewer 2)", () 
   });
 
   it("a foreign engagement id in the input is inert — the binding wins", async () => {
-    const { store } = makeStore();
+    const { store, db } = makeStore();
+    // The binding is the runtime's session-meta engagement — rebind sess-9
+    // to ENG-REAL so the store's consistency check (R2-5) matches it.
+    db.prepare("UPDATE sessions SET engagement_json = ? WHERE id = 'sess-9'").run(
+      JSON.stringify({ id: "ENG-REAL" }),
+    );
     const f = await store.createInSession(
       {
         session_id: "sess-9",

@@ -75,6 +75,10 @@ function makeRig(eng: Engagement | null): Rig {
   db.pragma("journal_mode = WAL");
   openSessionStore(":memory:", { db });
   stacks.push(() => db.close());
+  // R2-5: create()/createInSession verify the session row; seed it.
+  db.prepare(
+    "INSERT OR REPLACE INTO sessions (id, owner_id, persona_id, title, created_at, updated_at, engagement_json) VALUES (?, 'owner', 'default', 'test', ?, ?, ?)",
+  ).run("sess-1", T0, T0, JSON.stringify(eng));
 
   const executor = new FakeSecurityExecutor();
   const store = new FindingStore({ db, now: () => T0 });

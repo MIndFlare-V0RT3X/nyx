@@ -56,7 +56,15 @@ interface FindingRow {
 }
 
 export class FindingStoreError extends Error {
-  constructor(readonly code: "no_engagement" | "not_found" | "invalid", message: string) {
+  constructor(
+    readonly code:
+      | "no_engagement"
+      | "not_found"
+      | "invalid"
+      | "unknown_session"
+      | "engagement_mismatch",
+    message: string,
+  ) {
     super(message);
     this.name = "FindingStoreError";
   }
@@ -73,6 +81,34 @@ export class FindingStore {
 
   /** Create a finding (the brief's §2.2 surface). */
   async create(finding: Omit<Finding, "id" | "discovered_at">): Promise<Finding> {
+    // R2-5 (closed Phase 6.3): the admin surface VERIFIES the binding —
+    // the session must exist and its bound engagement must match the
+    // finding's engagement id. Caller-asserted pairs that do not correspond
+    // to a real session are refused; the model-reachable path
+    // (createInSession) derives the ids and is unchanged.
+    const session = this.db
+      .prepare("SELECT engagement_json FROM sessions WHERE id = ?")
+      .get(finding.session_id) as { engagement_json: string | null } | undefined;
+    if (session === undefined) {
+      throw new FindingStoreError(
+        "unknown_session",
+        `session ${finding.session_id} does not exist — findings cannot be created for fabricated sessions`,
+      );
+    }
+    if (session.engagement_json !== null) {
+      const bound = JSON.parse(session.engagement_json) as { id?: string };
+      if (bound.id !== finding.engagement_id) {
+        throw new FindingStoreError(
+          "engagement_mismatch",
+          `session ${finding.session_id} is bound to engagement ${bound.id ?? "(unknown)"}, not ${finding.engagement_id}`,
+        );
+      }
+    } else if (finding.engagement_id !== "") {
+      throw new FindingStoreError(
+        "engagement_mismatch",
+        `session ${finding.session_id} has no engagement; a finding cannot claim engagement ${finding.engagement_id}`,
+      );
+    }
     const id = nanoid(16);
     const discovered_at = this.now();
     this.db

@@ -41,6 +41,8 @@ import {
   msfSearchHandler,
 } from "./msf.js";
 import { BURP_META, burpDefinition, burpHandler } from "./burp.js";
+import { registerDisclosureTools } from "../skills/disclosure.js";
+import type { JsonFetch } from "../skills/cve_services.js";
 
 export interface RegisterSecurityToolsDeps {
   /** The findings store over the shared nyx.db handle. */
@@ -58,6 +60,8 @@ export interface RegisterSecurityToolsDeps {
   now?: () => number;
   /** The audit sink (approval engine handle's audit fn). */
   audit?: EngagementAuditSink;
+  /** Phase 6.3 — injectable CVE-service fetch (tests). */
+  fetchImpl?: JsonFetch;
 }
 
 export function registerSecurityTools(
@@ -97,6 +101,15 @@ export function registerSecurityTools(
     registry.register(r.def(), r.handler());
     registerSecurityToolMeta(r.meta.name, r.meta.meta);
   }
+
+  // Phase 6.3 — the disclosure workflow (correlate-cve, minimize-poc,
+  // prepare-disclosure, submit-cve). Same shared deps; the CVE-service
+  // fetch is injectable for tests.
+  registerDisclosureTools(registry, {
+    ...shared,
+    store: deps.store,
+    ...(deps.fetchImpl !== undefined ? { fetchImpl: deps.fetchImpl } : {}),
+  });
 }
 
 export { FakeSecurityExecutor, HostSecurityExecutor, SandboxSecurityExecutor, assertSafeTokens, SecurityToolError } from "./executor.js";

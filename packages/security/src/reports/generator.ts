@@ -199,6 +199,17 @@ function cvssLine(f: Finding): string {
 
 // ── markdown ────────────────────────────────────────────────────────────────
 
+/**
+ * R2-8 (closed Phase 6.3): finding-controlled strings are HTML-escaped in
+ * the MARKDOWN report too. The MD is a paste format for portals that often
+ * render HTML — a <script> inside a finding title must not survive the
+ * paste. (& < > are escaped; the literal payload degrades to its visible
+ * text, which is the point.)
+ */
+function mdText(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 function renderMarkdown(
   input: ReportInput,
   ordered: readonly Finding[],
@@ -277,29 +288,29 @@ function renderMarkdown(
     lines.push("_No findings were recorded for this engagement._");
   }
   for (const f of ordered) {
-    lines.push(`### [${f.severity.toUpperCase()}] ${f.title}${cvssLine(f)}`);
+    lines.push(`### [${f.severity.toUpperCase()}] ${mdText(f.title)}${cvssLine(f)}`);
     lines.push("");
     const t = f.target;
     lines.push(
-      `- **Target:** \`${t.host}${t.port !== undefined ? `:${t.port}` : ""}${t.path ?? ""}\``,
+      `- **Target:** \`${mdText(t.host)}${t.port !== undefined ? `:${t.port}` : ""}${mdText(t.path ?? "")}\``,
     );
     lines.push(`- **Status:** ${f.status}`);
     if (f.cve !== undefined && f.cve.length > 0) lines.push(`- **CVE:** ${f.cve.join(", ")}`);
     if (f.cwe !== undefined && f.cwe.length > 0) lines.push(`- **CWE:** ${f.cwe.join(", ")}`);
-    lines.push(`- **Discovered by:** ${f.discovered_by}`);
+    lines.push(`- **Discovered by:** ${mdText(f.discovered_by)}`);
     lines.push("");
-    lines.push(f.description);
+    lines.push(mdText(f.description));
     lines.push("");
     lines.push("**Reproduction steps:**");
     lines.push("");
-    lines.push(f.reproduction);
+    lines.push(mdText(f.reproduction));
     lines.push("");
     lines.push("**Remediation:**");
     lines.push("");
-    lines.push(f.remediation);
+    lines.push(mdText(f.remediation));
     lines.push("");
     if (f.notes.length > 0) {
-      lines.push(`**Notes:** ${f.notes}`);
+      lines.push(`**Notes:** ${mdText(f.notes)}`);
       lines.push("");
     }
   }
@@ -311,7 +322,7 @@ function renderMarkdown(
   for (const [index, f] of ordered.entries()) {
     const arts = evidence.get(`${f.id}#${index}`) ?? [];
     if (arts.length === 0) continue;
-    lines.push(`- **${f.title}**`);
+    lines.push(`- **${mdText(f.title)}**`);
     for (const a of arts) {
       lines.push(`  - \`${a.path}\` — sha256 \`${a.hash}\` — ${a.mime} — ${a.bytes} bytes`);
     }
@@ -321,7 +332,7 @@ function renderMarkdown(
   lines.push("## Remediation Summary");
   lines.push("");
   for (const f of ordered) {
-    lines.push(`- **[${f.severity.toUpperCase()}]** ${f.title}: ${f.remediation}`);
+    lines.push(`- **[${f.severity.toUpperCase()}]** ${mdText(f.title)}: ${mdText(f.remediation)}`);
   }
   lines.push("");
 
