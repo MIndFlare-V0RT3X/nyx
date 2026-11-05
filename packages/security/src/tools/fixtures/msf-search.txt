@@ -1,0 +1,13 @@
+Matching Modules
+================
+
+   #   Name                                     Disclosure Date  Rank       Check  Description
+   -   ----                                     ---------------  ----       -----  -----------
+   0   auxiliary/scanner/http/apache_userdir_enum                normal     Yes    Apache httpd userdir index scanning
+   1   exploit/linux/http/advantech_webaccess    2016-02-08       average    Yes    Advantech WebAccess dashboard.cgi
+   2   exploit/multi/http/git_submodule_command   2017-08-09       excellent  Yes    Git Submodule Command Execution
+   3   exploit/multi/http/php_cgi_arg_injection   2012-05-11       excellent  Yes    PHP CGI Argument Injection
+   4   post/linux/gather/enum_system                              normal     No     Linux Gather System Information
+
+[*] Starting persistent handler(s)...
+msf6 >

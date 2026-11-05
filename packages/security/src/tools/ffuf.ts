@@ -4,11 +4,14 @@
 // Technique: web_enumeration.
 
 import { z } from "zod";
+import * as path from "node:path";
+import * as fsp from "node:fs/promises";
 import type { ToolContext, ToolDefinition, ToolHandler, ToolOutput } from "@nyx/protocol";
 import { parseActionUrl } from "../engagement/matcher.js";
 import type { SecurityToolMeta } from "../scope/tool_filter.js";
-import { cooperativeRate, runSecurityTool } from "./shared.js";
+import { assertWorkspacePath, cooperativeRate, egressProxyUrl, runSecurityTool } from "./shared.js";
 import type { SecurityToolDeps } from "./shared.js";
+import { HostSecurityExecutor } from "./executor.js";
 
 export const ffufInput = z
   .object({
@@ -21,10 +24,12 @@ export const ffufInput = z
       .string()
       .min(1)
       .max(512)
-      .regex(/^[A-Za-z0-9._\-/]+$/, "workspace-relative wordlist path")
+      .regex(/^[A-Za-z0-9._\-/]+$/, "workspace wordlist path")
       .refine(
-        (p) => !p.startsWith("/") && !p.split("/").includes(".."),
-        "wordlist must be workspace-relative with no .. segments",
+        // The runtime rewrites to absolute-under-workdir; both forms are
+        // legitimate, `..` never is (containment also rejects it upstream).
+        (p) => !p.split("/").includes(".."),
+        "wordlist must contain no .. segments",
       ),
     extensions: z
       .array(z.string().regex(/^\.?[a-z0-9]{1,10}$/, "extension like '.php' or 'php'"))
@@ -93,7 +98,7 @@ export function ffufHandler(deps: SecurityToolDeps): ToolHandler {
         ctx,
         deps,
         targets: [parsed],
-        buildArgs: () => {
+        buildArgs: async () => {
           // -json: newline-delimited JSON records on stdout; -s keeps the
           // per-match quiet printout the ONLY other stdout content, and the
           // record stream is what we parse (R3-6: -o/-of json on /dev/stdout
@@ -102,11 +107,54 @@ export function ffufHandler(deps: SecurityToolDeps): ToolHandler {
           const args = ["-json", "-s"];
           const rate = cooperativeRate(ctx.engagement!, FFUF_META);
           if (rate !== undefined) args.push("-rate", String(Math.max(1, rate)));
+          // Phase 6.1: ffuf honors an explicit proxy flag — point it at the
+          // engagement's ffuf-class listener so the per-class limit is
+          // enforced AT THE PROXY (the container env already carries the
+          // default listener for env-honoring tools; ffuf's explicit flag
+          // wins and gets the class attribution).
+          const proxy = egressProxyUrl(ctx, "ffuf");
+          if (proxy !== undefined) args.push("-x", proxy);
           if (input.extensions !== undefined && input.extensions.length > 0) {
             // ffuf appends the extension verbatim — the DOT is required.
             args.push("-e", input.extensions.map((e) => (e.startsWith(".") ? e : `.${e}`)).join(","));
           }
-          args.push("-w", input.wordlist);
+          // R3-12 (closed Phase 6.2): the wordlist path must resolve where
+          // the BINARY will read it, not where the containment check ran.
+          // Sandbox executor: cwd is the workspace — pass the workspace-
+          // relative path unchanged. Real host executor: resolve to an
+          // ABSOLUTE path from the harness cwd and fail LOUDLY if missing,
+          // instead of letting ffuf die on a confusing "no such file".
+          // (An injected executor — tests — gets the path verbatim.)
+          const wordlist = assertWorkspacePath(ctx, input.wordlist, "wordlist");
+          const realHost =
+            deps.executor instanceof HostSecurityExecutor ||
+            (deps.executor === undefined && deps.use_sandbox_executor !== true);
+          if (realHost) {
+            // After the runtime's containment rewrite the path is absolute
+            // under the SANDBOX workdir; on the host that only exists with
+            // the local provider (its workdir IS a host dir). The docker+
+            // host combination cannot address workspace files — R3-12's
+            // closure: fail LOUDLY with the turnkey recommendation instead
+            // of ffuf's confusing "no such file".
+            const absolute = path.resolve(ctx.sandbox.workdir, wordlist);
+            try {
+              const stat = await fsp.stat(absolute);
+              if (!stat.isFile()) throw new Error("not a file");
+            } catch {
+              throw Object.assign(
+                new Error(
+                  `wordlist "${wordlist}" is not readable on the host at ${absolute} ` +
+                    "(the host executor only addresses workspace files with the local provider). " +
+                    "Use the sandbox executor (security.executor: \"sandbox\") — the turnkey live " +
+                    "mode since the Phase 6.1 egress proxy.",
+                ),
+                { name: "SecurityToolError", code: "skill.error" as const },
+              );
+            }
+            args.push("-w", absolute);
+          } else {
+            args.push("-w", wordlist);
+          }
           args.push("-u", input.url);
           return args;
         },

@@ -49,8 +49,9 @@ export interface RunSecurityToolOptions {
   deps: SecurityToolDeps;
   /** The action's network targets (already parsed and schema-validated). */
   targets: ScopeTargetQuery[];
-  /** argv from the VALIDATED input — every token charset-guarded. */
-  buildArgs: () => string[];
+  /** argv from the VALIDATED input — every token charset-guarded. May be
+   *  async (e.g. ffuf's host-mode wordlist existence check, R3-12). */
+  buildArgs: () => string[] | Promise<string[]>;
   /** Map the binary's stdout into the tool output (throws on malformed). */
   parse: (stdout: string, ctx: ToolContext) => Promise<ToolOutput>;
   timeout_ms?: number;
@@ -69,6 +70,61 @@ export function denied(ctx: ToolContext, detail: string): ToolOutput {
     ts: Date.now(),
   });
   return { kind: "text", text: `denied by scope: ${detail}` };
+}
+
+/**
+ * Phase 6.1/6.2 — the per-rate-class proxy URL for binaries with an explicit
+ * proxy flag (sqlmap --proxy, ffuf -x). The port maps to the engagement's
+ * class listener, so per-class limits are enforced AT THE PROXY the tool
+ * targets; the per-host default aggregate applies on every listener
+ * regardless (docs/EGRESS-PROXY.md). Returns undefined when the sandbox is
+ * not egress-proxied (network none / host executor — the Phase 5 posture:
+ * the tool layer is then the only gate).
+ */
+/**
+ * Normalize a path-field value to its workspace-RELATIVE form. The tool
+ * runtime rewrites path fields to absolute-under-workdir (containment);
+ * handlers and sandbox APIs work in the relative form (the sandbox's own
+ * exec/readFile re-contain it). Phase 6.2: without this, the rewritten
+ * absolute form clashed with the workspace-relative zod shapes (the Phase 5
+ * ffuf production path was broken — caught while wiring nuclei templates).
+ */
+export function workspaceRelative(ctx: ToolContext, p: string): string {
+  const workdir = ctx.sandbox?.workdir ?? "";
+  if (workdir !== "" && p.startsWith(workdir + "/")) return p.slice(workdir.length + 1);
+  return p;
+}
+
+/**
+ * The handler-level path guard for path-field inputs (Phase 6.2): `..`
+ * never passes; an ABSOLUTE path must be inside the sandbox workdir (the
+ * runtime's containment rewrite produces exactly that form — a direct
+ * handler call with /etc/passwd is still refused, R1-1). Returns the
+ * workspace-RELATIVE form for sandbox APIs and argv.
+ */
+export function assertWorkspacePath(ctx: ToolContext, p: string, label: string): string {
+  if (p.split("/").includes("..")) {
+    throw Object.assign(
+      new Error(`${label} must contain no .. segments`),
+      { name: "SecurityToolError", code: "skill.error" as const },
+    );
+  }
+  const workdir = ctx.sandbox?.workdir ?? "";
+  if (p.startsWith("/")) {
+    if (workdir === "" || !(p === workdir || p.startsWith(workdir + "/"))) {
+      throw Object.assign(
+        new Error(`${label} "${p}" is absolute and outside the sandbox workdir "${workdir}"`),
+        { name: "SecurityToolError", code: "skill.error" as const },
+      );
+    }
+  }
+  return workspaceRelative(ctx, p);
+}
+
+export function egressProxyUrl(ctx: ToolContext, rateClass: string): string | undefined {
+  const egress = ctx.sandbox?.egress;
+  if (egress === undefined) return undefined;
+  return `http://${egress.gateway}:${egress.portFor(rateClass)}`;
 }
 
 export async function runSecurityTool(opts: RunSecurityToolOptions): Promise<ToolOutput> {
@@ -122,7 +178,7 @@ export async function runSecurityTool(opts: RunSecurityToolOptions): Promise<Too
   // Fire — argv composed only from validated input, charset-guarded. The
   // executor resolves per call when not injected: the session sandbox (the
   // sandbox's own exec transport) or the host with no shell.
-  const args = opts.buildArgs();
+  const args = await opts.buildArgs();
   const executor: SecurityExecutor =
     deps.executor ??
     (deps.use_sandbox_executor === true

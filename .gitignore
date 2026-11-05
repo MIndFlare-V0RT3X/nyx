@@ -12,3 +12,4 @@ data/
 *.sqlite-shm
 .DS_Store
 nyx.config.yaml
+.sqlmap/

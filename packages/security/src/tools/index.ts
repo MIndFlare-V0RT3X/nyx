@@ -19,6 +19,28 @@ import { NUCLEI_META, nucleiDefinition, nucleiHandler } from "./nuclei.js";
 import { FFUF_META, ffufDefinition, ffufHandler } from "./ffuf.js";
 import { KATANA_META, katanaDefinition, katanaHandler } from "./katana.js";
 import { NMAP_META, nmapDefinition, nmapHandler } from "./nmap.js";
+import {
+  SQLMAP_EXPLOIT_META,
+  SQLMAP_SCAN_META,
+  sqlmapExploitDefinition,
+  sqlmapExploitHandler,
+  sqlmapScanDefinition,
+  sqlmapScanHandler,
+} from "./sqlmap.js";
+import {
+  NUCLEI_TEMPLATE_META,
+  nucleiTemplateDefinition,
+  nucleiTemplateHandler,
+} from "./nuclei_template.js";
+import {
+  MSF_RUN_META,
+  MSF_SEARCH_META,
+  msfRunDefinition,
+  msfRunHandler,
+  msfSearchDefinition,
+  msfSearchHandler,
+} from "./msf.js";
+import { BURP_META, burpDefinition, burpHandler } from "./burp.js";
 
 export interface RegisterSecurityToolsDeps {
   /** The findings store over the shared nyx.db handle. */
@@ -62,6 +84,13 @@ export function registerSecurityTools(
     { def: ffufDefinition, handler: () => ffufHandler(shared), meta: { name: "security.ffuf", meta: FFUF_META } },
     { def: katanaDefinition, handler: () => katanaHandler(shared), meta: { name: "security.katana", meta: KATANA_META } },
     { def: nmapDefinition, handler: () => nmapHandler(shared), meta: { name: "security.nmap", meta: NMAP_META } },
+    // Phase 6.2 — the exploitation toolkit (docs/EXPLOITATION.md).
+    { def: sqlmapScanDefinition, handler: () => sqlmapScanHandler({ ...shared, store: deps.store }), meta: { name: "security.sqlmap-scan", meta: SQLMAP_SCAN_META } },
+    { def: sqlmapExploitDefinition, handler: () => sqlmapExploitHandler(shared), meta: { name: "security.sqlmap-exploit", meta: SQLMAP_EXPLOIT_META } },
+    { def: nucleiTemplateDefinition, handler: () => nucleiTemplateHandler({ ...shared, store: deps.store }), meta: { name: "security.nuclei-template", meta: NUCLEI_TEMPLATE_META } },
+    { def: msfSearchDefinition, handler: () => msfSearchHandler(shared), meta: { name: "security.msf-search", meta: MSF_SEARCH_META } },
+    { def: msfRunDefinition, handler: () => msfRunHandler(shared), meta: { name: "security.msf-run", meta: MSF_RUN_META } },
+    { def: burpDefinition, handler: () => burpHandler(shared), meta: { name: "security.burp", meta: BURP_META } },
   ];
 
   for (const r of registrations) {

@@ -5,7 +5,7 @@ when_to_use: "Enumerating hidden paths or parameters on a target you are already
 tools: ["security.ffuf"]
 persona_scope: ["security"]
 attack_class: enum
-version: 1.0.0
+version: 1.1.0
 ---
 
 # ffuf — web fuzzing
@@ -24,9 +24,10 @@ before drawing conclusions.
 - The engagement's ffuf rate bucket blocks, never drops — do not spawn
   parallel calls to "speed it up"; they share the same bucket and just wait.
 - The wordlist path is workspace-relative and containment-checked; place
-  wordlists in the workspace first. With `security.executor: "host"` the
-  path must also resolve from the harness process's working directory —
-  the sandbox executor is the turnkey mode.
+  wordlists in the workspace first. The sandbox executor is the turnkey
+  live mode (Phase 6.1 egress proxy); the host executor only addresses
+  workspace files with the local provider and fails loudly otherwise
+  (R3-12, closed Phase 6.2).
 - Fuzzing sibling paths outside the authorized subtree is denied by scope.
 
 ## Preserving output

@@ -9,12 +9,15 @@
 # Versions are ARGs so operators can pin differently, but they MUST be set:
 # an empty ARG fails the build loudly rather than silently floating.
 #
-# NOTE (Phase 5 scope): the sandbox this image feeds is still --network none
-# by Phase 0 design; container-level egress ACLs are on the roadmap (an
-# egress proxy). Until then the security tools run through the harness's
-# checked egress path with executor "host" (operator-installed binaries) or
-# inside this image for offline/local processing. This image is the pinned
-# foundation the network mode will build on.
+# Phase 6: with the egress proxy (docs/EGRESS-PROXY.md), engagement
+# sandboxes on this image are LIVE through the kernel-process proxy — every
+# outbound connection scope-checked and rate-limited at the CONNECT layer.
+# Phase 6.2 adds sqlmap (pinned pip release). Metasploit (msfconsole) is
+# OPERATOR-INSTALLED — the official omnibus installer is not a reproducible
+# package; see docs/EXPLOITATION.md. Burp runs on the operator's
+# workstation behind the egress proxy (docs/EXPLOITATION.md), never in the
+# container (a GUI app needs an X11 socket — the exact fd-leak bypass the
+# Phase 6.1 bypass suite forbids).
 #
 # nmap comes from the Debian archive (bookworm ships 7.93 — the upstream
 # 7.993 is NOT packaged for this suite; building it from source would need
@@ -28,6 +31,7 @@ ARG NUCLEI_VERSION=v3.11.1
 ARG FFUF_VERSION=v2.3.0
 ARG KATANA_VERSION=v1.8.0
 ARG NMAP_VERSION=7.93+dfsg1-1
+ARG SQLMAP_VERSION=1.10.11
 ARG TARGETARCH
 
 RUN : "${SUBFINDER_VERSION:?SUBFINDER_VERSION must be pinned}" \
@@ -36,6 +40,7 @@ RUN : "${SUBFINDER_VERSION:?SUBFINDER_VERSION must be pinned}" \
  && : "${FFUF_VERSION:?FFUF_VERSION must be pinned}" \
  && : "${KATANA_VERSION:?KATANA_VERSION must be pinned}" \
  && : "${NMAP_VERSION:?NMAP_VERSION must be pinned}" \
+ && : "${SQLMAP_VERSION:?SQLMAP_VERSION must be pinned}" \
  && : "${TARGETARCH:?TARGETARCH must be set (buildx provides it)}"
 
 RUN apt-get update \
@@ -43,8 +48,7 @@ RUN apt-get update \
       ca-certificates \
       curl \
       unzip \
-      "nmap=${NMAP_VERSION}" \
- && rm -rf /var/lib/apt/lists/*
+      "nmap=${NMAP_VERSION}"       python3-minimal       python3-pip  && rm -rf /var/lib/apt/lists/*
 
 # ProjectDiscovery tools ship prebuilt per-arch zips (version WITHOUT the
 # leading v in the asset name; the binary sits at the zip root). ffuf ships
@@ -73,6 +77,11 @@ RUN subfinder -version 2>&1 | grep -q "v${SUBFINDER_VERSION#v}" \
  && katana -version 2>&1 | grep -q "v${KATANA_VERSION#v}" \
  && ffuf -V | grep -q "version ${FFUF_VERSION#v}" \
  && nmap --version | grep -q "Nmap version ${NMAP_VERSION%%+*}"
+
+# sqlmap: pinned pip release (upstream publishes on PyPI; the pin is the
+# release tag). The version check fails the build on mismatch like the rest.
+RUN pip3 install --no-cache-dir --break-system-packages "sqlmap==${SQLMAP_VERSION}" \
+ && sqlmap --version 2>&1 | grep -q "^${SQLMAP_VERSION}"
 
 # A small default wordlist for ffuf (operators mount their own at
 # /workspace/wordlists when they want more).

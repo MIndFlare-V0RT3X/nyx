@@ -16,7 +16,7 @@ import { scoreCvss3Vector } from "../findings/cvss3.js";
 import { scoreCvss4 } from "../findings/cvss4.js";
 import type { FindingStore } from "../findings/store.js";
 import type { SecurityToolMeta } from "../scope/tool_filter.js";
-import { cooperativeRate, parseJsonl, runSecurityTool } from "./shared.js";
+import { assertWorkspacePath, cooperativeRate, parseJsonl, runSecurityTool } from "./shared.js";
 import type { SecurityToolDeps } from "./shared.js";
 
 export const nucleiInput = z
@@ -25,6 +25,18 @@ export const nucleiInput = z
     templates: z
       .string()
       .regex(/^[a-z0-9-]+(,[a-z0-9-]+)*$/, "comma-separated template tags")
+      .optional(),
+    /** Phase 6.2: ONE custom workspace template (nuclei-template-from-finding
+     *  output) — -t <path>. The runtime contains it like ffuf's wordlist. */
+    template: z
+      .string()
+      .min(1)
+      .max(512)
+      .regex(/^[A-Za-z0-9._\-/]+$/, "workspace template path")
+      .refine(
+        (p) => !p.split("/").includes(".."),
+        "template must contain no .. segments",
+      )
       .optional(),
     severity: z
       .array(z.enum(["critical", "high", "medium", "low", "info"]))
@@ -47,6 +59,11 @@ const INPUT_SCHEMA = {
       type: "string",
       pattern: "^[a-z0-9-]+(,[a-z0-9-]+)*$",
       description: "Optional comma-separated nuclei template tags (e.g. 'cve,poc').",
+    },
+    template: {
+      type: "string",
+      pattern: "^[A-Za-z0-9._\\-/]+$",
+      description: "Optional ONE custom template file (workspace-relative, e.g. artifacts/nuclei-templates/finding-123.yaml) — the output of security.nuclei-template. Exclusive with 'templates'.",
     },
     severity: {
       type: "array",
@@ -133,6 +150,11 @@ export function nucleiHandler(deps: SecurityToolDeps & { store: FindingStore }):
         buildArgs: () => {
           const args = ["-jsonl", "-silent", "-nc"];
           if (input.templates !== undefined) args.push("-tags", input.templates);
+          if (input.template !== undefined) {
+            // Guarded (no ..; absolute only under the workdir) and normalized
+            // to the relative form — nuclei runs with the workspace as cwd.
+            args.push("-t", assertWorkspacePath(ctx, input.template, "template"));
+          }
           if (input.severity !== undefined && input.severity.length > 0) {
             args.push("-severity", input.severity.join(","));
           }

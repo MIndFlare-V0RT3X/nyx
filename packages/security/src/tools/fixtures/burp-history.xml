@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<items burpVersion="2023.12.1" exportTime="Wed Nov  5 12:00:00 2026">
+  <item>
+    <url><![CDATA[https://app.example.com/portal/login]]></url>
+    <host ip="203.0.113.20">app.example.com</host>
+    <port>443</port>
+    <protocol>https</protocol>
+    <method>POST</method>
+    <path><![CDATA[/portal/login]]></path>
+    <status>200</status>
+    <responselength>1523</responselength>
+    <mimetype>HTML</mimetype>
+    <request base64-encoded="true"><![CDATA[R0VUIC9wb3J0YWwvbG9naW4gSFRUUC8xLjE=]]></request>
+    <response base64-encoded="true"><![CDATA[SFRUUC8xLjEgMjAwIE9L]]></response>
+  </item>
+  <item>
+    <url><![CDATA[https://app.example.com/api/users?q=admin]]></url>
+    <host ip="203.0.113.20">app.example.com</host>
+    <port>443</port>
+    <protocol>https</protocol>
+    <method>GET</method>
+    <path><![CDATA[/api/users?q=admin]]></path>
+    <status>500</status>
+    <responselength>642</responselength>
+    <mimetype>JSON</mimetype>
+    <request base64-encoded="true"><![CDATA[R0VUIC9hcGkvdXNlcnM/cT1hZG1pbg==]]></request>
+    <response base64-encoded="true"><![CDATA[SFRUUC8xLjEgNTAwIEludGVybmFsIFNlcnZlciBFcnJvcg==]]></response>
+  </item>
+  <item>
+    <url><![CDATA[https://out-of-scope.example.net/private]]></url>
+    <host ip="198.51.100.77">out-of-scope.example.net</host>
+    <port>443</port>
+    <protocol>https</protocol>
+    <method>GET</method>
+    <path><![CDATA[/private]]></path>
+    <status>200</status>
+    <responselength>120</responselength>
+    <mimetype>HTML</mimetype>
+    <request base64-encoded="true"><![CDATA[R0VUIC9wcml2YXRlIEhUVFAvMS4x]]></request>
+    <response base64-encoded="true"><![CDATA[SFRUUC8xLjEgMjAwIE9L]]></response>
+  </item>
+</items>

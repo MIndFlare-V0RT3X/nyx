@@ -71,6 +71,8 @@ const PATH_FIELDS: ReadonlyMap<string, readonly string[]> = new Map([
   ["shell.exec", []],
   ["web.fetch", []],
   ["security.ffuf", ["wordlist"]],
+  ["security.nuclei", ["template"]],
+  ["security.burp", ["file"]],
 ]);
 
 /** Everything the caller supplies per call; the runtime adds routing, enforcement, and timing. */
@@ -208,6 +210,23 @@ function extractEgressTarget(input: unknown): EgressExtraction {
   // A bare domain (subfinder-style).
   if (typeof obj.domain === "string" && obj.domain !== "") {
     return { ok: true, targets: [{ host: obj.domain }] };
+  }
+
+  // Metasploit-style RHOSTS (Phase 6.2): a host or CIDR like `target`, and
+  // may carry an RPORT sibling that materializes like the port field.
+  if (typeof obj.rhosts === "string" && obj.rhosts !== "") {
+    const extracted = extractHostEntry(obj.rhosts);
+    if (extracted === null) {
+      return { ok: false, reason: `invalid rhosts for network egress: ${JSON.stringify(obj.rhosts)}` };
+    }
+    const rport = obj.options !== null && typeof obj.options === "object"
+      ? (obj.options as Record<string, unknown>).RPORT
+      : undefined;
+    const port = typeof rport === "string" && /^\d+$/.test(rport) ? Number(rport) : undefined;
+    return {
+      ok: true,
+      targets: [{ host: extracted.host, ...(port !== undefined ? { port } : {}) }],
+    };
   }
 
   if (typeof obj.host === "string" && obj.host !== "") {
