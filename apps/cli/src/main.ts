@@ -32,6 +32,7 @@ import {
 import { listDeclaredModels, renderModels } from "./models.js";
 import { validateConfigFile } from "./validate.js";
 import { doctorChecks, renderDoctorReport } from "./doctor.js";
+import { pluginAudit, renderPluginAudit } from "./plugin.js";
 import { initNextSteps, runInit, STARTER_CONFIG_NAME } from "./init.js";
 import {
   bootstrapUserMd,
@@ -99,13 +100,15 @@ async function main(): Promise<void> {
     .option("--engagement <file>", "engagement YAML file bound at session creation (JSON also accepted)")
     .option("--session <id>", "reuse an existing session")
     .option("--allow-direct-egress", "dev-only: accept sandbox.egress_proxy.enabled: false (NYX_ENV=development required; the Phase 5 posture)")
+    .option("--allow-unsigned-plugins", "dev-only: accept plugins.signature_mode: off (NYX_ENV=development required; test-only mode)")
     .action(
       async (
         message: string,
-        opts: { persona?: string; engagement?: string; session?: string; allowDirectEgress?: boolean },
+        opts: { persona?: string; engagement?: string; session?: string; allowDirectEgress?: boolean; allowUnsignedPlugins?: boolean },
       ) => {
         const { config } = await resolveCliConfig(undefined, {
           ...(opts.allowDirectEgress === true ? { allow_direct_egress: true } : {}),
+          ...(opts.allowUnsignedPlugins === true ? { allow_unsigned_plugins: true } : {}),
         });
         const engagement =
           opts.engagement !== undefined
@@ -132,7 +135,8 @@ async function main(): Promise<void> {
     .option("--persona <id>", "persona id for a new session")
     .option("--engagement <file>", "engagement YAML file bound at session creation (JSON also accepted)")
     .option("--allow-direct-egress", "dev-only: accept sandbox.egress_proxy.enabled: false (NYX_ENV=development required; the Phase 5 posture)")
-    .action(async (opts: { session?: string; persona?: string; engagement?: string; allowDirectEgress?: boolean }) => {
+    .option("--allow-unsigned-plugins", "dev-only: accept plugins.signature_mode: off (NYX_ENV=development required; test-only mode)")
+    .action(async (opts: { session?: string; persona?: string; engagement?: string; allowDirectEgress?: boolean; allowUnsignedPlugins?: boolean }) => {
       if (process.stdin.isTTY !== true) {
         fatal(
           'chat requires an interactive terminal (stdin is not a TTY); use `nyx run "<message>"` for one-shot turns',
@@ -140,6 +144,7 @@ async function main(): Promise<void> {
       }
       const { config } = await resolveCliConfig(undefined, {
         ...(opts.allowDirectEgress === true ? { allow_direct_egress: true } : {}),
+        ...(opts.allowUnsignedPlugins === true ? { allow_unsigned_plugins: true } : {}),
       });
       const engagement =
         opts.engagement !== undefined
@@ -356,6 +361,28 @@ async function main(): Promise<void> {
     .action(async () => {
       const report = await doctorChecks();
       process.stdout.write(`${renderDoctorReport(report)}\n`);
+      process.exitCode = report.exit_code;
+    });
+
+  const plugin = program
+    .command("plugin")
+    .description("third-party plugin tooling (Phase 7.2: manifest v2, Ed25519 signatures)");
+  plugin
+    .command("audit")
+    .description(
+      "static trust audit of a plugin directory: manifest v2, index.js integrity, signature against trusted keys, declared capabilities",
+    )
+    .argument("<dir>", "the plugin directory (manifest.json + index.js)")
+    .option("--trusted-keys <file>", "trusted keys JSON (default: ~/.nyx/plugins/trusted-keys.json)")
+    .action(async (dir: string, opts: { trustedKeys?: string }) => {
+      const { config } = await resolveCliConfig();
+      const report = await pluginAudit(dir, {
+        ...(opts.trustedKeys !== undefined ? { trusted_keys_file: opts.trustedKeys } : {}),
+        ...(config.plugins.signature_mode !== undefined
+          ? { configured_mode: config.plugins.signature_mode }
+          : {}),
+      });
+      process.stdout.write(`${renderPluginAudit(dir, report)}\n`);
       process.exitCode = report.exit_code;
     });
 

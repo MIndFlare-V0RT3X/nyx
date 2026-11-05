@@ -14,8 +14,10 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { CapabilityError } from "@nyx/protocol";
 import type {
+  Capability,
   Kernel,
   Plugin,
+  PluginAuditRecord,
   PluginManifest,
   ServiceRegistry,
   ToolDefinition,
@@ -25,18 +27,20 @@ import type {
 import { HookBusImpl } from "./hooks.js";
 import type { HookScope } from "./hooks.js";
 import {
+  DependencyVersionError,
   DuplicatePluginError,
   KernelClosedError,
   ManifestValidationError,
   MissingDependencyError,
   PluginInUseError,
+  PluginMutationError,
   PluginTeardownError,
   PluginVersionError,
   ServiceNamespaceError,
   ToolOwnershipError,
   UnknownPluginError,
 } from "./errors.js";
-import { manifestIssues, pluginManifestSchema } from "./manifest.js";
+import { manifestIssues, pluginManifestSchema, v1MigrationHints } from "./manifest.js";
 import { ServiceRegistryImpl, ToolRegistryImpl } from "./registry.js";
 import { satisfies } from "./semver.js";
 
@@ -68,6 +72,8 @@ export class KernelImpl implements Kernel {
   readonly #plugins = new Map<string, LoadedPlugin>();
   /** Manifests of plugins whose setup is still running (hook owners need them). */
   readonly #loading = new Map<string, PluginManifest>();
+  /** Capabilities each plugin actually exercised (tool registrations). */
+  readonly #usedCapabilities = new Map<string, Set<Capability>>();
   readonly #als = new AsyncLocalStorage<EnforcementState>();
   #closed = false;
 
@@ -80,13 +86,15 @@ export class KernelImpl implements Kernel {
   }
 
   /**
-   * Validate the manifest, check version compatibility and dependencies, then
-   * run `plugin.setup` inside the plugin's enforcement context. If setup
-   * throws, nothing the plugin registered survives and the error propagates
-   * unwrapped.
+   * Validate the manifest (v2), check version compatibility and dependencies
+   * (names present, versions in range), refuse mutation from plugin code,
+   * then run `plugin.setup` inside the plugin's enforcement context. If
+   * setup throws, nothing the plugin registered survives and the error
+   * propagates unwrapped.
    */
   async use(plugin: Plugin): Promise<void> {
     if (this.#closed) throw new KernelClosedError("use");
+    this.#refusePluginMutation("use");
     const manifest = this.#validateManifest(plugin);
     if (this.#plugins.has(manifest.name) || this.#loading.has(manifest.name)) {
       throw new DuplicatePluginError(manifest.name);
@@ -94,9 +102,21 @@ export class KernelImpl implements Kernel {
     if (!satisfies(manifest.nyx, this.version)) {
       throw new PluginVersionError(manifest.name, manifest.nyx, this.version);
     }
-    // Topological order is load order: dependencies must already be loaded.
-    const missing = (manifest.dependencies ?? []).filter((dep) => !this.#plugins.has(dep));
+    // Topological order is load order: dependencies must already be loaded
+    // at a version inside the declared range (Phase 7.2 manifest v2).
+    const missing = (manifest.dependencies ?? [])
+      .filter((dep) => !this.#plugins.has(dep.name))
+      .map((dep) => dep.name);
     if (missing.length > 0) throw new MissingDependencyError(manifest.name, missing);
+    const mismatches = (manifest.dependencies ?? [])
+      .map((dep) => {
+        const loaded = this.#plugins.get(dep.name);
+        return loaded !== undefined && !satisfies(dep.version_range, loaded.manifest.version)
+          ? { name: dep.name, loaded: loaded.manifest.version, range: dep.version_range }
+          : null;
+      })
+      .filter((m): m is { name: string; loaded: string; range: string } => m !== null);
+    if (mismatches.length > 0) throw new DependencyVersionError(manifest.name, mismatches);
 
     this.#loading.set(manifest.name, manifest);
     try {
@@ -108,6 +128,9 @@ export class KernelImpl implements Kernel {
       this.#loading.delete(manifest.name);
     }
     this.#plugins.set(manifest.name, { plugin, manifest });
+    if (!this.#usedCapabilities.has(manifest.name)) {
+      this.#usedCapabilities.set(manifest.name, new Set());
+    }
   }
 
   /**
@@ -118,10 +141,15 @@ export class KernelImpl implements Kernel {
    */
   async unuse(name: string): Promise<void> {
     if (this.#closed) throw new KernelClosedError("unuse");
+    this.#refusePluginMutation("unuse");
     const loaded = this.#plugins.get(name);
     if (!loaded) throw new UnknownPluginError(name);
     const dependents = [...this.#plugins.values()]
-      .filter((p) => p.manifest.name !== name && (p.manifest.dependencies ?? []).includes(name))
+      .filter(
+        (p) =>
+          p.manifest.name !== name &&
+          (p.manifest.dependencies ?? []).some((dep) => dep.name === name),
+      )
       .map((p) => p.manifest.name);
     if (dependents.length > 0) throw new PluginInUseError(name, dependents);
     try {
@@ -164,6 +192,48 @@ export class KernelImpl implements Kernel {
     }
   }
 
+  /**
+   * Capability audit for every loaded plugin (Phase 7.2): declared vs
+   * exercised capabilities; over-declaration surfaces as a warning. The
+   * signature/integrity status is the loader's to report (the kernel only
+   * sees in-process plugin objects).
+   */
+  list_plugins(): PluginAuditRecord[] {
+    return [...this.#plugins.values()].map(({ manifest }) => {
+      const declared = manifest.capabilities;
+      const used = [...(this.#usedCapabilities.get(manifest.name) ?? [])];
+      const unused = declared.filter((capability) => !used.includes(capability));
+      const warnings: string[] = [];
+      if (unused.length > 0) {
+        warnings.push(
+          `declares capability(ies) [${unused.join(", ")}] but never exercised them — remove them from the manifest (over-declaration weakens the audit trail)`,
+        );
+      }
+      return {
+        name: manifest.name,
+        version: manifest.version,
+        nyx: manifest.nyx,
+        capabilities: { declared, used },
+        ...(manifest.dependencies !== undefined ? { dependencies: manifest.dependencies } : {}),
+        warnings,
+      } satisfies PluginAuditRecord;
+    });
+  }
+
+  /**
+   * R3-14 closure: plugin code may not mutate the plugin set. A plugin that
+   * could `unuse` a neighbor could free its tool names and register its own
+   * handlers under them; a plugin that could `use` anything (itself
+   * included) could re-register under a fresh name. Only host code loads
+   * and unloads plugins.
+   */
+  #refusePluginMutation(action: "use" | "unuse"): void {
+    const active = this.#activeContext();
+    if (active !== null) {
+      throw new PluginMutationError(active.plugin, action);
+    }
+  }
+
   #validateManifest(plugin: Plugin): PluginManifest {
     const raw: unknown = (plugin as { manifest?: unknown } | null | undefined)?.manifest;
     if (typeof raw !== "object" || raw === null) {
@@ -175,7 +245,12 @@ export class KernelImpl implements Kernel {
     if (parsed.success) return parsed.data;
     const candidate = (raw as { name?: unknown }).name;
     const name = typeof candidate === "string" && candidate.length > 0 ? candidate : "<unknown>";
-    throw new ManifestValidationError(name, manifestIssues(parsed.error));
+    const issues = manifestIssues(parsed.error);
+    const hints = v1MigrationHints(raw);
+    throw new ManifestValidationError(
+      name,
+      hints.length > 0 ? [...issues, `v1→v2 migration: ${hints.join("; ")}`] : issues,
+    );
   }
 
   /** Current plugin enforcement context, or null when host code is calling. */
@@ -210,6 +285,13 @@ export class KernelImpl implements Kernel {
           if (owner !== undefined && owner !== active.plugin) {
             throw new ToolOwnershipError(active.plugin, def.name, owner, "register");
           }
+          // Capability audit (Phase 7.2): record what the plugin exercised.
+          let used = this.#usedCapabilities.get(active.plugin);
+          if (used === undefined) {
+            used = new Set();
+            this.#usedCapabilities.set(active.plugin, used);
+          }
+          for (const capability of def.capabilities) used.add(capability);
         }
         this.#backingTools.register(def, handler);
         this.#toolOwners.set(def.name, active ? active.plugin : null);
@@ -264,7 +346,8 @@ export class KernelImpl implements Kernel {
     }
   }
 
-  /** Remove everything a plugin registered: hooks, tools, namespaced services. */
+  /** Remove everything a plugin registered: hooks, tools, namespaced services,
+   *  and its capability-usage record. */
   #unloadRegistrations(name: string): void {
     this.hooks.removePlugin(name);
     for (const [toolName, owner] of [...this.#toolOwners]) {
@@ -274,6 +357,7 @@ export class KernelImpl implements Kernel {
       }
     }
     this.#backingServices.deletePrefixed(`plugin:${name}:`);
+    this.#usedCapabilities.delete(name);
   }
 }
 

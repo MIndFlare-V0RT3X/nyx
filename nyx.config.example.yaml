@@ -370,3 +370,18 @@ owner_id: owner
 #                                   #  container egress ACL roadmap lands) or
 #                                   #  "host" (operator-installed binaries,
 #                                   #  tool-layer checked egress)
+
+# ── plugins (Phase 7.2) ─────────────────────────────────────────────────────
+# Third-party plugins load through the trust pipeline: manifest v2, index.js
+# sha256 integrity, and an Ed25519 signature from a key in your
+# trusted-keys.json (EMPTY by default — nothing is trusted until you say so).
+# signature_mode: strict  requires signatures (production default)
+#                 warn    loads unsigned plugins with a warning (dev default)
+#                 off     test-only — needs NYX_ENV=development AND
+#                         --allow-unsigned-plugins, exactly like the egress
+#                         escape hatch; production refuses "off" outright
+# See templates/plugin/README.md for the trust model and the signing scripts.
+# plugins:
+#   signature_mode: strict
+#   trusted_keys_file: ~/.nyx/plugins/trusted-keys.json
+#   dirs: []                          # each entry = one plugin directory

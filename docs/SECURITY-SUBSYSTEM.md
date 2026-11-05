@@ -97,9 +97,9 @@ decision):
 | ~~`FindingStore.create()` accepts caller ids~~ (R2-5) | closed | **Phase 6.3**: create() verifies the session row exists and its bound engagement matches the finding's engagement id | — |
 | ~~Markdown reports interpolate finding text raw~~ (R2-8) | closed | **Phase 6.3**: every finding-controlled string is HTML-escaped in the Markdown report too (portals render pasted MD as HTML) | — |
 | Host INPUT services reachable from engagement bridges (6.4/R1-2) | medium | docker networking reality; the proxy's own listeners are subnet-gated, other host services are not NYX's to firewall — DOCKER-USER operator mitigation documented in EGRESS-PROXY.md | operator / Phase 7 host hardening |
-| The docker acceptance suite skips in CI (6.4/R1-6) | medium | CI is hermetic by design; the bypass proofs run where a daemon exists | Phase 7 CI |
+| The docker acceptance suite skips in CI (6.4/R1-6) | medium | **CLOSED Phase 7.1** — the `test-docker` CI lane runs the full suite + the five live bypass proofs against a real daemon; merge policy in `.github/BRANCH_PROTECTION.md` | closed |
 | URL-path scoping invisible to CONNECT (6.4/R1-8) | low | CONNECT carries host:port; TLS paths are encrypted — the tool layer enforces paths; plain-HTTP paths ARE enforced via absolute-form forwarding | never (protocol limit) |
-| Trusted plugins can re-register submit-cve at R1 (6.4/R3-14) | info | registry is a trusted-plugin surface; the R4 invariant itself is unbypassable | Phase 7 plugin trust |
+| Trusted plugins can re-register submit-cve at R1 (6.4/R3-14) | info | **CLOSED Phase 7.2** — the plugin set is host-only mutable (`PluginMutationError` on any plugin-attributed `use`/`unuse`: no self-loading, no neighbor-unloading, no name re-registration); third-party entry additionally requires manifest v2 + sha256 integrity + an Ed25519 signature from trusted-keys.json | closed |
 
 ## The Phase 5 fan-out review
 

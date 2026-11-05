@@ -1,8 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Zod schema for plugin manifests. Unknown keys are rejected; capability
-// values come from the frozen @nyx/protocol schema so the 13-value set cannot
-// drift. Per protocol's own convention, types and schemas are kept in sync by
-// hand — the compile-time assertions below fail the build on drift.
+// Zod schema for plugin manifests (v2 — Phase 7.2). Unknown keys are
+// rejected; capability values come from the frozen @nyx/protocol schema so
+// the set cannot drift. Per protocol's own convention, types and schemas are
+// kept in sync by hand — the compile-time assertions below fail the build on
+// drift.
+//
+// v2 over v1: `manifest_version: 2` discriminates; `dependencies` carry
+// version ranges ({name, version_range}); `integrity` pins index.js (sha256
+// hex); `signature` (optional) anchors the manifest to an operator-trusted
+// Ed25519 key. v1 manifests fail validation and get a migration message via
+// `v1MigrationHints`.
 
 import { z } from "zod";
 import { CapabilitySchema } from "@nyx/protocol";
@@ -29,10 +36,39 @@ export const pluginManifestSchema = z
       .string()
       .min(1)
       .refine((n) => !n.includes(":"), { message: "must not contain ':'" }),
+    manifest_version: z.literal(2, {
+      errorMap: () => ({
+        message:
+          "must be 2 — manifest v1 is no longer accepted (see v1MigrationHints / templates/plugin)",
+      }),
+    }),
     version: z.string().min(1),
     nyx: z.string().min(1),
     capabilities: z.array(CapabilitySchema),
-    dependencies: z.array(z.string().min(1)).optional(),
+    dependencies: z
+      .array(
+        z
+          .object({
+            name: z.string().min(1),
+            version_range: z.string().min(1),
+          })
+          .strict(),
+      )
+      .optional(),
+    integrity: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/, { message: "must be the 64-hex sha256 of the plugin's index.js" }),
+    signature: z
+      .object({
+        public_key: z.string().regex(/^[0-9a-f]{64}$/, {
+          message: "must be a 64-hex Ed25519 public key",
+        }),
+        signature: z.string().regex(/^[0-9a-f]{128}$/, {
+          message: "must be a 128-hex Ed25519 signature",
+        }),
+      })
+      .strict()
+      .optional(),
     hooks: z.array(z.enum(HOOK_NAMES)).optional(),
     tools: z.array(z.string().min(1)).optional(),
     permissions: z
@@ -50,6 +86,35 @@ export type ParsedPluginManifest = z.infer<typeof pluginManifestSchema>;
 // Compile-time guard: a parsed manifest must satisfy the frozen contract type.
 const parsedManifestIsPluginManifest: PluginManifest = null as unknown as ParsedPluginManifest;
 void parsedManifestIsPluginManifest;
+
+/**
+ * Targeted migration guidance when a manifest looks like v1: string-array
+ * dependencies, a missing `manifest_version`, or a missing `integrity`. The
+ * kernel appends these to the validation issues so the author sees WHAT to
+ * change, not just that parsing failed.
+ */
+export function v1MigrationHints(raw: unknown): string[] {
+  if (typeof raw !== "object" || raw === null) return [];
+  const hints: string[] = [];
+  const candidate = raw as Record<string, unknown>;
+  if (candidate.manifest_version === undefined) {
+    hints.push('add "manifest_version": 2');
+  }
+  if (Array.isArray(candidate.dependencies)) {
+    const hasStrings = candidate.dependencies.some((d) => typeof d === "string");
+    if (hasStrings) {
+      hints.push(
+        'dependencies must be objects: replace "dep-name" with { "name": "dep-name", "version_range": ">=1.0.0" }',
+      );
+    }
+  }
+  if (typeof candidate.integrity !== "string") {
+    hints.push(
+      'add "integrity": the sha256 hex of your index.js (templates/plugin/scripts/sign-manifest.mjs computes it)',
+    );
+  }
+  return hints;
+}
 
 /** Flatten a ZodError into human-readable "path: message" strings. */
 export function manifestIssues(error: z.ZodError): string[] {

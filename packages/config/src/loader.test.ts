@@ -202,6 +202,11 @@ describe("loadConfig — golden files", () => {
         enabled: true,
         executor: "sandbox",
       },
+      plugins: {
+        signature_mode: undefined,
+        trusted_keys_file: undefined,
+        dirs: [],
+      },
       owner_id: "owner",
     });
   });
@@ -561,6 +566,73 @@ describe("loadConfig — egress proxy posture (Phase 6.1)", () => {
     const file = await tempConfig(
       ["sandbox:", "  egress_proxy:", "    port: 70000", ROUTER].join("\n"),
     );
+    await expect(loadConfig(file, { env: {} })).rejects.toThrow(ConfigError);
+  });
+});
+
+describe("plugins config (Phase 7.2)", () => {
+  const PLUGINS_OFF = ["plugins:", "  signature_mode: off", ROUTER].join("\n");
+
+  it("defaults: empty dirs, unset mode (resolved at runtime by the app)", async () => {
+    const file = await tempConfig(ROUTER);
+    const cfg = await loadConfig(file, { env: {} });
+    expect(cfg.plugins).toEqual({ signature_mode: undefined, trusted_keys_file: undefined, dirs: [] });
+  });
+
+  it("accepts explicit strict/warn and a trusted-keys file + dirs", async () => {
+    const file = await tempConfig(
+      [
+        "plugins:",
+        "  signature_mode: strict",
+        "  trusted_keys_file: ~/.nyx/plugins/trusted-keys.json",
+        "  dirs:",
+        "    - ~/.nyx/plugins",
+        ROUTER,
+      ].join("\n"),
+    );
+    const cfg = await loadConfig(file, { env: {} });
+    expect(cfg.plugins.signature_mode).toBe("strict");
+    expect(cfg.plugins.dirs).toEqual(["~/.nyx/plugins"]);
+  });
+
+  it("signature_mode: off with NYX_ENV unset is a hard validation error", async () => {
+    const file = await tempConfig(PLUGINS_OFF);
+    await expect(loadConfig(file, { env: {} })).rejects.toThrow(/unsigned plugins are rejected/);
+  });
+
+  it("signature_mode: off with NYX_ENV=production is a hard validation error", async () => {
+    const file = await tempConfig(PLUGINS_OFF);
+    await expect(
+      loadConfig(file, { env: { NYX_ENV: "production" } }),
+    ).rejects.toThrow(/not "development"/);
+  });
+
+  it("signature_mode: off with development but WITHOUT the flag still errors", async () => {
+    const file = await tempConfig(PLUGINS_OFF);
+    await expect(
+      loadConfig(file, { env: { NYX_ENV: "development" } }),
+    ).rejects.toThrow(/--allow-unsigned-plugins/);
+  });
+
+  it("signature_mode: off with development AND --allow-unsigned-plugins loads (test-only escape hatch)", async () => {
+    const file = await tempConfig(PLUGINS_OFF);
+    const cfg = await loadConfig(file, {
+      env: { NYX_ENV: "development" },
+      allowUnsignedPlugins: true,
+    });
+    expect(cfg.plugins.signature_mode).toBe("off");
+  });
+
+  it("strict and warn need no flag in any environment", async () => {
+    for (const mode of ["strict", "warn"]) {
+      const file = await tempConfig(["plugins:", `  signature_mode: ${mode}`, ROUTER].join("\n"));
+      const cfg = await loadConfig(file, { env: { NYX_ENV: "production" } });
+      expect(cfg.plugins.signature_mode).toBe(mode);
+    }
+  });
+
+  it("unknown plugins fields are rejected (strict section)", async () => {
+    const file = await tempConfig(["plugins:", "  trust_everything: true", ROUTER].join("\n"));
     await expect(loadConfig(file, { env: {} })).rejects.toThrow(ConfigError);
   });
 });

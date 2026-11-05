@@ -24,6 +24,12 @@ export interface LoadConfigOptions {
    * only with NYX_ENV=development (see validateEgressPolicy).
    */
   allowDirectEgress?: boolean;
+  /**
+   * Phase 7.2 — the `--allow-unsigned-plugins` CLI flag. The ONLY way
+   * `plugins.signature_mode: "off"` passes validation, and even then only
+   * with NYX_ENV=development (see validatePluginPolicy).
+   */
+  allowUnsignedPlugins?: boolean;
 }
 
 /**
@@ -82,6 +88,14 @@ export async function loadConfig(
     configPath: path,
   });
 
+  // Phase 7.2 hard rule 3: plugin signatures are not optional in production.
+  // "off" is a test-only mode behind NYX_ENV=development AND the flag.
+  validatePluginPolicy(result.data, {
+    nyxEnv: env.NYX_ENV,
+    allowUnsignedPlugins: opts?.allowUnsignedPlugins === true,
+    configPath: path,
+  });
+
   return deepFreeze(result.data);
 }
 
@@ -104,6 +118,28 @@ export function validateEgressPolicy(
   throw new ConfigError(
     `${opts.configPath}: sandbox.egress_proxy.enabled: false is not permitted — the ` +
       `egress proxy is required in production (${where}; see docs/EGRESS-PROXY.md)`,
+  );
+}
+
+/**
+ * The plugin-signature posture check (Phase 7.2). `signature_mode: "off"` is
+ * the test-only mode: it requires NYX_ENV=development AND the explicit
+ * --allow-unsigned-plugins flag — the same double-confirmation as the egress
+ * escape hatch. `strict` and `warn` (and unset) are always legal.
+ */
+export function validatePluginPolicy(
+  config: { plugins?: { signature_mode?: "strict" | "warn" | "off" } },
+  opts: { nyxEnv: string | undefined; allowUnsignedPlugins: boolean; configPath: string },
+): void {
+  if (config.plugins?.signature_mode !== "off") return;
+  if (opts.nyxEnv === "development" && opts.allowUnsignedPlugins) return;
+  const where =
+    opts.nyxEnv === "development"
+      ? "pass --allow-unsigned-plugins to accept unsigned plugins"
+      : `NYX_ENV is "${opts.nyxEnv ?? "unset"}", not "development"`;
+  throw new ConfigError(
+    `${opts.configPath}: plugins.signature_mode: "off" is not permitted — unsigned ` +
+      `plugins are rejected in production (${where}; see templates/plugin/README.md)`,
   );
 }
 

@@ -305,3 +305,35 @@ set (host INPUT reachability, CI hermeticity, CONNECT's path blindness for
 TLS, plugin trust) is enumerated with owners and target phases in
 [SECURITY-SUBSYSTEM.md](SECURITY-SUBSYSTEM.md) and
 [EGRESS-PROXY.md](EGRESS-PROXY.md).
+
+## Phase 7.2 — plugin trust becomes explicit
+
+The R3-14 class is CLOSED: **the plugin set is host-only mutable.** Any
+plugin-attributed `kernel.use()`/`kernel.unuse()` — from setup, teardown, or
+a hook callback — throws `PluginMutationError` (code `plugin_mutation`); a
+plugin can no longer load itself, load collaborators, unload a neighbor to
+hijack its tool names, or re-register under a loaded name
+(`plugin_duplicate` remains for host-side double-loads). Third-party plugins
+additionally pass a three-gate loader before their code is ever imported:
+
+1. **manifest v2** — `manifest_version: 2`, dependencies as
+   `{name, version_range}` objects (verified against the loaded version),
+   and `integrity`: the sha256 of the plugin's `index.js`;
+2. **integrity** — the on-disk code must hash to the manifest's claim
+   (mismatch → `plugin_integrity`, in every mode except `off`);
+3. **signature** — Ed25519 over the canonical manifest JSON (the `signature`
+   block removed). `strict` (production default) requires it; `warn`
+   (development default) tolerates its absence but rejects a signature from
+   a key absent from the operator's `trusted-keys.json` — an unanchored
+   signature claim is rejected in EVERY mode. `off` is test-only:
+   `NYX_ENV=development` AND `--allow-unsigned-plugins`, the egress
+   escape-hatch pattern; production config validation refuses it outright.
+
+The trust anchor is `plugins.trusted_keys_file` (default
+`<data_dir>/plugins/trusted-keys.json`), **empty by default — nothing is
+trusted until the operator says so**. The dynamic capability audit ships
+with it: `kernel.list_plugins()` records every capability a plugin declared
+and exercised, and warns on over-declaration; the static half is
+`nyx plugin audit <dir>` (manifest, integrity, signature, capability
+surface, effective mode). The working template, keypair generator, and
+signing script are in [`templates/plugin/`](../templates/plugin/).

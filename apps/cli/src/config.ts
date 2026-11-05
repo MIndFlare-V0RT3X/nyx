@@ -30,7 +30,7 @@ export interface ResolvedConfig {
  */
 export async function resolveCliConfig(
   env: NodeJS.ProcessEnv = process.env,
-  opts: { allow_direct_egress?: boolean } = {},
+  opts: { allow_direct_egress?: boolean; allow_unsigned_plugins?: boolean } = {},
 ): Promise<ResolvedConfig> {
   const path = env[CONFIG_PATH_ENV] ?? DEFAULT_CONFIG_PATH;
   if (existsSync(path)) {
@@ -38,6 +38,7 @@ export async function resolveCliConfig(
       config: await loadConfig(path, {
         env,
         ...(opts.allow_direct_egress === true ? { allowDirectEgress: true } : {}),
+        ...(opts.allow_unsigned_plugins === true ? { allowUnsignedPlugins: true } : {}),
       }),
       source: { kind: "file", path },
     };

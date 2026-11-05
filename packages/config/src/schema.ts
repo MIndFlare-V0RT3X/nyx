@@ -438,6 +438,23 @@ export const configSchema = z
       })
       .strict()
       .default({}),
+    // Optional (Phase 7.2): third-party plugins. The signature gate runs at
+    // load time (loadPluginDirectory, @nyx/kernel); `off` requires
+    // NYX_ENV=development AND the --allow-unsigned-plugins flag (the Phase 6
+    // egress escape-hatch pattern). Unset signature_mode resolves at runtime:
+    // strict in production, warn in development. See templates/plugin/README.md.
+    plugins: z
+      .object({
+        signature_mode: z.enum(["strict", "warn", "off"]).optional(),
+        // Trust anchor: a JSON file { "keys": ["<64-hex Ed25519 public key>"] }.
+        // Missing file = empty trust set (nothing trusted). Default:
+        // <data_dir>/plugins/trusted-keys.json as resolved by the app.
+        trusted_keys_file: z.string().min(1).optional(),
+        // Plugin directories to scan (each entry = one plugin directory).
+        dirs: z.array(z.string().min(1)).default([]),
+      })
+      .strict()
+      .default({}),
     // Optional (Phase 2 §2.2): the four-tier compaction pipeline. Absent →
     // code defaults (documented in docs/COMPACTION.md).
     context: z
@@ -476,6 +493,7 @@ export type NyxChannelsConfig = z.infer<typeof configSchema>["channels"];
 export type NyxHeartbeatConfig = z.infer<typeof configSchema>["heartbeat"];
 export type NyxSkillsConfig = z.infer<typeof configSchema>["skills"];
 export type NyxSecurityConfig = z.infer<typeof configSchema>["security"];
+export type NyxPluginsConfig = z.infer<typeof configSchema>["plugins"];
 
 // ---------------------------------------------------------------------------
 // Compile-time drift probes. If either of these errors, the Zod mirror above

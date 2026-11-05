@@ -56,6 +56,84 @@ export class MissingDependencyError extends Error {
   }
 }
 
+/** A loaded dependency's version does not satisfy the declared range. */
+export class DependencyVersionError extends Error {
+  readonly code = "dependency_version" as const;
+  readonly plugin: string;
+  readonly mismatches: { name: string; loaded: string; range: string }[];
+
+  constructor(
+    plugin: string,
+    mismatches: { name: string; loaded: string; range: string }[],
+  ) {
+    super(
+      `plugin "${plugin}" has dependencies whose loaded versions miss the declared ranges: ${mismatches
+        .map((m) => `"${m.name}" ${m.loaded} !~ ${m.range}`)
+        .join(", ")}`,
+    );
+    this.name = "DependencyVersionError";
+    this.plugin = plugin;
+    this.mismatches = mismatches;
+  }
+}
+
+/**
+ * Plugin code tried to mutate the plugin set (use/unuse) — Phase 7.2's
+ * structural closure of the re-registration class (R3-14): only host code
+ * may load or unload plugins. A plugin that could unuse() a neighbor could
+ * free its tool names and hijack them; now the attempt refuses here.
+ */
+export class PluginMutationError extends Error {
+  readonly code = "plugin_mutation" as const;
+  readonly plugin: string;
+  readonly action: "use" | "unuse";
+
+  constructor(plugin: string, action: "use" | "unuse") {
+    super(
+      `plugin "${plugin}" cannot call kernel.${action}(): the plugin set is host-only mutable (R3-14 closure)`,
+    );
+    this.name = "PluginMutationError";
+    this.plugin = plugin;
+    this.action = action;
+  }
+}
+
+/**
+ * A plugin from disk failed its signature gate: unsigned in strict mode, a
+ * bad signature, or signed by a key absent from trusted-keys.json (rejected
+ * even in warn mode — a signature is an anchor claim, not a decoration).
+ */
+export class PluginSignatureError extends Error {
+  readonly code = "plugin_signature" as const;
+  readonly plugin: string;
+  readonly reason: "unsigned" | "untrusted_key" | "invalid_signature" | "malformed";
+
+  constructor(plugin: string, reason: PluginSignatureError["reason"], detail: string) {
+    super(`plugin "${plugin}" failed signature verification (${reason}): ${detail}`);
+    this.name = "PluginSignatureError";
+    this.plugin = plugin;
+    this.reason = reason;
+  }
+}
+
+/** The on-disk index.js does not match the manifest's `integrity` sha256. */
+export class PluginIntegrityError extends Error {
+  readonly code = "plugin_integrity" as const;
+  readonly plugin: string;
+  readonly declared: string;
+  readonly actual: string;
+
+  constructor(plugin: string, declared: string, actual: string) {
+    super(
+      `plugin "${plugin}" integrity mismatch: manifest declares sha256 ${declared} but index.js hashes to ${actual}`,
+    );
+    this.name = "PluginIntegrityError";
+    this.plugin = plugin;
+    this.declared = declared;
+    this.actual = actual;
+  }
+}
+
 /** A plugin with the same name is already loaded. */
 export class DuplicatePluginError extends Error {
   readonly code = "plugin_duplicate" as const;
