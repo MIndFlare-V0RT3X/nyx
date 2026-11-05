@@ -2,9 +2,63 @@
 
 All notable changes to NYX are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows
-SemVer once 0.1.0 ships.
+SemVer. 0.7.0 is the first tagged release — everything before it shipped
+as unreleased phases, recorded below in order.
 
 ## [Unreleased]
+
+## [0.7.0] — 2026-11-06
+
+The first publishable release: Phases 0–7, feature-complete against the
+original roadmap. 1303 tests (1282 passing + 21 docker-gated bypass proofs
+that run live in the `test-docker` CI lane), lint clean, typecheck clean,
+SPDX headers on all 387 source files.
+
+### Added — Phase 7 (release readiness: CI · plugin trust · process split · behavioral evals)
+
+- **Two-lane CI (7.1, closes R1-6)** — `test-fast` (hermetic, every push +
+  PR, < 2 min warm) and `test-docker` (the full suite against a real
+  daemon: the FIVE live egress bypass proofs — namespace escape, fd leak,
+  unix socket pass, DoH through the proxy, raw socket — a CONNECT-tunnel
+  traffic companion with audit-row assertion, and the Dockerfile.security
+  rebuild verification). `NYX_SKIP_DOCKER` joins the turbo test hash so a
+  hermetic result can never be replayed as a docker-lane pass. Merge
+  policy: `.github/BRANCH_PROTECTION.md`.
+- **Plugin security hardening (7.2, closes R3-14)** — manifest v2
+  (version-range dependencies, index.js sha256 `integrity`, optional
+  Ed25519 `signature` over the canonical manifest), a three-gate loader
+  (manifest → integrity → signature), trusted-keys.json trust anchor
+  (empty by default), strict/warn/off signature modes (off is test-only:
+  `NYX_ENV=development` + `--allow-unsigned-plugins`), host-only plugin-set
+  mutability (`PluginMutationError` — no self-loading, no neighbor
+  unloading, no tool-name hijack), the declared-vs-exercised capability
+  audit (`kernel.list_plugins()`, `nyx plugin audit`), and a working
+  template with keypair generator + signing script (`templates/plugin/`).
+- **Process split (7.3)** — `@nyx/ipc` (versioned JSON-RPC v1 over
+  token-authenticated unix sockets, NDJSON frames, mandatory handshake)
+  and `@nyx/split`: nyx-kernel (config, credential vault — env read once,
+  memory-only, nothing on disk — policy, approvals, audit, nyx.db, memory,
+  tasks), nyx-agent (loop, persona, model router; API keys arrive as
+  scoped 60-second tokens via `credential.inject`), nyx-tools (registry,
+  runtime, sandbox; learns only the runtime dir). Scrubbed child
+  environments; the IPC token rotates on agent restart (replay is dead).
+  Single mode remains the default and byte-identical to Phase 6.
+  `docs/PROCESS-MODEL.md` documents the honest Phase 7 scope.
+- **Behavioral evals (7.4)** — `tests/evals/`: twelve event-log-asserting
+  evals (clarification, validator-before-done, scope enforcement,
+  approval flow, subagent delegation, compaction trigger, memory write,
+  rate pacing, CVE correlation, disclosure integrity, abort propagation,
+  ownership refusal) against real components with a scripted provider; a
+  recorded baseline (pass/fail + event-type histogram) gates CI on drift;
+  `--eval-update` regenerates with a printed diff; a known-regression test
+  proves the gate catches corruption. `docs/EVALS.md`.
+- **Release surface (7.5)** — README restructured security-model-first
+  (the R1-2 host-INPUT residual is the headline, with its DOCKER-USER
+  mitigation), CODE_OF_CONDUCT, issue templates (bug / feature / security),
+  PR template, CONTRIBUTING extended (CI lanes, adding a skill / plugin /
+  tool wrapper / eval), `scripts/check-spdx.mjs` (387/387 source files),
+  version 0.7.0 everywhere, this entry, and the signed `v0.7.0` tag with
+  its tarball sha256 in the release notes.
 
 ### Added — Phase 6 (egress proxy · exploitation tooling · CVE disclosure)
 

@@ -1,7 +1,7 @@
 {
   "name": "@nyx/tools",
-  "version": "0.1.0",
-  "description": "NYX — tools package",
+  "version": "0.7.0",
+  "description": "NYX \u2014 tools package",
   "type": "module",
   "license": "AGPL-3.0-or-later",
   "main": "./dist/index.js",

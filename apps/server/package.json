@@ -1,6 +1,6 @@
 {
   "name": "@nyx/server",
-  "version": "0.1.0",
+  "version": "0.7.0",
   "description": "NYX \u2014 server package",
   "type": "module",
   "license": "AGPL-3.0-or-later",

@@ -1,7 +1,7 @@
 {
   "name": "@nyx/runtime",
-  "version": "0.1.0",
-  "description": "NYX — runtime orchestration: lane queue, cron parser, heartbeat scheduler",
+  "version": "0.7.0",
+  "description": "NYX \u2014 runtime orchestration: lane queue, cron parser, heartbeat scheduler",
   "type": "module",
   "license": "AGPL-3.0-or-later",
   "main": "./dist/index.js",

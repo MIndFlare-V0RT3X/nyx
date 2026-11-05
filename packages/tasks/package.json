@@ -1,7 +1,7 @@
 {
   "name": "@nyx/tasks",
-  "version": "0.1.0",
-  "description": "NYX — durable tasks (restart-surviving long-running work on the subagent substrate)",
+  "version": "0.7.0",
+  "description": "NYX \u2014 durable tasks (restart-surviving long-running work on the subagent substrate)",
   "type": "module",
   "license": "AGPL-3.0-or-later",
   "main": "./dist/index.js",

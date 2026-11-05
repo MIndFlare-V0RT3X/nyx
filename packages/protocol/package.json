@@ -1,7 +1,7 @@
 {
   "name": "@nyx/protocol",
-  "version": "0.1.0",
-  "description": "NYX — protocol package",
+  "version": "0.7.0",
+  "description": "NYX \u2014 protocol package",
   "type": "module",
   "license": "AGPL-3.0-or-later",
   "main": "./dist/index.js",

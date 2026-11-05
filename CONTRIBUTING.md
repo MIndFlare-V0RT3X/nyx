@@ -22,10 +22,42 @@ and `BUILD-CONVENTIONS.md` for the working agreement every package follows.
 
 - pnpm 9 workspaces + Turborepo. Node >= 22 (24 LTS recommended).
 - `pnpm install && pnpm build && pnpm test && pnpm lint` must pass from a
-  clean clone before any PR.
+  clean clone before any PR. The SPDX audit runs with
+  `node scripts/check-spdx.mjs` (CI runs it too).
 - Conventional Commits: `feat(kernel): ...`, `test(session): ...`.
 - Every package ships a README, a vitest suite, and exported types.
 - Every source file carries `// SPDX-License-Identifier: AGPL-3.0-or-later`.
+
+## CI (two lanes)
+
+- **test-fast** — hermetic, every push and PR (`NYX_SKIP_DOCKER=1`); target
+  < 2 min warm.
+- **test-docker** — the full suite against a real docker daemon (the five
+  live egress bypass proofs + the Dockerfile.security rebuild verification).
+  Runs on `main`, tags, and PRs touching `packages/sandbox`,
+  `packages/security`, `Dockerfile.security`, or the workflow — or carrying
+  the `docker` label. Merge policy: `.github/BRANCH_PROTECTION.md`.
+- Both lanes run the behavioral evals' baseline gate
+  (`tests/evals/` — offline, no docker needed).
+
+## Adding things
+
+- **A skill** (`docs/SKILLS.md`): a SKILL.md with strict frontmatter under
+  a scanned dir; progressive disclosure via the `load_skill` tool. The
+  persona's own `skills/` dir joins the scan automatically.
+- **A plugin** (`templates/plugin/`): copy the template, declare exactly
+  the capabilities you exercise, generate a keypair, sign the manifest,
+  and add the public key to `trusted-keys.json`. `nyx plugin audit <dir>`
+  checks everything statically; the kernel re-verifies at load time and
+  refuses untrusted or tampered code. The plugin set is host-only mutable.
+- **A tool wrapper**: a ToolDefinition (zod-checked input, risk tier,
+  capabilities) + handler; register it on the tool registry. Real binaries
+  get a real-binary-format integration test — synthetic fixtures hide
+  parsing bugs (the Phase 5 R3 lesson; Phase 7 §0.1's two-layer rule: a
+  handler with a runtime wrapper ships a paired test through the runtime).
+- **A behavioral eval** (`docs/EVALS.md`): a YAML spec with EVENT-LOG
+  assertions, then `pnpm --filter @nyx/evals eval:update` to record the
+  baseline — commit spec and baseline together.
 
 ## License
 

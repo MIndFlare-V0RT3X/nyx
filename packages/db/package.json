@@ -1,7 +1,7 @@
 {
   "name": "@nyx/db",
-  "version": "0.1.0",
-  "description": "NYX — unified database: single-file nyx.db, split-DB migration, transactional event+audit appends",
+  "version": "0.7.0",
+  "description": "NYX \u2014 unified database: single-file nyx.db, split-DB migration, transactional event+audit appends",
   "type": "module",
   "license": "AGPL-3.0-or-later",
   "main": "./dist/index.js",

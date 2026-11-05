@@ -92,6 +92,8 @@ jobs:
       # can never be served to the docker lane (or vice versa).
       - run: pnpm exec turbo run test --cache-dir=.turbo
       - run: pnpm lint
+      # Phase 7.5: the SPDX audit is a release invariant, not a one-off.
+      - run: node scripts/check-spdx.mjs
 
   test-docker:
     name: test-docker (bypass suite + security image)

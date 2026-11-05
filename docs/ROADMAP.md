@@ -56,10 +56,16 @@ that phases extend, not rewrite:
   enforcement spine. New tooling registers as tool definitions — the
   `handler` locator scheme (`builtin:*`, `mcp:*`, `plugin:*`) is the surface
   a Python sidecar speaks without touching the kernel.
-- **Phase 7 (host hardening).** The owned residuals from the Phase 6
-  fan-out: the docker INPUT-path exposure (operator DOCKER-USER mitigation
-  documented), a docker-capable CI lane for the acceptance suite, and plugin
-  trust boundaries (docs/SECURITY-SUBSYSTEM.md residual table).
+- **Phase 7 (release readiness) — SHIPPED, v0.7.0.** Two-lane CI with the
+  five live bypass proofs (closes R1-6), plugin trust: manifest v2 +
+  Ed25519 signatures + host-only mutability (closes R3-14), the process
+  split (kernel/agent/tools over token-authenticated sockets,
+  docs/PROCESS-MODEL.md), the behavioral eval suite (docs/EVALS.md), and
+  the release surface (security-first README with the R1-2 host-INPUT
+  headline + DOCKER-USER mitigation, SPDX audit, v0.7.0 tagged with its
+  tarball sha256). The INPUT-path exposure itself stays an operator
+  DOCKER-USER rule (documented) — a userland firewall is not NYX's to own
+  from inside the daemon's network stack.
 - **Phase 8 (more sandboxes).** `SandboxProviders` is a registry keyed by
   provider id; E2B and Daytona are new `SandboxProvider` implementations, not
   kernel changes.

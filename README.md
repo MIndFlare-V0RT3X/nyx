@@ -9,7 +9,49 @@ deny-first policy broker, memory is markdown you can read, and the persona is
 a first-class directory of files with an operator contract that binds
 evidence and scope discipline — not refusal suppression.
 
-**Status:** Phase 4 (durable tasks, retention, sandbox forking, skills) — complete and tested. See `docs/ROADMAP.md`.
+**Status:** v0.7.0 — the first publishable release. Phases 0–7 complete and tested (1282 passing tests + 21 docker-gated bypass proofs; see `docs/ROADMAP.md`).
+
+## Security model
+
+Read this before anything else — it is the honest summary, including where
+the guarantees end (`docs/SECURITY-MODEL.md` has the full model).
+
+**The one residual that narrows a guarantee (R1-2):** engagement sandbox
+networks are docker `--internal` bridges, which confine FORWARD-path egress
+but **not the host INPUT path** — a container can still reach services
+listening on the host (including other bridges' gateways). NYX's own egress
+listeners are source-subnet-gated; other host services are not NYX's to
+firewall. Operators who want them unreachable add one DOCKER-USER rule
+(documented in `docs/EGRESS-PROXY.md`): `iptables -I DOCKER-USER -i br-+ !
+-d 172.16.0.0/12 -j DROP`.
+
+The structural guarantees:
+
+- **Credentials live in one place.** The kernel process (in split mode:
+  the only process that reads credential env vars; everything else gets
+  scoped 60-second tokens — `docs/PROCESS-MODEL.md`). Agent code holds no
+  long-lived secrets.
+- **Deny-first policy.** Every tool call is evaluated before execution:
+  `deny > ask > allow`, risk tiers R0–R4; R4 always requires owner
+  approval, and config cannot lower the floor on `host.access`,
+  `credential.use`, `git.push`, or `deploy`.
+- **Engagement scope.** Offensive tooling exists in a session only behind
+  an authorized scope file; every network egress is checked against it —
+  at the tool layer AND at the kernel-process egress proxy (DNS-pinned,
+  rate-limited, audit-logged).
+- **Sandboxed execution.** Tools run in sandboxes with no ambient
+  authority; path containment, scope, policy, and approval all gate the
+  call before anything executes.
+- **Hash-chained audit.** Sessions, approvals, and tool events land on a
+  tamper-evident chain; the chain is verified at every boot.
+- **Known limits, on the record:** host INPUT reachability (above);
+  CONNECT's path-blindness for TLS targets (the tool layer enforces paths;
+  `docs/EGRESS-PROXY.md`); prompts necessarily reach the configured model
+  endpoint. The complete residual ledger — every open residual with its
+  owner and target — lives in `docs/SECURITY-MODEL.md` and
+  `docs/SECURITY-SUBSYSTEM.md`.
+
+Vulnerability reports: GitHub security advisories, please (`SECURITY.md`).
 
 ## Quickstart
 
@@ -51,7 +93,7 @@ pnpm --filter @nyx/web dev                 # http://localhost:5173 → paste the
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │ KERNEL (trusted)     config · policy engine · approvals · audit   │
-│                      owns the SQLite event store                  │
+│                      credential vault · nyx.db · egress proxy     │
 ├──────────────────────────────────────────────────────────────────┤
 │ AGENT RUNTIME        one loop, DI-only: prompt assembly, model    │
 │ (semi-trusted)       calls, tool dispatch — no credentials        │
@@ -133,11 +175,35 @@ operator binding: evidence, scope discipline, honest boundaries),
 gives a real "no" with a reason — it never instructs the model to override
 safety behavior.
 
-## Security
+## Security details
 
-Threat model, trust boundary, and — importantly — what Phase 0 does **not**
-yet defend against: `docs/SECURITY-MODEL.md` and `SECURITY.md`.
-Vulnerability reports: GitHub security advisories, please.
+The summary and residual ledger are at the top; this section is the
+feature-level detail. Full model: `docs/SECURITY-MODEL.md`.
+
+### Process split (Phase 7.3)
+
+`NYX_PROCESS_MODE=split` boots the trust zones as three OS processes —
+nyx-kernel / nyx-agent / nyx-tools — over a token-authenticated JSON-RPC
+unix socket. The agent and tool processes hold no credentials (env
+scrubbed; scoped 60-second tokens for what they need), never learn the
+data dir, and the kernel's IPC token rotates on agent restart
+(`docs/PROCESS-MODEL.md`). Single mode stays the default and
+byte-identical to Phase 6 until the Phase 8 soak flips it.
+
+### Plugin trust (Phase 7.2)
+
+Third-party plugins pass a three-gate loader before their code is
+imported: manifest v2 → index.js sha256 integrity → Ed25519 signature
+from the operator's `trusted-keys.json` (empty by default — nothing is
+trusted until you say so). The plugin set is host-only mutable; declared
+vs exercised capabilities are audited (`nyx plugin audit <dir>`). The
+template, keypair generator, and trust model: `templates/plugin/`.
+
+### Behavioral evals (Phase 7.4)
+
+The harness's own integration tests: 12 behavioral evals asserting on the
+session event log (not final text), with a recorded baseline that fails CI
+on drift. `docs/EVALS.md`.
 
 ### Security engagements (Phase 5)
 
@@ -187,18 +253,20 @@ CONTENT — submission is a human step, by design). `docs/DISCLOSURE.md`.
 
 ## Roadmap
 
-| Phase | Scope                                                            |
-| ----- | ---------------------------------------------------------------- |
-| 0     | foundation (shipped)                                             |
-| 1     | channels: webhook + Telegram, lane queues, heartbeat (shipped)   |
-| 2     | unified DB, channel approvals, four-tier compaction (shipped)    |
-| 3     | subagents: isolated context, summary-only return (shipped)       |
-| 4     | durable tasks, retention, sandbox forking, skills (shipped)      |
-| 5     | security subsystem: engagements, findings, reports (shipped)     |
-| 6     | egress proxy, exploitation tooling, disclosure workflow (shipped)|
-| 7     | host hardening (INPUT path), docker-capable CI, plugin trust     |
-| 8     | more sandboxes (E2B, Daytona), computer-use                      |
-| 9     | hardening, behavioral evals, release                             |
+| Phase | Scope                                                              |
+| ----- | ------------------------------------------------------------------ |
+| 0     | foundation (shipped)                                               |
+| 1     | channels: webhook + Telegram, lane queues, heartbeat (shipped)     |
+| 2     | unified DB, channel approvals, four-tier compaction (shipped)      |
+| 3     | subagents: isolated context, summary-only return (shipped)         |
+| 4     | durable tasks, retention, sandbox forking, skills (shipped)        |
+| 5     | security subsystem: engagements, findings, reports (shipped)       |
+| 6     | egress proxy, exploitation tooling, disclosure workflow (shipped)  |
+| 7     | release readiness: two-lane CI, plugin trust, process split,       |
+|       | behavioral evals, v0.7.0 (shipped)                                 |
+| 8+    | split-mode soak (channels/tasks/subagents migrate, default flips),|
+|       | DOCKER-USER host hardening, real-model eval baselines, more        |
+|       | sandboxes (E2B, Daytona), computer-use                             |
 
 ## License
 

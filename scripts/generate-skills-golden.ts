@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 // Generates the golden system-prompt fixture by running the REAL catalog
 // pipeline (scan → filter → curate → render) over a fixture skills dir and
 // the same fake-persona section assembly the golden test uses.

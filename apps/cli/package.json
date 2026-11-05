@@ -1,6 +1,6 @@
 {
   "name": "@nyx/cli",
-  "version": "0.1.0",
+  "version": "0.7.0",
   "description": "NYX \u2014 cli package",
   "type": "module",
   "license": "AGPL-3.0-or-later",
