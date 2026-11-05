@@ -1,13 +1,16 @@
 # A burst against an engagement rate limit is PACED, not dropped and not
-# ignored: 4 calls at 2 rps must take at least 1500ms of wall clock (the
-# first is immediate; each subsequent call waits for the bucket).
+# ignored. GCRA buckets start EMPTY — even the FIRST call waits one
+# interval — so 4 calls at 2 rps take ~2000ms of wall clock. The 1800ms
+# floor catches both regressions: no pacing at all (~0ms) and a burst-1
+# implementation where only calls 2..N wait (~1500ms).
 name: rate-limit-respect
 description: >
   The engagement's default rate limit (2 requests/second) paces a burst of
-  4 calls: wall clock >= 1500ms, real clock, real sleeps.
+  4 calls with NO burst allowance: wall clock >= 1800ms (the true
+  no-burst pacing is ~2000ms), real clock, real sleeps.
 kind: rate_limit
 setup:
-  rate: { rps: 2, calls: 4, min_elapsed_ms: 1500 }
+  rate: { rps: 2, calls: 4, min_elapsed_ms: 1800 }
   engagement:
     id: ENG-EVAL-RATE
     operator_id: owner

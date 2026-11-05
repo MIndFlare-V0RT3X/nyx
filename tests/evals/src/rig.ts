@@ -11,7 +11,6 @@ import * as os from "node:os";
 import * as path from "node:path";
 import Database from "better-sqlite3";
 import type {
-  ApprovalContext,
   ApprovalEngine,
   CompletionRequest,
   ApprovalRecord,
@@ -25,7 +24,6 @@ import type {
   ModelProvider,
   PersonaRuntime,
   PolicyRule,
-  PolicyVerdict,
   PromptAssemblyInput,
   PromptSection,
   RunContext,
@@ -37,7 +35,7 @@ import type {
   ToolOutput,
 } from "@nyx/protocol";
 import { SECTION_ORDER } from "@nyx/protocol";
-import { ApprovalEngineImpl, PolicyEngineImpl } from "@nyx/policy";
+import { openApprovalEngine, PolicyEngineImpl } from "@nyx/policy";
 import { MemoryStoreImpl } from "@nyx/memory";
 import { ModelRouterImpl, ProviderRegistryImpl } from "@nyx/model";
 import type { MockTurn } from "@nyx/model";
@@ -166,65 +164,80 @@ export class ScriptedProvider implements ModelProvider {
   }
 }
 
-/** Approval engine with scripted outcomes; every decision lands as
- *  approval.requested + approval.resolved events on the session log,
- *  exactly the shapes the real surface emits. */
-export class ScriptedApprovalEngine implements ApprovalEngine {
-  private readonly outcomes: Array<"allow" | "deny">;
-  private n = 0;
-  readonly requested: Array<{ summary: string; risk: string }> = [];
-
-  constructor(
-    private readonly store: SessionStore,
-    outcomes: Array<"allow" | "deny"> = [],
-  ) {
-    this.outcomes = [...outcomes];
-  }
-
-  async request(v: PolicyVerdict, ctx: ApprovalContext): Promise<"allow" | "deny"> {
-    this.requested.push({ summary: v.summary, risk: "R2" });
-    const decision = this.outcomes[this.n] ?? "deny";
-    this.n += 1;
-    const id = `approval-eval-${this.n}`;
-    await this.store.append(ctx.session_id, [
-      {
-        type: "approval.requested",
-        session_id: ctx.session_id,
-        turn_id: ctx.turn_id,
-        approval_id: id,
-        action_digest: v.action_digest,
-        summary: v.summary,
-        risk: "R2",
-        ts: Date.now(),
-      } as SessionEvent,
-      {
-        type: "approval.resolved",
-        session_id: ctx.session_id,
-        turn_id: ctx.turn_id,
-        approval_id: id,
-        decision,
-        decided_by: "eval:operator",
-        ts: Date.now(),
-      } as SessionEvent,
-    ]);
-    return decision;
-  }
-
-  async resolve(): Promise<ApprovalRecord> {
-    throw new Error("not used by evals");
-  }
-
-  async get(): Promise<ApprovalRecord | null> {
-    return null;
-  }
-
-  async pending(): Promise<ApprovalRecord[]> {
-    return [];
-  }
-
-  async consume(): Promise<ApprovalRecord> {
-    throw new Error("not used by evals");
-  }
+/**
+ * R3-2/R3-12 (fan-out): the eval rig uses the REAL ApprovalEngineImpl with
+ * the PRODUCTION event wiring (onCreated/onResolved append
+ * approval.requested/resolved to the session log, exactly as the server
+ * surface does) plus a scripted auto-resolver — the operator's decisions
+ * arrive on a short poll, like the CLI/HTTP presenters. Approval event
+ * EMISSION is the behavior under test, not rig output.
+ */
+export function makeApprovalRig(
+  db: Database.Database,
+  store: SessionStore,
+  sessionId: string,
+  decisions: Array<"allow" | "deny"> = [],
+): { engine: ApprovalEngine; stop(): void } {
+  let n = 0;
+  const timer = setInterval(async () => {
+    try {
+      const engine = handle.engine as unknown as {
+        pending(session_id: string): Promise<ApprovalRecord[]>;
+        resolve(id: string, decision: "allow" | "deny", decided_by: string): Promise<ApprovalRecord>;
+      };
+      for (const record of await engine.pending(sessionId)) {
+        const decision = decisions[n] ?? "deny";
+        n += 1;
+        await engine.resolve(record.id, decision, "eval:operator");
+      }
+    } catch {
+      /* the poll races teardown; the engine's own TTL denies leftovers */
+    }
+  }, 40);
+  const handle = openApprovalEngine(db, {
+    // Short TTL: an accidental ask path (spec typo, policy regression)
+    // fails FAST instead of blocking the suite for the 600s default.
+    ttl_ms: 2_000,
+    poll_ms: 40,
+    onCreated: (rec) => {
+      void store
+        .append(rec.session_id, [
+          {
+            type: "approval.requested",
+            session_id: rec.session_id,
+            turn_id: rec.turn_id,
+            approval_id: rec.id,
+            action_digest: rec.action_digest,
+            summary: rec.summary,
+            risk: rec.risk,
+            ts: Date.now(),
+          } as SessionEvent,
+        ])
+        .catch(() => undefined);
+    },
+    onResolved: (rec) => {
+      void store
+        .append(rec.session_id, [
+          {
+            type: "approval.resolved",
+            session_id: rec.session_id,
+            turn_id: rec.turn_id,
+            approval_id: rec.id,
+            decision: rec.decision === "pending" ? "deny" : rec.decision,
+            decided_by: rec.decided_by ?? "system",
+            ts: Date.now(),
+          } as SessionEvent,
+        ])
+        .catch(() => undefined);
+    },
+  });
+  return {
+    engine: handle.engine,
+    stop: () => {
+      clearInterval(timer);
+      handle.close();
+    },
+  };
 }
 
 export interface FakeToolSpec {
@@ -251,6 +264,10 @@ export interface LoopSetup {
   memory?: boolean;
   subagents?: { child_marker: string; child_script: Array<{ text: string }>; child_hold_ms?: number };
   abort_after_event?: string;
+  /** Abort the turn N ms after it starts — DURING a hanging tool (the
+   *  event-stream abort fires after the round yields; a mid-execution
+   *  abort needs the timer). */
+  abort_after_ms?: number;
 }
 
 export interface LoopRunResult {
@@ -356,10 +373,18 @@ export async function runLoopEval(
   }
 
   const policy = new PolicyEngineImpl(setup.policy ?? []);
-  const approvals =
-    setup.approval_decisions !== undefined
-      ? new ScriptedApprovalEngine(store, setup.approval_decisions)
-      : new ApprovalEngineImpl(db);
+
+  const session = await store.create({
+    owner_id: "owner",
+    persona_id: "eval-persona",
+    engagement: setup.engagement ?? null,
+  });
+
+  // The REAL approval engine, wired like the production surface, with a
+  // scripted operator resolver for THIS session.
+  const approvalRig = makeApprovalRig(db, store, session.session_id, setup.approval_decisions ?? []);
+  const approvals = approvalRig.engine;
+
   const runtime = createToolRuntime({
     registry,
     router: new ToolRouterImpl(),
@@ -369,12 +394,6 @@ export async function runLoopEval(
 
   const kernel = createKernel();
   kernel.services.set("tools.runtime", runtime);
-
-  const session = await store.create({
-    owner_id: "owner",
-    persona_id: "eval-persona",
-    engagement: setup.engagement ?? null,
-  });
 
   // Seeded history: N completed turns whose tool_result blocks are large —
   // the documented compaction e2e recipe.
@@ -464,6 +483,9 @@ export async function runLoopEval(
   };
 
   const turnId = `eval-turn-${Date.now()}`;
+  if (setup.abort_after_ms !== undefined) {
+    setTimeout(() => controller.abort(), setup.abort_after_ms);
+  }
   if (subagents !== undefined) {
     // Bind THE turn the loop is about to run (same id), so the spawn tool
     // resolves its parent context.
@@ -495,6 +517,7 @@ export async function runLoopEval(
   }
 
   const memoryEntries = await memory.list({ limit: 1000 });
+  approvalRig.stop();
   subagents?.unbindTurn(session.session_id);
   await sandbox.destroy().catch(() => undefined);
   // The event LOG is the store: engine-side appends (approval.requested,

@@ -34,4 +34,9 @@ export {
   type VaultAuditSink,
 } from "./credential-vault.js";
 export { ReusableMockProvider, ScriptedFileMockProvider } from "./mock-provider.js";
-export { launchSplitStack, type SplitStack, type LaunchSplitOptions } from "./launch.js";
+export {
+  launchSplitStack,
+  scrubAgentEnv,
+  type SplitStack,
+  type LaunchSplitOptions,
+} from "./launch.js";

@@ -95,15 +95,35 @@ async function spawnAndAwaitBoot(
   return { child, boot };
 }
 
+/**
+ * The scrubbed environment for the AGENT process (R1-8, fan-out): the same
+ * allowlist as the tools process — the agent is semi-trusted, not trusted.
+ * Callers spawning nyx-agent (operators, tests) must pass this as the
+ * child's env; the operator's credential env vars never reach the agent.
+ */
+export function scrubAgentEnv(
+  source: NodeJS.ProcessEnv = process.env,
+  opts: { set?: Record<string, string> } = {},
+): Record<string, string> {
+  return scrubEnvironment(source, {
+    keep: ["NYX_ENV", "NYX_LOG_LEVEL"],
+    set: {
+      NYX_PROCESS_MODE: "split",
+      ...opts.set,
+    },
+  });
+}
+
 export async function launchSplitStack(opts: LaunchSplitOptions): Promise<SplitStack> {
   const nodeBin = opts.nodeBin ?? process.execPath;
   const timeoutMs = opts.timeoutMs ?? 30_000;
   const distDir = `${opts.repoRoot}/apps/split/dist`;
 
-  // The KERNEL process: full env (it reads credential env vars — that is
-  // the point; it is the only one).
+  // The KERNEL process: the operator's full env (it reads credential env
+  // vars — that is the point; it is the only one). R1-12: the default is
+  // process.env, as documented.
   const kernelEnv = {
-    ...opts.kernelEnv,
+    ...(opts.kernelEnv ?? process.env),
     NYX_PROCESS_MODE: "split",
     NYX_DATA_DIR: opts.dataDir,
   };

@@ -47,7 +47,23 @@ interface Connection {
   role: HandshakeFrame["role"];
   authenticated: boolean;
   buffer: string;
+  inflight: number;
 }
+
+/** Pre-handshake frame cap: the handshake is tiny; anything bigger is hostile. */
+const MAX_HANDSHAKE_BYTES = 8192;
+/**
+ * Post-handshake frame cap (R1-9, fan-out): legitimate frames reach
+ * megabytes (tool outputs up to 64 KiB carried twice, long-session
+ * projections). 16 MiB bounds memory while leaving 100x headroom.
+ */
+const MAX_FRAME_BYTES = 16 * 1024 * 1024;
+/** A connection that never completes the handshake is reaped (R1-10). */
+const HANDSHAKE_TIMEOUT_MS = 10_000;
+/** Local-socket connection cap (R1-10): the split has ~3 clients. */
+const MAX_CONNECTIONS = 64;
+/** Per-connection concurrent dispatch cap (R1-10). */
+const MAX_INFLIGHT_PER_CONNECTION = 32;
 
 export class IpcError_ extends Error {
   constructor(public readonly ipc: IpcError) {
@@ -114,9 +130,25 @@ export class IpcServer {
   }
 
   #onConnection(socket: net.Socket): void {
+    // R1-10: the split has a handful of clients; more is a flood.
+    if (this.#connections.size >= MAX_CONNECTIONS) {
+      socket.destroy();
+      return;
+    }
     this.#connections.add(socket);
-    const connection: Connection = { socket, role: "kernel-client", authenticated: false, buffer: "" };
+    const connection: Connection = {
+      socket,
+      role: "kernel-client",
+      authenticated: false,
+      buffer: "",
+      inflight: 0,
+    };
     socket.setEncoding("utf8");
+    // R1-10: a handshake that never arrives is a dead connection — reap it.
+    const handshakeTimer = setTimeout(() => {
+      if (!connection.authenticated) socket.destroy();
+    }, HANDSHAKE_TIMEOUT_MS);
+    socket.once("close", () => clearTimeout(handshakeTimer));
     socket.on("data", (chunk: string) => {
       connection.buffer += chunk;
       let newline = connection.buffer.indexOf("\n");
@@ -127,9 +159,10 @@ export class IpcServer {
         if (socket.destroyed) return;
         newline = connection.buffer.indexOf("\n");
       }
-      // A handshake that never completes and never ends its line still
-      // deserves a bound: the frame cannot exceed 8 KiB.
-      if (connection.buffer.length > 8192) socket.destroy();
+      // The frame cap depends on the connection's state: the handshake is
+      // tiny (8 KiB); a post-auth request frame may be megabytes (R1-9).
+      const cap = connection.authenticated ? MAX_FRAME_BYTES : MAX_HANDSHAKE_BYTES;
+      if (connection.buffer.length > cap) socket.destroy();
     });
     socket.once("close", () => {
       this.#connections.delete(socket);
@@ -188,7 +221,17 @@ export class IpcServer {
       });
       return;
     }
-    connection.role = candidate.role as HandshakeFrame["role"];
+    // R1-1 (fan-out): the role namespace is fixed — an arbitrary role
+    // string is protocol garbage, not a client.
+    const role = candidate.role as HandshakeFrame["role"];
+    if (role !== "kernel-client" && role !== "agent" && role !== "tools") {
+      this.#deny(connection, {
+        code: "auth",
+        message: `unknown role "${String(candidate.role)}"`,
+      });
+      return;
+    }
+    connection.role = role;
     connection.authenticated = true;
     this.#options.onHandshake?.(connection.role);
     const ok: HandshakeResponse = { ok: true, server_version: this.#options.serverVersion };
@@ -221,6 +264,13 @@ export class IpcServer {
       connection.socket.destroy();
       return;
     }
+    // R1-10: bound concurrent dispatch per connection — a flood cannot
+    // spawn unbounded handler work.
+    if (connection.inflight >= MAX_INFLIGHT_PER_CONNECTION) {
+      connection.socket.destroy();
+      return;
+    }
+    connection.inflight += 1;
     let response: string;
     try {
       const result = await this.#options.handler(
@@ -242,6 +292,7 @@ export class IpcServer {
         } satisfies ResponseFrame);
       }
     }
+    connection.inflight -= 1;
     if (!connection.socket.destroyed) connection.socket.write(`${response}\n`);
   }
 }

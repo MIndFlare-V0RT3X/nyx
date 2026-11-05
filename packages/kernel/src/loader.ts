@@ -122,6 +122,41 @@ export async function loadPluginDirectory(
     if (actual !== manifest.integrity) {
       throw new PluginIntegrityError(manifest.name, manifest.integrity, actual);
     }
+    // R2-2 (fan-out): integrity + signature pin MORE than index.js — every
+    // code file in the directory must be listed in `files` with its exact
+    // sha256. An unlisted or tampered sibling is a tampered plugin.
+    const declared = manifest.files ?? {};
+    const onDisk = await fsp.readdir(dir, { recursive: false });
+    for (const name of onDisk) {
+      if (!/\.(js|mjs|cjs|ts)$/.test(name)) continue; // docs/config exempt
+      if (name === "index.js") continue; // covered by integrity
+      const bytes = await fsp.readFile(path.join(dir, name));
+      const hash = sha256Hex(bytes);
+      const expected = declared[name];
+      if (expected === undefined) {
+        throw new PluginIntegrityError(
+          manifest.name,
+          `listed in files ("${name}" is code on disk with no manifest entry)`,
+          hash,
+        );
+      }
+      if (expected !== hash) {
+        throw new PluginIntegrityError(manifest.name, expected, hash);
+      }
+    }
+    // And every declared file must exist (a stale manifest entry is a lie too).
+    for (const name of Object.keys(declared)) {
+      if (!(await fsp
+        .stat(path.join(dir, name))
+        .then(() => true)
+        .catch(() => false))) {
+        throw new PluginIntegrityError(
+          manifest.name,
+          `declared in files but absent on disk ("${name}")`,
+          "-",
+        );
+      }
+    }
   }
 
   // Signature gate.

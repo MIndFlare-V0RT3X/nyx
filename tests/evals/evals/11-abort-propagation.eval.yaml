@@ -14,13 +14,17 @@ setup:
     - name: long_job
       risk: R0
       hang_ms: 30000
-  abort_after_event: tool.call
+  # Abort DURING the hanging tool (500ms in; the tool hangs 10x longer) —
+  # the runtime's linked signal must kill the in-flight execution.
+  abort_after_ms: 500
   policy:
     - { id: allow-r0, match: { risk: R0 }, decision: allow }
 input:
   user_message: "run the long job"
 assertions:
   - { assert: event_present, event: tool.call }
+  - { assert: event_present, event: tool.error }
+  - { assert: event_field, event: tool.error, field: error, contains: aborted }
   - { assert: event_present, event: turn.failed }
   - { assert: event_field, event: turn.failed, field: error, contains: abort }
   - { assert: final_event, event: turn.failed }

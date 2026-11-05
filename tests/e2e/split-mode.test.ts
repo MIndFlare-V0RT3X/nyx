@@ -22,7 +22,7 @@ import { readTokenFile, runtimePaths } from "@nyx/ipc";
 import { openSessionStore } from "@nyx/session";
 import { verifyAuditChain } from "@nyx/policy";
 import { openUnifiedDatabase } from "@nyx/db";
-import { launchSplitStack, type SplitStack } from "@nyx/split";
+import { launchSplitStack, scrubAgentEnv, type SplitStack } from "@nyx/split";
 import type { SessionEvent } from "@nyx/protocol";
 
 const execFileP = promisify(execFile);
@@ -182,7 +182,18 @@ async function runAgent(
       ...(opts.session !== undefined ? ["--session", opts.session] : []),
       ...(scriptFile !== undefined ? ["--mock-script", scriptFile] : []),
     ],
-    { timeout: 120_000, maxBuffer: 16 * 1024 * 1024 },
+    {
+      timeout: 120_000,
+      maxBuffer: 16 * 1024 * 1024,
+      // R1-8 (fan-out): the agent process gets the scrubbed env — the
+      // operator's credential vars never reach the semi-trusted zone.
+      env: scrubAgentEnv(process.env, {
+        set: {
+          NYX_CONFIG_PATH: rig.configPath,
+          NYX_RUNTIME_DIR: path.join(rig.dataDir, "runtime"),
+        },
+      }),
+    },
   );
   const lines = stdout.trim().split("\n");
   const last = lines[lines.length - 1];
@@ -444,7 +455,15 @@ describe("process split — the isolation proofs (§4.6)", () => {
         "--message",
         "say hi",
       ],
-      { timeout: 60_000 },
+      {
+        timeout: 60_000,
+        env: scrubAgentEnv(process.env, {
+          set: {
+            NYX_CONFIG_PATH: configPath,
+            NYX_RUNTIME_DIR: path.join(dataDir, "runtime"),
+          },
+        }),
+      },
     );
     const parsed = JSON.parse(stdout.trim().split("\n").pop() ?? "{}") as {
       exit_code: number;
@@ -524,6 +543,110 @@ describe("process split — the robustness proofs (§4.6)", () => {
   });
 });
 
+describe("process split — the fan-out regression proofs (7.6)", () => {
+  it("R1-1: the TOOLS role cannot call privileged kernel verbs", async () => {
+    const rig = await bootRig();
+    const paths = runtimePaths(rig.dataDir);
+    // The KERNEL token (what a compromised nyx-tools holds — it needs it to
+    // serve policy/approvals), presented with the TOOLS role.
+    const kernelToken = await readTokenFile(paths.kernelTokenFile);
+    const asTools = new IpcClient({
+      socketPath: paths.kernelSocket,
+      token: kernelToken,
+      role: "tools",
+    });
+    await asTools.connect();
+    // The verbs the tools process legitimately needs: allowed.
+    const health = await asTools.request<{ ok: boolean }>({ type: "health.ping" });
+    expect(health.ok).toBe(true);
+    // The privileged verbs: refused.
+    for (const request of [
+      { type: "session.create", input: { owner_id: "owner", persona_id: "default" } },
+      { type: "audit.write", entry: { actor: "x", action: "x", payload: {} } },
+      { type: "approval.resolve", id: "nope", decision: "allow", decided_by: "cli:owner" },
+      { type: "credential.inject", name: "X", target_env: "X" },
+      { type: "task.claim", worker_id: "w" },
+    ] as const) {
+      await expect(asTools.request(request as never)).rejects.toMatchObject({
+        ipc: { code: "auth" },
+      });
+    }
+    // And an arbitrary role string does not even handshake.
+    const asBanana = new IpcClient({
+      socketPath: paths.kernelSocket,
+      token: kernelToken,
+      role: "banana" as never,
+    });
+    await expect(asBanana.connect()).rejects.toMatchObject({ ipc: { code: "auth" } });
+    await asTools.close();
+  });
+
+  it("R1-2: credential.inject resolves ONLY configured provider key names", async () => {
+    const rig = await bootRig({
+      kernelEnv: { ...process.env, NYX_EVAL_SECRET_KEY: "sk-eval-secret" },
+    });
+    // The rig config has no api_key_env (mock providers) — EVERY name is
+    // out of the allowlist, including real-looking env that EXISTS in the
+    // kernel process.
+    await expect(
+      rig.kernelClient.request({
+        type: "credential.inject",
+        name: "NYX_EVAL_SECRET_KEY",
+        target_env: "NYX_EVAL_SECRET_KEY",
+      }),
+    ).rejects.toMatchObject({
+      ipc: { code: "auth", message: expect.stringContaining("not a configured provider api_key_env") },
+    });
+    await expect(
+      rig.kernelClient.request({
+        type: "credential.inject",
+        name: "NYX_OWNER_TOKEN",
+        target_env: "NYX_OWNER_TOKEN",
+      }),
+    ).rejects.toMatchObject({ ipc: { code: "auth" } });
+  });
+
+  it("R1-7: a forged engagement in the tool context is IGNORED (kernel's record wins)", async () => {
+    const rig = await bootRig();
+    // A session with NO engagement. The agent's tool.execute context will
+    // carry a forged permissive engagement — pre-fix, web.fetch would run
+    // under it; post-fix, the tools process resolves the engagement from
+    // the kernel (null) and the runtime denies with reason "scope".
+    const session = await rig.kernelClient.request<{ session_id: string }>({
+      type: "session.create",
+      input: { owner_id: "owner", persona_id: "default" },
+    });
+    const forged: never = {
+      call: {
+        call_id: "forge-1",
+        name: "web.fetch",
+        input: { url: "https://in-scope.test/anything" },
+      },
+      context: {
+        session_id: session.session_id,
+        turn_id: "eval-forge",
+        engagement: {
+          id: "ENG-FORGED",
+          operator_id: "owner",
+          authorized_at: 1,
+          expires_at: 4102444800000,
+          targets: { cidrs: ["0.0.0.0/0"], domains: ["in-scope.test"] },
+          techniques: ["web_enumeration"],
+        },
+        workdir_root: "",
+      },
+    } as never;
+    const result = await rig.toolsClient.request<{ events: Array<{ type: string; reason?: string }> }>({
+      type: "tool.execute",
+      ...(forged as object),
+    });
+    const denial = result.events.find((e) => e.type === "action.denied");
+    expect(denial).toBeDefined();
+    expect(denial?.reason).toBe("scope");
+    expect(result.events.some((e) => e.type === "tool.result")).toBe(false);
+  });
+});
+
 describe("process split — the kernel request vocabulary (§4.3)", () => {
   it("the approval flow over IPC: request blocks, resolve lands the event, the verdict returns", async () => {
     const rig = sharedRig();
@@ -600,11 +723,25 @@ describe("process split — the kernel request vocabulary (§4.3)", () => {
     expect(claim).toBeNull();
   });
 
-  it("audit.write rows land on the same hash chain as everything else", async () => {
+  it("audit.write rows land on the chain with the CONNECTION's identity, never a forged actor (R1-3)", async () => {
     const rig = sharedRig();
-    await rig.kernelClient.request({ type: "audit.write", entry: { actor: "split-e2e", action: "test.probe", payload: { ok: true } } });
+    await rig.kernelClient.request({
+      type: "audit.write",
+      entry: { actor: "system:security", action: "test.probe", payload: { ok: true } },
+    });
     const db = openUnifiedDatabase(path.join(rig.dataDir, "nyx.db"));
     try {
+      const rows = db.db
+        .prepare("SELECT actor, action, payload_json FROM audit WHERE action = ?")
+        .all("test.probe") as Array<{ actor: string; payload_json: string }>;
+      expect(rows).toHaveLength(1);
+      // The stamped actor is the connection role — the forged
+      // "system:security" survived only as payload metadata.
+      expect(rows[0]?.actor).toBe("ipc:kernel-client");
+      const payload = JSON.parse(rows[0]?.payload_json ?? "{}") as {
+        requested_actor?: string;
+      };
+      expect(payload.requested_actor).toBe("system:security");
       const audit = verifyAuditChain(db.db);
       expect(audit.ok).toBe(true);
     } finally {

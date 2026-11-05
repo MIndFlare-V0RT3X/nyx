@@ -81,21 +81,30 @@ const GHSA_41773 = () => [
 const GHSA_EMPTY = () => [];
 
 /**
- * Fixture bodies by host. Every correlate-cve query hits the three fixed
- * hosts; the fixture answers regardless of the query string (the eval's
- * product is Apache httpd 2.4.49 — the exact-match path).
+ * Fixture bodies by host + QUERY FIDELITY (R3-8, fan-out): the fixture
+ * answers only when the query actually carries the product and version —
+ * a correlate-cve that stopped sending them gets empty results, and the
+ * eval fails. Same for the vuln terms (the exact-match key).
  */
-export function CVE_FIXTURES_BY_HOST(host: string, _query: string): unknown {
+export function CVE_FIXTURES_BY_HOST(host: string, query: string): unknown {
+  // Fidelity key = the PRODUCT (the correlation key): a correlator that
+  // stopped sending it gets empty results and the eval fails. Version and
+  // vuln terms legitimately ride POST bodies and scoring inputs (the NVD
+  // keywordSearch is product+terms; the OSV query is a POST body; GHSA
+  // enriches already-found CVEs) — demanding them in every URL would
+  // false-empty legs that never carried them.
+  const faithful = query.toLowerCase().includes("apache");
   switch (host) {
     case "nvd.nist.gov":
-      return NVD_HTTPD_41773();
+      return faithful ? NVD_HTTPD_41773() : NVD_EMPTY();
     case "api.osv.dev":
-      return OSV_HTTPD();
+      return faithful ? OSV_HTTPD() : OSV_EMPTY();
     case "api.github.com":
-      return GHSA_41773();
+      return faithful ? GHSA_41773() : GHSA_EMPTY();
     default:
       return NVD_EMPTY();
   }
 }
 
 export { NVD_EMPTY, OSV_EMPTY, GHSA_EMPTY };
+

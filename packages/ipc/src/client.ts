@@ -81,7 +81,10 @@ export class IpcClient {
         if (socket.destroyed) return;
         newline = this.#buffer.indexOf("\n");
       }
-      if (this.#buffer.length > 8192) socket.destroy();
+      // Post-handshake, responses legitimately reach megabytes (tool
+      // outputs, projections — R1-9). Pre-handshake stays tight.
+      const cap = this.#handshakeResolve === null ? 16 * 1024 * 1024 : 8192;
+      if (this.#buffer.length > cap) socket.destroy();
     });
     socket.once("error", () => socket.destroy());
     return new Promise<void>((resolve, reject) => {

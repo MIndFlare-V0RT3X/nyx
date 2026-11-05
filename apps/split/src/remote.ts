@@ -249,6 +249,27 @@ export class RemoteToolRuntime implements ToolRuntimeService {
       },
       ...(opts?.force_ask === true ? { force_ask: true } : {}),
     });
+    // R1-6 (fan-out): the tools process is UNTRUSTED — its event list is
+    // validated, not replayed verbatim: the event must belong to THIS turn,
+    // be a tool-lifecycle event, and carry THIS call's id. Anything else is
+    // an injection attempt and fails the turn loudly.
+    const allowed = new Set(["tool.call", "tool.result", "tool.error", "action.denied"]);
+    for (const event of result.events) {
+      const record = event as unknown as Record<string, unknown>;
+      if (
+        !allowed.has(event.type) ||
+        record.session_id !== ctx.session_id ||
+        record.turn_id !== ctx.turn_id ||
+        record.call_id !== call.call_id
+      ) {
+        throw new IpcClientError({
+          code: "internal",
+          message:
+            `tools process returned an invalid event for call "${call.call_id}" ` +
+            `(type "${event.type}", session/turn/call mismatch) — refusing to append`,
+        });
+      }
+    }
     for (const event of result.events) ctx.emit(event);
     if (result.output === null) {
       throw new IpcClientError({

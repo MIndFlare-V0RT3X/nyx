@@ -62,9 +62,7 @@ function makeSecurityRig(
       ? {
           fetchImpl: (async (url: string) => {
             const parsed = new URL(url);
-            const fixture = CVE_FIXTURES_BY_HOST(parsed.hostname, parsed.search + parsed.pathname);
-            if (fixture !== undefined) return fixture;
-            return {};
+            return CVE_FIXTURES_BY_HOST(parsed.hostname, `${parsed.pathname}${parsed.search}`);
           }) as never,
         }
       : {}),
@@ -331,9 +329,23 @@ export async function runDisclosureEval(setup: DisclosureSetup): Promise<Disclos
   const directory = parsed.json.directory;
 
   const recomputed: Record<string, string> = {};
+  const missing: string[] = [];
   for (const file of parsed.json.files) {
-    const bytes = await fsp.readFile(path.join(baseDir, directory, file.name));
+    const bytes = await fsp
+      .readFile(path.join(baseDir, directory, file.name))
+      .catch(() => null);
+    if (bytes === null) {
+      missing.push(file.name);
+      continue;
+    }
     recomputed[file.name] = createHash("sha256").update(bytes).digest("hex");
+  }
+  if (missing.length > 0) {
+    return {
+      directory,
+      files: parsed.json.files,
+      recomputed: Object.fromEntries(missing.map((name) => [name, "MISSING"])),
+    };
   }
   await fsp.rm(baseDir, { recursive: true, force: true }).catch(() => undefined);
   return { directory, files: parsed.json.files, recomputed };
@@ -353,6 +365,15 @@ export interface OwnershipResult {
   code: string | null;
 }
 
+export interface OwnershipResult {
+  refused: boolean;
+  code: string | null;
+  /** R3-1 (fan-out): proof the refusal is a SESSION-CREATION refusal — no
+   *  session row may exist afterwards. */
+  session_created: boolean;
+  session_count: number;
+}
+
 export async function runOwnershipEval(setup: OwnershipSetup): Promise<OwnershipResult> {
   const engagement: Engagement = {
     id: setup.engagement.id,
@@ -362,13 +383,43 @@ export async function runOwnershipEval(setup: OwnershipSetup): Promise<Ownership
     targets: { cidrs: ["127.0.0.0/8"], domains: [] },
     techniques: ["reconnaissance"],
   };
+  // The PRODUCTION sequence (kernel-host session.create / the server's
+  // POST /v1/sessions / the CLI local runtime): ownership asserted BEFORE
+  // the store ever sees a row.
+  const db = new Database(":memory:");
+  const store = openSessionStore(":memory:", { db });
   try {
-    assertEngagementOwnership(engagement, setup.owner_id);
-    return { refused: false, code: null };
-  } catch (err) {
-    if (err instanceof EngagementOwnershipError) {
-      return { refused: true, code: err.code };
+    try {
+      assertEngagementOwnership(engagement, setup.owner_id);
+      const meta = await store.create({
+        owner_id: setup.owner_id,
+        persona_id: "default",
+        engagement,
+      });
+      return {
+        refused: false,
+        code: null,
+        session_created: true,
+        session_count: 1,
+        ...(meta !== null ? {} : {}),
+      };
+    } catch (err) {
+      if (err instanceof EngagementOwnershipError) {
+        // The refusal must have PREVENTED the session: zero rows.
+        const rows = db
+          .prepare("SELECT COUNT(*) AS n FROM sessions")
+          .get() as { n: number };
+        return {
+          refused: true,
+          code: err.code,
+          session_created: false,
+          session_count: rows.n,
+        };
+      }
+      throw err;
     }
-    throw err;
+  } finally {
+    store.close();
+    db.close();
   }
 }

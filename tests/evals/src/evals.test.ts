@@ -103,14 +103,12 @@ describe("behavioral evals (Phase 7.4)", () => {
   });
 
   it("a KNOWN regression is caught (the gate proves itself)", async () => {
-    // Take the scope-enforcement eval and corrupt its expectation: the
-    // denial reason asserted as "policy" instead of "scope". The runner
-    // must report the failure — proving a real behavior change cannot slip
-    // through the assertion engine.
     const specs = await loadEvalSpecs();
-    const spec = specs.find((s) => s.name === "scope-enforcement");
-    expect(spec).toBeDefined();
-    const corrupted = structuredClone(spec!);
+    // Corruption 1 — a WRONG expectation: the scope denial's reason
+    // asserted as "policy". The runner must report the mismatch.
+    const scopeSpec = specs.find((s) => s.name === "scope-enforcement");
+    expect(scopeSpec).toBeDefined();
+    const corrupted = structuredClone(scopeSpec!);
     for (const assertion of corrupted.assertions) {
       if (assertion.assert === "event_field" && assertion.field === "reason") {
         assertion.equals = "policy";
@@ -119,6 +117,19 @@ describe("behavioral evals (Phase 7.4)", () => {
     const outcome = await runEval(corrupted);
     expect(outcome.pass).toBe(false);
     expect(outcome.failures.join(" ")).toContain("scope");
+    // Corruption 2 — a MISSING expectation: drop the validator eval's
+    // event_order and assert the tool.call never happened (event_absent).
+    // A comparator that cannot fail cannot gate.
+    const validatorSpec = specs.find((s) => s.name === "validator-before-done");
+    expect(validatorSpec).toBeDefined();
+    const corrupted2 = structuredClone(validatorSpec!);
+    corrupted2.assertions = corrupted2.assertions.filter(
+      (a) => a.assert !== "event_order" && a.assert !== "event_field",
+    );
+    corrupted2.assertions.push({ assert: "event_absent", event: "tool.call" });
+    const outcome2 = await runEval(corrupted2);
+    expect(outcome2.pass).toBe(false);
+    expect(outcome2.failures.join(" ")).toContain("tool.call");
   });
 
   it("baselineDiff reports added/removed/changed evals and trajectory drift", () => {

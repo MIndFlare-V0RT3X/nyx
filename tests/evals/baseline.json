@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-05T18:46:10.221Z",
+  "generated_at": "2026-11-05T19:53:27.801Z",
   "outcomes": [
     {
       "name": "clarification-on-underspecified-prompt",
@@ -46,13 +46,14 @@
       "pass": true,
       "histogram": [
         "action.denied×1",
-        "approval.requested×1",
-        "approval.resolved×1",
-        "message.assistant×2",
+        "approval.requested×2",
+        "approval.resolved×2",
+        "message.assistant×3",
         "message.user×1",
         "session.created×1",
         "text.delta×1",
-        "tool.call×1",
+        "tool.call×2",
+        "tool.result×1",
         "turn.completed×1",
         "turn.started×1"
       ]

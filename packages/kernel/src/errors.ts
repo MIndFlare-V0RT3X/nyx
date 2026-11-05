@@ -199,7 +199,7 @@ export class ServiceNamespaceError extends Error {
   readonly plugin: string;
   readonly service: string;
 
-  constructor(plugin: string, service: string, action: "set" | "delete") {
+  constructor(plugin: string, service: string, action: "set" | "delete" | "get" | "has") {
     super(
       `plugin "${plugin}" may only ${action} services under "plugin:${plugin}:" but attempted "${service}"`,
     );

@@ -40,6 +40,9 @@ export interface PluginManifest {
   dependencies?: PluginDependency[];
   /** sha256 (hex) of the plugin's index.js — verified at load time. */
   integrity: string;
+  /** Sibling code files (index.js's imports) → their sha256 hex. The loader
+   *  refuses any on-disk code file that is not listed-and-hashed (R2-2). */
+  files?: Record<string, string>;
   /** Optional Ed25519 signature; required in `strict` signature mode. */
   signature?: PluginSignature;
   hooks?: HookName[];

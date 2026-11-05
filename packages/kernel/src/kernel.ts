@@ -261,12 +261,22 @@ export class KernelImpl implements Kernel {
   }
 
   #hookScope(): HookScope {
+    // R2-3 (fan-out): a hook's enforcement context is captured at
+    // REGISTRATION time — an unuse racing a later emit must not let the
+    // plugin's remaining hooks run as host (manifest undefined → no checks).
+    const manifests = new Map<string, PluginManifest | undefined>();
     return {
       currentPlugin: () => this.#als.getStore()?.plugin ?? null,
       run: <T>(plugin: string | null, fn: () => T): T => {
         if (plugin === null) return this.#als.run({ plugin: null }, fn);
-        const manifest = this.#plugins.get(plugin)?.manifest ?? this.#loading.get(plugin);
+        const manifest = manifests.get(plugin);
         return this.#als.run({ plugin, manifest }, fn);
+      },
+      capture: (plugin: string): void => {
+        manifests.set(plugin, this.#plugins.get(plugin)?.manifest ?? this.#loading.get(plugin));
+      },
+      release: (plugin: string): void => {
+        manifests.delete(plugin);
       },
     };
   }
@@ -274,8 +284,17 @@ export class KernelImpl implements Kernel {
   #toolFacade(): ToolRegistry {
     return {
       register: (def: ToolDefinition, handler: ToolHandler): void => {
+        if (this.#closed) throw new KernelClosedError("tools.register");
         const active = this.#activeContext();
         if (active) {
+          // R2-8 (fan-out): a plugin's registrations are only legal while it
+          // is loading or loaded — a deferred callback firing after
+          // unuse/close cannot leave ghost tools behind.
+          if (!this.#plugins.has(active.plugin) && !this.#loading.has(active.plugin)) {
+            throw new KernelClosedError(
+              `tools.register for unloaded plugin "${active.plugin}"`,
+            );
+          }
           for (const capability of def.capabilities) {
             if (!active.manifest.capabilities.includes(capability)) {
               throw new CapabilityError(active.plugin, capability);
@@ -298,6 +317,7 @@ export class KernelImpl implements Kernel {
       },
       unregister: (name: string): void => {
         const active = this.#activeContext();
+        if (this.#closed) throw new KernelClosedError("tools.register");
         if (active) {
           const owner = this.#toolOwners.get(name);
           // A name the kernel never tracked is not the plugin's either.
@@ -309,13 +329,66 @@ export class KernelImpl implements Kernel {
         this.#toolOwners.delete(name);
       },
       list: (): ToolDefinition[] => this.#backingTools.list(),
-      get: (name: string) => this.#backingTools.get(name),
+      get: (name: string): { def: ToolDefinition; handler: ToolHandler } | null => {
+        const entry = this.#backingTools.get(name);
+        if (entry === null) return null;
+        const owner = this.#toolOwners.get(name);
+        const active = this.#activeContext();
+        if (active) {
+          // R2-5 (fan-out): plugin code cannot invoke another tool's handler
+          // directly — the tool RUNTIME (with policy/scope/approval) is the
+          // only execution path. The def stays readable for catalog purposes.
+          return {
+            def: entry.def,
+            handler: {
+              execute: async () => {
+                throw new Error(
+                  `plugin "${active.plugin}" cannot invoke tool "${name}" directly — route calls through the tool runtime (policy/scope/approval live there)`,
+                );
+              },
+            },
+          };
+        }
+        if (owner === null || owner === undefined) return entry;
+        // R2-1 (fan-out): a plugin-owned handler executes INSIDE its owner's
+        // enforcement context — handler-time registrations stay attributed
+        // (capability-checked, mutation-refused, audited), exactly like
+        // setup-time ones.
+        const manifest =
+          this.#plugins.get(owner)?.manifest ?? this.#loading.get(owner);
+        if (manifest === undefined) return entry;
+        const als = this.#als;
+        const inner = entry.handler;
+        return {
+          def: entry.def,
+          handler: {
+            execute: (call, ctx) =>
+              als.run({ plugin: owner, manifest }, () => inner.execute(call, ctx)),
+          },
+        };
+      },
     };
   }
 
   #serviceFacade(): ServiceRegistry {
     return {
-      get: <T>(name: string): T | undefined => this.#backingServices.get<T>(name),
+      get: <T>(name: string): T | undefined => {
+        const active = this.#activeContext();
+        // R2-4 (fan-out): plugin code reads only its own namespace — the
+        // host services ("tools.runtime", compaction, …) are not for plugin
+        // consumption.
+        if (active && !name.startsWith(`plugin:${active.plugin}:`)) {
+          throw new ServiceNamespaceError(active.plugin, name, "get");
+        }
+        return this.#backingServices.get<T>(name);
+      },
+      has: (name: string): boolean => {
+        const active = this.#activeContext();
+        if (active && !name.startsWith(`plugin:${active.plugin}:`)) {
+          throw new ServiceNamespaceError(active.plugin, name, "has");
+        }
+        return this.#backingServices.has(name);
+      },
       set: (name: string, service: unknown): void => {
         const active = this.#activeContext();
         if (active && !name.startsWith(`plugin:${active.plugin}:`)) {
@@ -323,7 +396,6 @@ export class KernelImpl implements Kernel {
         }
         this.#backingServices.set(name, service);
       },
-      has: (name: string): boolean => this.#backingServices.has(name),
       delete: (name: string): void => {
         const active = this.#activeContext();
         if (active && !name.startsWith(`plugin:${active.plugin}:`)) {

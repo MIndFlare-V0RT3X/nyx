@@ -17,7 +17,7 @@ import { mkdir } from "node:fs/promises";
 import { pino } from "pino";
 import { loadConfig } from "@nyx/config";
 import { IpcServer } from "@nyx/ipc";
-import { generateIpcToken, runtimePaths, writeTokenFile } from "@nyx/ipc";
+import { generateIpcToken, rotateTokenFile, runtimePaths, writeTokenFile } from "@nyx/ipc";
 import { startKernelHost } from "./kernel-host.js";
 
 interface KernelArgs {
@@ -60,7 +60,6 @@ export async function main(argv: string[] = process.argv): Promise<void> {
   // Boot token + rotation-on-agent-exit.
   let token = generateIpcToken();
   await writeTokenFile(paths.kernelTokenFile, token);
-  let agentConnections = 0;
 
   const server = new IpcServer({
     socketPath: paths.kernelSocket,
@@ -73,19 +72,22 @@ export async function main(argv: string[] = process.argv): Promise<void> {
         "nyx-kernel listening",
       );
     },
-    onHandshake: (role) => {
-      if (role === "agent") agentConnections += 1;
-    },
-    onDisconnect: (role) => {
-      if (role !== "agent") return;
-      agentConnections = Math.max(0, agentConnections - 1);
-      if (agentConnections === 0) {
-        const next = generateIpcToken();
-        void writeTokenFile(paths.kernelTokenFile, next).then(() => {
-          token = next;
-          logger.info("ipc token rotated (agent process exited)");
+    // R1-5 (fan-out): rotate on EVERY authenticated disconnect (not just
+    // the agent's) — rotation is the replay defense, and any client going
+    // away is a restart about to read the fresh file. The write is the
+    // ATOMIC rotateTokenFile (temp + rename; a booting client never sees a
+    // torn file) and the in-memory swap only lands after the file does.
+    onDisconnect: () => {
+      void rotateTokenFile(paths.kernelTokenFile)
+        .then((rotated) => {
+          token = rotated.token;
+          logger.info("ipc token rotated (client disconnected)");
+        })
+        .catch(() => {
+          // A failed rotation must never kill the kernel; the old token
+          // simply stays valid until the next disconnect retries.
+          logger.warn("ipc token rotation failed; keeping the current token");
         });
-      }
     },
   });
 

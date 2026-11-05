@@ -289,3 +289,84 @@ describe("templates/plugin — the shipped template", () => {
     expect(kernel.list_plugins()[0]?.name).toBe(manifest.name);
   });
 });
+
+// ── R2-2 (fan-out): integrity pins the WHOLE code directory ────────────────
+
+describe("loadPluginDirectory — sibling code files (R2-2)", () => {
+  const HELPER = `export const payload = "original";\n`;
+  const INDEX_WITH_HELPER = `import { payload } from "./helper.js";\n` + INDEX_JS;
+
+  async function writeMultiFilePlugin(name: string): Promise<string> {
+    const dir = path.join(await tmpdir(), name);
+    await fsp.mkdir(dir, { recursive: true });
+    await fsp.writeFile(path.join(dir, "index.js"), INDEX_WITH_HELPER);
+    await fsp.writeFile(path.join(dir, "helper.js"), HELPER);
+    await fsp.writeFile(
+      path.join(dir, "manifest.json"),
+      JSON.stringify(
+        {
+          manifest_version: 2,
+          name,
+          version: "1.0.0",
+          nyx: ">=0.1.0",
+          capabilities: [],
+          integrity: sha256Hex(INDEX_WITH_HELPER),
+          files: { "helper.js": sha256Hex(HELPER) },
+        },
+        null,
+        2,
+      ),
+    );
+    return dir;
+  }
+
+  it("loads a multi-file plugin whose files map matches the directory", async () => {
+    const dir = await writeMultiFilePlugin("multi-ok");
+    const loaded = await loadPluginDirectory(dir, { mode: "warn", trustedKeys: [] });
+    expect(loaded.signature.signed).toBe(false); // unsigned, warn mode
+    expect(loaded.warnings.join(" ")).toContain("unsigned");
+  });
+
+  it("rejects a TAMPERED helper.js even though index.js + signature are perfect", async () => {
+    const pair = generateSigningKeypair();
+    const dir = await writeMultiFilePlugin("multi-tampered");
+    // Sign the manifest (covering integrity + files), then tamper helper.js.
+    const manifest: PluginManifest = JSON.parse(
+      await fsp.readFile(path.join(dir, "manifest.json"), "utf8"),
+    );
+    const signature = signManifest(manifest, pair.private_key_pem);
+    await fsp.writeFile(
+      path.join(dir, "manifest.json"),
+      JSON.stringify({ ...manifest, signature }, null, 2),
+    );
+    await fsp.writeFile(path.join(dir, "helper.js"), `export const payload = "BACKDOOR";\n`);
+    for (const mode of ["strict", "warn"] as const) {
+      await expect(
+        loadPluginDirectory(dir, { mode, trustedKeys: [pair.public_key_hex] }),
+      ).rejects.toMatchObject({ name: "PluginIntegrityError" });
+    }
+  });
+
+  it("rejects a code file on disk with NO files entry (unlisted sibling)", async () => {
+    const dir = await writeMultiFilePlugin("multi-unlisted");
+    await fsp.writeFile(path.join(dir, "sneaky.js"), `export const x = 1;\n`);
+    await expect(loadPluginDirectory(dir, { mode: "warn" })).rejects.toMatchObject({
+      name: "PluginIntegrityError",
+      plugin: "multi-unlisted",
+    });
+  });
+
+  it("rejects a stale manifest entry (declared file absent on disk)", async () => {
+    const dir = await writeMultiFilePlugin("multi-stale");
+    await fsp.rm(path.join(dir, "helper.js"));
+    await expect(loadPluginDirectory(dir, { mode: "warn" })).rejects.toMatchObject({
+      name: "PluginIntegrityError",
+    });
+  });
+
+  it("documentation files are exempt (README.md needs no entry)", async () => {
+    const dir = await writeMultiFilePlugin("multi-docs");
+    await fsp.writeFile(path.join(dir, "README.md"), "# docs\n");
+    await expect(loadPluginDirectory(dir, { mode: "warn" })).resolves.toBeDefined();
+  });
+});

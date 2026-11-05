@@ -9,7 +9,7 @@ deny-first policy broker, memory is markdown you can read, and the persona is
 a first-class directory of files with an operator contract that binds
 evidence and scope discipline — not refusal suppression.
 
-**Status:** v0.7.0 — the first publishable release. Phases 0–7 complete and tested (1282 passing tests + 21 docker-gated bypass proofs; see `docs/ROADMAP.md`).
+**Status:** v0.7.0 — the first publishable release. Phases 0–7 complete and tested (1299 passing tests + 21 docker-gated bypass proofs; see `docs/ROADMAP.md`).
 
 ## Security model
 

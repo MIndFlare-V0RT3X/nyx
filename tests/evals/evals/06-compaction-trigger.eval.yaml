@@ -23,5 +23,10 @@ assertions:
   - { assert: event_present, event: compaction.completed }
   - { assert: event_field, event: compaction.started, field: strategy, equals: rule-elision }
   - { assert: event_field, event: compaction.completed, field: strategy, equals: rule-elision }
+  # Freed tokens are reported and real (a no-op elision must not pass).
+  - { assert: event_field, event: compaction.completed, field: freed_tokens, at_least: 1000 }
+  # Compaction runs BEFORE the model answers (text.delta exists only in the
+  # live turn — the seeded turns never emit one).
+  - { assert: event_order, events: [compaction.completed, text.delta] }
   - { assert: event_order, events: [compaction.started, compaction.completed, turn.completed] }
   - { assert: final_event, event: turn.completed }

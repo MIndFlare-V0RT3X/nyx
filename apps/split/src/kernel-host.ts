@@ -122,7 +122,58 @@ export async function startKernelHost(opts: KernelHostOptions): Promise<KernelHo
   const vault = new CredentialVault({ env: opts.env, audit: auditSink, now });
   const tasks: TaskManager = createTaskManager({ db: unified.db, store, now });
 
+  // R1-2 (fan-out): credential.inject may resolve ONLY the provider
+  // api_key_env names the operator configured — not arbitrary environment
+  // (NYX_OWNER_TOKEN, anything else in the kernel's env).
+  const credentialNames = new Set(
+    Object.values(config.providers)
+      .map((entry) => (entry as { api_key_env?: string }).api_key_env)
+      .filter((name): name is string => name !== undefined),
+  );
+
+  // R1-1 (fan-out): per-role authorization. The socket authenticates
+  // possession of the token; the ROLE is the authorization unit. The
+  // untrusted tools process gets exactly what it needs (policy, approvals,
+  // session meta); the semi-trusted agent gets the session/policy/memory
+  // surface; only kernel-side clients (operators, the e2e drivers, the
+  // future channel adapters) reach the privileged verbs.
+  const ROLE_GATES: Record<string, ReadonlySet<string>> = {
+    "kernel-client": new Set(["*"]),
+    agent: new Set([
+      "health.ping",
+      "session.create",
+      "session.append",
+      "session.read",
+      "session.meta",
+      "session.projection",
+      "policy.evaluate",
+      "approval.request",
+      "approval.pending",
+      "credential.inject",
+      "memory.write",
+      "memory.list",
+      "memory.search",
+    ]),
+    tools: new Set([
+      "health.ping",
+      "policy.evaluate",
+      "approval.request",
+      "approval.pending",
+      "session.meta", // R1-7: the tools process resolves the session's
+      // ENGAGEMENT from the kernel's own record — never from the request.
+    ]),
+  };
+
   const handler: IpcRequestHandler = async (request, connection) => {
+    const allowed = ROLE_GATES[connection.role] ?? new Set<string>();
+    if (!allowed.has("*") && !allowed.has(request.type as string)) {
+      throw new IpcError_({
+        code: "auth",
+        message:
+          `role "${connection.role}" may not call "${String(request.type)}" ` +
+          "(the kernel socket authenticates the token; the role is the authorization)",
+      });
+    }
     switch (request.type) {
       case "health.ping":
         return { ok: true, uptime_ms: Date.now() - startedAt, process_mode: "split" };
@@ -188,8 +239,17 @@ export async function startKernelHost(opts: KernelHostOptions): Promise<KernelHo
         return await approvals.pending(request.session_id as string);
 
       case "credential.inject": {
+        const name = request.name as string;
+        if (!credentialNames.has(name)) {
+          throw new IpcError_({
+            code: "auth",
+            message:
+              `credential "${name}" is not a configured provider api_key_env — ` +
+              "the vault resolves provider keys only (R1-2)",
+          });
+        }
         const credential = vault.inject(
-          request.name as string,
+          name,
           request.target_env as string,
           `ipc:${connection.role}`,
         );
@@ -202,8 +262,26 @@ export async function startKernelHost(opts: KernelHostOptions): Promise<KernelHo
       }
 
       case "audit.write": {
+        // R1-3 (fan-out): the actor is the CONNECTION's identity, stamped
+        // by the kernel — a client cannot forge "system:security" rows.
+        // The caller's requested actor survives only as payload metadata.
         const entry = request.entry as { actor: string; action: string; payload: unknown };
-        appendAudit(unified.db, entry, { now });
+        appendAudit(
+          unified.db,
+          {
+            actor: `ipc:${connection.role}`,
+            action: entry.action,
+            payload: {
+              ...(typeof entry.payload === "object" && entry.payload !== null
+                ? (entry.payload as Record<string, unknown>)
+                : { value: entry.payload }),
+              ...(entry.actor !== `ipc:${connection.role}`
+                ? { requested_actor: entry.actor }
+                : {}),
+            },
+          },
+          { now },
+        );
         return { ok: true };
       }
 

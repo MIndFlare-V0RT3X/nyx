@@ -10,7 +10,7 @@ as unreleased phases, recorded below in order.
 ## [0.7.0] — 2026-11-06
 
 The first publishable release: Phases 0–7, feature-complete against the
-original roadmap. 1303 tests (1282 passing + 21 docker-gated bypass proofs
+original roadmap. 1320 tests (1299 passing + 21 docker-gated bypass proofs
 that run live in the `test-docker` CI lane), lint clean, typecheck clean,
 SPDX headers on all 387 source files.
 

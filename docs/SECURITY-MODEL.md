@@ -341,3 +341,15 @@ and exercised, and warns on over-declaration; the static half is
 `nyx plugin audit <dir>` (manifest, integrity, signature, capability
 surface, effective mode). The working template, keypair generator, and
 signing script are in [`templates/plugin/`](../templates/plugin/).
+
+The Phase 7.6 fan-out hardened the layer further: a plugin's TOOL HANDLERS
+execute inside their owner's enforcement context (handler-time
+registrations are capability-checked and mutation-refused — R2-1), the
+integrity + signature pin the WHOLE code directory (every sibling code
+file must be listed in the manifest's `files` map with its sha256 — an
+unlisted or tampered helper.js is a tampered plugin — R2-2), hook
+callbacks keep their registration-time enforcement even across an unuse
+racing the emit (R2-3), plugin code reads only its own service namespace
+(R2-4) and cannot invoke other tools' handlers directly (R2-5 — the tool
+runtime is the only execution path), and `nyx plugin audit` checks the
+CONFIGURED trust anchor (R2-6).

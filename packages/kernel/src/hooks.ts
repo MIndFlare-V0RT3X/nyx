@@ -14,6 +14,12 @@ export interface HookScope {
   currentPlugin(): string | null;
   /** Run `fn` with calls made inside it attributed to `plugin` (null = host). */
   run<T>(plugin: string | null, fn: () => T): T;
+  /** R2-3 (fan-out): freeze `plugin`'s enforcement manifest NOW — hook
+   *  callbacks keep their registration-time context even if the plugin is
+   *  unused while a later emit is still running. */
+  capture(plugin: string): void;
+  /** Drop the captured context (plugin fully removed). */
+  release(plugin: string): void;
 }
 
 type AnyHook = HookMap[HookName];
@@ -44,6 +50,7 @@ export class HookBusImpl implements HookBus {
     // only honored for host code — a plugin cannot re-attribute its hooks.
     const active = this.#scope.currentPlugin();
     const plugin = active ?? opts?.plugin ?? null;
+    if (plugin !== null) this.#scope.capture(plugin);
     const reg: HookRegistration = {
       seq,
       priority: opts?.priority ?? 0,
@@ -95,6 +102,10 @@ export class HookBusImpl implements HookBus {
 
   /** Remove every registration owned by `plugin` (unload). Returns the count. */
   removePlugin(plugin: string): number {
+    // NOTE (R2-3): the plugin's CAPTURED hook context is intentionally NOT
+    // released here — an emit already in flight keeps its registration-time
+    // enforcement. A plugin re-registering hooks under the same name
+    // overwrites the capture; stale captures are a few small objects.
     let removed = 0;
     for (const [name, regs] of this.#registrations) {
       const kept = regs.filter((r) => r.plugin !== plugin);

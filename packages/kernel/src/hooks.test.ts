@@ -10,6 +10,8 @@ function makeScope() {
   const scope: HookScope = {
     currentPlugin: () => current,
     run: <T>(_plugin: string | null, fn: () => T): T => fn(),
+    capture: () => undefined,
+    release: () => undefined,
   };
   return {
     scope,

@@ -58,6 +58,17 @@ export const pluginManifestSchema = z
     integrity: z
       .string()
       .regex(/^[0-9a-f]{64}$/, { message: "must be the 64-hex sha256 of the plugin's index.js" }),
+    // R2-2 (fan-out): every sibling CODE file (index.js's transitive imports
+    // land here) — the loader refuses a code file on disk that is not
+    // listed-and-hashed. Documentation files (README.md, …) are exempt.
+    files: z
+      .record(
+        z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/, {
+          message: "must be a relative path inside the plugin directory",
+        }),
+        z.string().regex(/^[0-9a-f]{64}$/, { message: "must be a 64-hex sha256" }),
+      )
+      .optional(),
     signature: z
       .object({
         public_key: z.string().regex(/^[0-9a-f]{64}$/, {

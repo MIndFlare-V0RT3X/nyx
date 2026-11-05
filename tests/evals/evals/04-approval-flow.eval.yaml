@@ -3,16 +3,22 @@
 # tool.result), and the turn ends completed with the refusal visible.
 name: approval-flow
 description: >
-  web.fetch on an in-scope host under ask-R2 policy; the operator denies;
-  the tool never executes and the denial reason is "approval".
+  An R2 tool under ask-R2 policy: the operator DENIES (the tool never
+  runs, reason "approval"), then ALLOWs a second call (the tool runs and
+  returns). The REAL approval engine emits the events.
 kind: loop
 setup:
   provider_script:
-    - tool_call: { name: web.fetch, call_id: w1, input: { url: "https://in-scope.test/health" } }
-    - text: "The operator denied the fetch; I did not run it."
+    - tool_call: { name: deploy.check, call_id: w1, input: { env: staging } }
+    - tool_call: { name: deploy.check, call_id: w2, input: { env: staging } }
+    - text: "First check denied, second allowed and executed."
+  tools:
+    - name: deploy.check
+      risk: R2
+      output: { kind: json, json: { healthy: true } }
   policy:
     - { id: ask-r2, match: { risk: R2 }, decision: ask }
-  approval_decisions: [deny]
+  approval_decisions: [deny, allow]
   engagement:
     id: ENG-EVAL-SCOPE
     operator_id: owner
@@ -25,9 +31,12 @@ setup:
 input:
   user_message: "check https://in-scope.test/health"
 assertions:
-  - { assert: event_present, event: approval.requested }
-  - { assert: event_present, event: approval.resolved }
+  - { assert: event_count, event: approval.requested, exactly: 2 }
+  - { assert: event_count, event: approval.resolved, exactly: 2 }
+  # The DENY path: requested → resolved → denied, no execution.
   - { assert: event_order, events: [approval.requested, approval.resolved, action.denied] }
   - { assert: event_field, event: action.denied, field: reason, equals: approval }
-  - { assert: event_absent, event: tool.result }
+  # The ALLOW path: the second call executes (one tool.result in the log —
+  # the denied first call produced none).
+  - { assert: event_count, event: tool.result, exactly: 1 }
   - { assert: final_event, event: turn.completed }

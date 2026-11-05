@@ -164,6 +164,12 @@ function evaluateLoopAssertions(
         if (assertion.contains !== undefined && !value.includes(assertion.contains)) {
           failures.push(`${label}: ${assertion.event}.${assertion.field} expected to contain "${assertion.contains}", saw "${value}"`);
         }
+        if (
+          assertion.at_least !== undefined &&
+          !(typeof raw === "number" && raw >= assertion.at_least)
+        ) {
+          failures.push(`${label}: ${assertion.event}.${assertion.field} expected >= ${assertion.at_least}, saw "${value}"`);
+        }
         break;
       }
       case "final_event":
@@ -354,6 +360,12 @@ export async function runEval(spec: EvalSpec): Promise<EvalOutcome> {
         case "refusal_code":
           if (result.code !== (assertion.code ?? "")) {
             failures.push(`refusal_code: expected ${assertion.code}, saw ${String(result.code)}`);
+          }
+          if (result.session_created || result.session_count !== 0) {
+            failures.push(
+              `refusal_code: the refusal did not prevent the session ` +
+                `(created=${String(result.session_created)}, rows=${String(result.session_count)})`,
+            );
           }
           break;
         default:

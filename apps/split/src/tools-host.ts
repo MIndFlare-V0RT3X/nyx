@@ -121,6 +121,22 @@ export async function startToolsHost(opts: ToolsHostOptions): Promise<ToolsHost>
       ? new LocalSandboxProvider({ root: config.sandbox.workdir_root })
       : new DockerSandboxProvider({ image: config.sandbox.image });
 
+  /** R1-7: the session's engagement, from the kernel's session.meta — the
+   *  authoritative record, cached per session. */
+  const sessionEngagements = new Map<string, Engagement | null>();
+  const engagementFor = async (session_id: string): Promise<Engagement | null> => {
+    if (sessionEngagements.has(session_id)) {
+      return sessionEngagements.get(session_id) ?? null;
+    }
+    const meta = await opts.kernel.request<{ engagement: Engagement | null } | null>({
+      type: "session.meta",
+      session_id,
+    });
+    const engagement = meta?.engagement ?? null;
+    sessionEngagements.set(session_id, engagement);
+    return engagement;
+  };
+
   const sessionSandboxes = new Map<string, Sandbox>();
   const sandboxFor = async (session_id: string): Promise<Sandbox> => {
     const cached = sessionSandboxes.get(session_id);
@@ -158,6 +174,10 @@ export async function startToolsHost(opts: ToolsHostOptions): Promise<ToolsHost>
           engagement: Engagement | null;
           workdir_root: string;
         };
+        // R1-7 (fan-out): the engagement is resolved from the KERNEL's own
+        // session record — the request's copy is untrusted agent input and
+        // is IGNORED for scope decisions.
+        const engagement = await engagementFor(context.session_id);
         const events: SessionEvent[] = [];
         const sandbox = await sandboxFor(context.session_id);
         const output = await runtime.execute(
@@ -165,7 +185,7 @@ export async function startToolsHost(opts: ToolsHostOptions): Promise<ToolsHost>
           {
             session_id: context.session_id,
             turn_id: context.turn_id,
-            engagement: context.engagement,
+            engagement,
             sandbox,
             signal: new AbortController().signal,
             logger,

@@ -30,30 +30,46 @@ Twelve evals, one YAML spec each (`tests/evals/evals/*.eval.yaml`):
 | 8 | rate-limit-respect | 4 calls @ 2rps paced ≥ 1500ms wall clock (real clock) |
 | 9 | cve-correlation-accuracy | Apache httpd 2.4.49 → CVE-2021-41773 exact-match, finding updated |
 | 10 | disclosure-package-integrity | manifest sha256 == recomputed on-disk artifact hashes |
-| 11 | abort-propagation | tool.error aborted, turn.failed aborted, nothing after |
+| 11 | abort-propagation | tool.error code=aborted, turn.failed aborted, nothing after |
 | 12 | scope-refusal-owner-mismatch | foreign-operator engagement refused (engagement_ownership) |
 
 The rig is REAL everywhere except the model: real agent loop, real tool
-runtime, real policy engine, real session store (in-memory SQLite + audit),
-real memory store, real subagent manager, tmpdir sandbox. The two scripted
-seams are the provider (turn scripts) and the approval outcomes.
+runtime, real policy engine, real approval engine (with the production
+onCreated/onResolved event wiring and a scripted operator resolver), real
+session store (in-memory SQLite + audit), real memory store, real subagent
+manager, tmpdir sandbox. The scripted seams are the provider (turn
+scripts), the approval outcomes, and the fake tools a script calls.
+
+Two honest scope notes: eval 7's `memory.write` tool is rig-provided —
+production memory writes happen through compaction's session-memory tier
+and the split-mode kernel RPC; the eval proves the loop→tool→store
+plumbing and the durable side effect. Eval 12 drives the ownership
+invariant through the exact session-creation sequence the surfaces use
+(assert BEFORE the store) and additionally proves no session row survives
+the refusal.
 
 ## The regression gate
 
-`baseline.json` records every eval's pass/fail AND its trajectory (the
-event-type sequence). The suite fails when either drifts:
+`baseline.json` records every eval's pass/fail AND its event-type
+HISTOGRAM (the multiset of event types in the trajectory). The suite fails
+when either drifts — an event type appearing or vanishing is a structural
+behavior change. ORDER sensitivity lives in each eval's own `event_order`
+assertions, which encode exactly which order matters (some interleavings —
+mirrored subagent events vs the loop's pump flush — are legitimately
+load-dependent, which is why the gate keys on the histogram):
 
 ```sh
 pnpm --filter @nyx/evals test          # gate: any drift fails
 pnpm --filter @nyx/evals eval:update   # --eval-update: regenerate + print the diff
 ```
 
-A trajectory change is a behavior change — even if all assertions still
+A histogram change is a behavior change — even if all assertions still
 pass — and deserves a look before it is accepted. `--eval-update` prints
 the diff (added / removed / flipped / drifted) and rewrites the baseline;
 commit the baseline with the change that justified it. CI runs the gate in
 both lanes (the evals are offline: scripted provider, no network, no
-docker).
+docker), and nothing in CI sets EVAL_UPDATE — a baseline update is always
+a visible diff.
 
 ## How to add an eval
 

@@ -32,22 +32,46 @@ NYX_PROCESS_MODE=split (Phase 7; default in Phase 8 after soak)
 ## The boundary
 
 - **nyx-kernel** is the only process that reads credential env vars. The
-  vault resolves `api_key_env` names at boot and holds them in memory —
-  nothing is ever written to disk (the split e2e asserts ENOENT on every
-  plausible credential file path, from inside the tools process).
-- **nyx-agent** builds model providers whose API keys arrive as scoped,
-  TTL-60-second tokens fetched over the socket (`credential.inject`) — the
-  durable env var does not exist in the agent process at all.
+  vault resolves `api_key_env` names at boot — ONLY the configured provider
+  key names; `credential.inject` refuses anything else — and holds them in
+  memory. Nothing is ever written to disk (the split e2e asserts ENOENT on
+  every plausible credential file path, from inside the tools process).
+- **nyx-agent** builds model providers whose API keys arrive via
+  `credential.inject` (audited at issue) — the durable env var does not
+  exist in the agent process at all (its launcher passes the scrubbed
+  environment; `scrubAgentEnv` in `@nyx/split`).
 - **nyx-tools** never learns the data dir (`--runtime-dir` only: sockets
   and token files); it holds no credentials and no DB handle, and its
   policy/approval calls are RPCs to the kernel.
-- Child processes are spawned with a **scrubbed environment** (the
-  `@nyx/ipc` allowlist: PATH/locale, the split markers, the runtime dir);
-  `process.env.OPENAI_API_KEY` finds nothing in the agent or tools process.
-- **Token rotation**: the kernel rotates the boot token whenever the last
-  agent connection closes (normal exit, crash, SIGKILL). A restarting agent
-  reads the fresh token file at its own boot; the pre-restart token is
-  refused — it cannot be replayed.
+- **Per-role authorization (R1-1)**: the socket authenticates possession of
+  the token; the ROLE is the authorization unit. The kernel enforces a gate
+  map — the tools role gets exactly policy/approvals/session-meta; the
+  agent role gets the session/policy/memory surface and credential.inject;
+  only kernel-side clients (operators, the e2e drivers, the future channel
+  adapters) reach audit.write, approval.resolve, task.*, and
+  session.create. `audit.write` actors are STAMPED from the connection
+  (`ipc:<role>`), never caller-chosen — a client cannot forge
+  `system:security` rows.
+- **Untrusted event validation (R1-6)**: the agent validates the tools
+  process's event list (type, session, turn, call id) before appending —
+  a lying tools process cannot inject approval/message events into the
+  session log.
+- **Kernel-side engagement (R1-7)**: the tools process resolves the
+  session's engagement from the kernel's own session record — the
+  request's copy is untrusted input and is ignored for scope decisions.
+- **Token rotation**: the kernel rotates the token atomically (temp +
+  rename) whenever an authenticated connection closes. A restarting client
+  reads the fresh file at its own boot; the pre-rotation token is refused —
+  it cannot be replayed.
+
+## Residuals (owned, from the Phase 7.6 fan-out)
+
+| Finding | Severity | Reason | Target |
+|---|---|---|---|
+| Same-OS-user processes can read each other's files (R1-4, R1-11, R1-13) | medium | the split confines CODE PATHS, not the OS user: all three processes run as one uid, so a compromised tools process can open nyx.db or the config file directly; `NYX_RUNTIME_DIR` sits inside the data dir | OS-level isolation (separate uids / namespaces) — Phase 8 deployment work; until then the split is a code-path boundary, not a file boundary |
+| The scoped token IS the provider key (R1-2) | medium | a usable token for an external API must be that API's key — the scope/TTL envelope (audited issue, configured-name allowlist, 60s semantics) bounds WHO can fetch it and WHAT it names, but the fetched value is the durable secret by definition | never (protocol limit; documented) |
+| Token rotation can be suppressed by a live connection (R1-5) | low | a client holding a CURRENT token can keep a connection open to prevent rotation — but holding a connection already implies holding the current token, so this only extends a compromise the attacker already has | per-connection tokens (Phase 8 protocol v2) |
+| The full config file is readable by all three processes (R1-11) | low | same-uid (see above); inline `server.auth.owner_token` in nyx.config.yaml would be readable by the tools process — use `NYX_OWNER_TOKEN` env instead | documented operator guidance |
 
 ## The protocol
 
