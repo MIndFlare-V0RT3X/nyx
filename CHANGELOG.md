@@ -6,6 +6,79 @@ SemVer once 0.1.0 ships.
 
 ## [Unreleased]
 
+### Added — Phase 5 (security subsystem: engagements · scope engine · findings · reports · security skills)
+
+- **`@nyx/security` (new package)** — the security subsystem for authorized
+  engagements. Engagement files (YAML/JSON, hash-pinned, immutable per
+  session) with window/targets/exclusions/rate-limits/techniques; the
+  three-layer scope engine (technique registry filter, checked egress path,
+  action-time audit-row checks); the token-bucket rate limiter (per class +
+  shared per-host default, blocks never drops); the findings DB in `nyx.db`
+  (migration `0004_findings`, FTS5, structural session binding); CVSS 3.1 +
+  4.0 scoring (spec-faithful ports, published-vector tested); the report
+  generator (Markdown + self-contained HTML) with the out-of-scope and
+  evidence gates; and the six tool wrappers (subfinder, httpx, nuclei, ffuf,
+  katana, nmap) with charset-guarded argv and injectable executors.
+- **`@nyx/scope`** — wildcard domains (strict subdomains), URL targets
+  (structural scheme+host+path, segment-boundary subtrees), the window-start
+  denial (`engagement_not_yet_active`), IP-literal URL entries, and
+  `parseUrlTarget` exported. All additive; the Phase 1 semantics unchanged
+  (matcher tests written first, watched red).
+- **`@nyx/protocol`** — `Engagement` gains `starts_at`, `techniques`,
+  `rate_limits`, `client`/`authorized_by`/`emergency_contact`; targets gain
+  `urls`; the query gains `url`. All optional (zod mirrors extended).
+- **`@nyx/tools`** — the `net.egress` pre-check understands the security
+  input shapes (`targets[]`, `domain`, `target` incl. CIDR bases) and checks
+  every entry; `security.ffuf`'s wordlist joined the contained path fields;
+  the egress resolver types are exported.
+- **`@nyx/skills`** — frontmatter gains `attack_class`
+  (recon/enum/scan/exploit; Phase 5 ships the first three).
+- **Shipped data** — `engagements/example.yaml` (RFC 5737/2606 targets
+  only, no exploitation technique), `skills/security/` (six SKILL.md
+  files), `personas/security/`, `Dockerfile.security` (fully pinned:
+  subfinder v2.17.0, httpx v1.12.0, nuclei v3.11.1, ffuf v2.3.0, katana
+  v1.8.0, nmap 7.93; fails the build on version mismatch),
+  `scripts/generate-cvss4-data.mjs` (regenerates the CVSS 4.0 tables from
+  the FIRST reference).
+- **Config** — the `security:` section (`enabled`, `executor:
+  sandbox|host`); both apps register the tools when enabled (safe by
+  construction — unauthorized techniques are absent from the session's
+  registry view) with the audit sink and one process-level limiter. The
+  CLI's `--engagement` now loads YAML engagement files.
+- **Docs** — `SECURITY-SUBSYSTEM.md`, `ENGAGEMENT.md`, `FINDINGS.md` (new);
+  ARCHITECTURE (19 packages), SECURITY-MODEL (Phase 5 residuals), README
+  (engagements quickstart, Dockerfile build, roadmap), example config.
+
+### Fixed — Phase 5 hardening (the three-reviewer fan-out: 38 findings, all HIGH/MEDIUM fixed with regression tests)
+
+- **R1** (scope bypass hunt, 11 findings): ffuf wordlist traversal closed
+  at two layers (schema + runtime path containment — a model-reachable
+  host-file read primitive); the engagement window re-checked after rate
+  sleeps with binary runtimes capped to the window; rate buckets keyed by
+  the normalized host (trailing-dot variants cannot split them); the tasks
+  path builds subagent contexts over the engagement tooling; sandbox
+  executor tokens single-quoted and the charset admits URL syntax; IPv6
+  literals reach the resolver unbracketed; nmap refuses host-bits-set
+  CIDRs; report window semantics corrected (per-finding discovery time —
+  post-window report generation works).
+- **R2** (findings/report integrity, 11 findings): a CVSS 4.0 eq3/eq6
+  branch error that inflated a macrovector family (145,855 vectors, 20,212
+  band flips per the reviewer's differential) fixed with a regression
+  vector; empty-evidence findings refused (hard rule #5); ports embedded in
+  host strings face the port policy; the URL fallback refuses hostile host
+  shapes; duplicate ids render their own evidence; symlink escapes
+  blocked via realpath; malformed CVSS in one nuclei match no longer aborts
+  the batch; FTS asserted across restart.
+- **R3** (skill wrapper correctness, 16 findings — the wrappers would not
+  have worked against the real binaries): httpx/nuclei/katana targets now
+  ride `-u` flags (goflags drops positionals); the nuclei parser reads the
+  real dashed-key format with array ids; the nmap parser reads the real
+  single-line greppable format; ffuf uses `-json` JSONL (the `-o
+  /dev/stdout` form was polluted by quiet-mode prints) and normalizes
+  dotted extensions; Dockerfile.security's three build breakers fixed
+  (unzip, mv paths, the Debian nmap pin); nmap derives a conservative
+  `--max-rate`; SKILL.md accuracy + evidence-preservation recipes.
+
 ### Added — Phase 4 (durable tasks · retention · sandbox forking · skills)
 
 - **`@nyx/tasks` (new package).** Durable tasks: long-running work that
@@ -91,8 +164,6 @@ SemVer once 0.1.0 ships.
   `docs/SUBAGENTS.md` rewritten for fork mode + the artifact handoff;
   ARCHITECTURE (17-package graph), README, SECURITY-MODEL, and the example
   config updated.
-
-## [Unreleased]
 
 ### Added — Phase 3 (subagents)
 

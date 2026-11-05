@@ -103,10 +103,13 @@ Full details: `docs/ARCHITECTURE.md`, `docs/SECURITY-MODEL.md`,
 | `packages/subagents`| the subagent system: spawn, fork, artifact handoff (`docs/SUBAGENTS.md`) |
 | `packages/tasks`   | durable tasks: SQL leases, state machine, retention (`docs/TASKS.md`, `docs/RETENTION.md`) |
 | `packages/skills`  | progressive-disclosure SKILL.md packages (`docs/SKILLS.md`) |
+| `packages/security`| engagement scope engine, findings DB + CVSS, reports (`docs/SECURITY-SUBSYSTEM.md`, `docs/ENGAGEMENT.md`, `docs/FINDINGS.md`) |
 | `apps/server`       | Hono: REST + SSE + WS, bearer auth, owner-bound R4, channels, heartbeats  |
 | `apps/cli`          | the `nyx` binary: run/chat/sessions/approvals/doctor                      |
 | `apps/web`          | minimal React client (64 KB gzipped)                                      |
 | `personas/default`  | Nyx — honest operator contract, scope discipline                          |
+| `personas/security` | the engagement posture: scope-bound, evidence-first, report-oriented      |
+| `skills/security`   | the six security skills (persona-scoped; add `./skills` to `skills.dirs`) |
 | `tests/e2e`         | smoke · approval · scope · replay · compaction · subagents · fan-out      |
 
 ## Config reference
@@ -136,6 +139,27 @@ Threat model, trust boundary, and — importantly — what Phase 0 does **not**
 yet defend against: `docs/SECURITY-MODEL.md` and `SECURITY.md`.
 Vulnerability reports: GitHub security advisories, please.
 
+### Security engagements (Phase 5)
+
+Offensive tooling ships behind the engagement scope engine — an authorized
+scope file is the structural precondition for the tools to exist in a
+session at all (`docs/SECURITY-SUBSYSTEM.md`):
+
+```
+cp engagements/example.yaml engagements/my-engagement.yaml   # edit scope
+nyx chat --persona security --engagement engagements/my-engagement.yaml
+```
+
+The six wrapped tools (subfinder, httpx, nuclei, ffuf, katana, nmap) fire
+only for in-scope targets under the engagement's rate limits, with every
+allow/deny on the audit chain; nuclei records findings with hash-verified
+evidence; the report generator refuses out-of-scope findings outright. The
+sandbox image with pinned tool versions:
+
+```
+docker build -f Dockerfile.security -t nyx-security:1 .
+```
+
 ## Roadmap
 
 | Phase | Scope                                                            |
@@ -144,10 +168,10 @@ Vulnerability reports: GitHub security advisories, please.
 | 1     | channels: webhook + Telegram, lane queues, heartbeat (shipped)   |
 | 2     | unified DB, channel approvals, four-tier compaction (shipped)    |
 | 3     | subagents: isolated context, summary-only return (shipped)       |
-| 4     | durable tasks: leases, pause/resume, approval receipts           |
-| 5     | skills system (the `SKILLS_CATALOG` section is reserved)         |
-| 6     | authorized-engagement security tooling on the scope engine       |
-| 7     | deeper RE / fuzzing / exploit-dev for authorized engagements     |
+| 4     | durable tasks, retention, sandbox forking, skills (shipped)      |
+| 5     | security subsystem: engagements, findings, reports (shipped)     |
+| 6     | deeper RE / fuzzing / PoC generation on the proven scope engine  |
+| 7     | sandbox egress proxy (container-level network ACLs)              |
 | 8     | more sandboxes (E2B, Daytona), computer-use                      |
 | 9     | hardening, behavioral evals, release                             |
 

@@ -292,3 +292,27 @@ An honest list, so operators can reason about the residual risk:
 
 The structural summary is the four-process diagram above; the disclosure
 process and reporting policy are in [`../SECURITY.md`](../SECURITY.md).
+
+## Phase 5 — security-subsystem residuals
+
+The engagement scope engine (Phase 5) extends this model; its residuals are
+enumerated in [SECURITY-SUBSYSTEM.md](SECURITY-SUBSYSTEM.md) and summarized
+here as the trust-relevant set:
+
+- **Binary re-resolution.** The harness pins and validates a target's DNS
+  resolution at check time; the wrapped binaries perform their own
+  resolution at exec time. A target-controlled resolver can answer
+  differently for the binary. The container egress proxy (the standing
+  roadmap item) is the structural fix.
+- **Rate limiting is per process and per tool call.** Processes sharing
+  `nyx.db` each enforce their own buckets; within one call, pacing beyond
+  the reserved slot is delegated to the binary's cooperative rate flag.
+- **The sandbox network posture is unchanged** (`--network none` under
+  docker; the local provider remains dev-only). The tool layer's checked
+  egress path is the enforcement surface for security tooling.
+- **`FindingStore.create()`** accepts caller-supplied ids; it is the
+  admin/migration surface. The session path derives ids from the runtime
+  binding and cannot be forged from model input.
+- **Markdown reports interpolate finding text raw** (paste format); the
+  HTML report escapes every finding-controlled string.
+

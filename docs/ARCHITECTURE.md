@@ -15,7 +15,7 @@ no analytics, no phone-home.
 
 ## The package graph
 
-Eighteen library packages, three applications, and an end-to-end test workspace.
+Nineteen library packages, three applications, and an end-to-end test workspace.
 `@nyx/protocol` is the frozen contract: every type that crosses a package or
 process boundary lives there, and it imports nothing. Dependency direction is
 machine-enforced by ESLint `no-restricted-imports` in `eslint.config.mjs`.
@@ -46,10 +46,17 @@ flowchart TD
     SUBAGENTS["@nyx/subagents<br/>spawn · fork · artifact handoff"]
     TASKS["@nyx/tasks<br/>durable tasks · SQL leases · retention"]
     SKILLS["@nyx/skills<br/>SKILL.md · catalog · load_skill"]
+    SECURITY["@nyx/security<br/>engagements · scope engine · findings · reports"]
     DB["@nyx/db<br/>unified nyx.db · split-DB migration"]
   end
 
   E2E["tests/e2e — @nyx/e2e"]
+
+  SECURITY --> PROTOCOL
+  SECURITY --> SCOPE
+  SECURITY --> TOOLS
+  SERVER --> SECURITY
+  CLI --> SECURITY
 
   CONFIG --> PROTOCOL
   KERNEL --> PROTOCOL
