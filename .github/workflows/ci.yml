@@ -64,9 +64,19 @@ jobs:
           echo "docker=${DOCKER}" >> "$GITHUB_OUTPUT"
 
   test-fast:
-    name: test-fast (hermetic)
+    name: "test-fast (hermetic, node ${{ matrix.node }})"
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # v0.7.1 (FIX E): the fast lane runs on every supported Node major —
+    # this is what makes the next "hardcoded assumption that only holds on
+    # one Node version" visible before a user reports it. Node 24 is the
+    # .nvmrc pin the tests are verified against; 26 is the newer LTS that
+    # better-sqlite3 12.x prebuilds cover. test-docker stays on 24 only
+    # (the daemon lane is about the sandbox surface, not the Node matrix).
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [24, 26]
     env:
       NYX_SKIP_DOCKER: "1"
     steps:
@@ -76,15 +86,18 @@ jobs:
           version: 9.15.0
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: ${{ matrix.node }}
           cache: pnpm
       - name: Turbo cache
         uses: actions/cache@v4
         with:
           path: .turbo
-          key: turbo-fast-${{ runner.os }}-${{ github.sha }}
+          # matrix.node in the key so a 24-leg result can never be served
+          # to the 26-leg (turbo also hashes the node version, but the key
+          # makes the separation visible and cheap).
+          key: turbo-fast-${{ runner.os }}-node${{ matrix.node }}-${{ github.sha }}
           restore-keys: |
-            turbo-fast-${{ runner.os }}-
+            turbo-fast-${{ runner.os }}-node${{ matrix.node }}-
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec turbo run build --cache-dir=.turbo
       - run: pnpm -r typecheck

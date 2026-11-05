@@ -8,8 +8,14 @@ applies this once after the first push of `.github/workflows/ci.yml`.
 
 | Check                                         | Runs on                                                                                  | Required for                                                                             |
 | --------------------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `test-fast (hermetic)`                        | every push, every PR                                                                     | **every PR merge**                                                                       |
+| `test-fast (hermetic, node 24)`               | every push, every PR — the `.nvmrc` pin the tests are verified against                   | **every PR merge**                                                                       |
+| `test-fast (hermetic, node 26)`               | every push, every PR — the newer LTS, same suite (`better-sqlite3` 12.x prebuilds)       | **every PR merge**                                                                       |
 | `test-docker (bypass suite + security image)` | push to `main`, tags `v*`, PRs that touch the docker surface or carry the `docker` label | **every merge to `main`**; PRs outside the docker surface may merge on `test-fast` alone |
+
+v0.7.1: the fast lane runs as a Node `[24, 26]` matrix, so a change that
+only works on one Node major fails a required check instead of a user's
+first `pnpm test`. The docker lane stays on Node 24 — its subject is the
+sandbox surface, not the Node matrix.
 
 The docker surface (the `changes` job's path filter):
 
@@ -30,7 +36,8 @@ Rule for `main`:
    owner reviews their own work honestly or flags it.
 2. **Require status checks to pass before merging**, with these required
    checks:
-   - `test-fast (hermetic)`
+   - `test-fast (hermetic, node 24)`
+   - `test-fast (hermetic, node 26)`
    - `test-docker (bypass suite + security image)`
 3. **Do not allow bypassing the above settings** (no admin bypass on red
    checks; `docker`-labeled or docker-surface PRs that cannot go green stay
