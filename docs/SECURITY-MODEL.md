@@ -286,9 +286,13 @@ An honest list, so operators can reason about the residual risk:
 - **Policy `path_prefix`/`host` matching is Phase 0 crude** — prefix match on
   a top-level input field (or the canonical JSON of the input). Field-aware
   matching lands later.
-- **The four-process split is the target, not the Phase 0 reality.** Kernel,
-  agent loop, and tool runtime compose inside one server process today; a
-  compromise of that process is not yet contained by OS isolation.
+- **~~The four-process split is the target, not the Phase 0 reality.~~**
+  **CLOSED Phase 7.3**: `NYX_PROCESS_MODE=split` boots nyx-kernel /
+  nyx-agent / nyx-tools as separate processes over a token-authenticated
+  unix-socket boundary (`docs/PROCESS-MODEL.md`) — credentials kernel-only,
+  scoped 60-second tokens across the boundary, scrubbed child environments,
+  token rotation on agent restart. Single mode stays the default (and
+  byte-identical to Phase 6) until the Phase 8 soak flips it.
 
 The structural summary is the four-process diagram above; the disclosure
 process and reporting policy are in [`../SECURITY.md`](../SECURITY.md).

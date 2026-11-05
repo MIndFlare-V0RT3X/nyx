@@ -27,12 +27,14 @@ const ALLOWED = {
   "packages/subagents": ["@nyx/protocol", "@nyx/policy", "@nyx/sandbox", "@nyx/tools", "@nyx/agent"],
   "packages/tasks": ["@nyx/protocol", "@nyx/policy", "@nyx/session", "@nyx/runtime"],
   "packages/security": ["@nyx/protocol", "@nyx/scope", "@nyx/sandbox", "@nyx/tools"],
+  "packages/ipc": ["@nyx/protocol"],
   "apps/server": ["@nyx/protocol", "@nyx/config", "@nyx/kernel", "@nyx/session", "@nyx/model", "@nyx/tools", "@nyx/policy", "@nyx/scope", "@nyx/sandbox", "@nyx/memory", "@nyx/persona", "@nyx/agent", "@nyx/runtime", "@nyx/channels", "@nyx/db", "@nyx/skills", "@nyx/subagents", "@nyx/tasks", "@nyx/security"],
   "apps/cli": ["@nyx/protocol", "@nyx/config", "@nyx/kernel", "@nyx/session", "@nyx/model", "@nyx/tools", "@nyx/policy", "@nyx/scope", "@nyx/sandbox", "@nyx/memory", "@nyx/persona", "@nyx/agent", "@nyx/db", "@nyx/skills", "@nyx/subagents", "@nyx/tasks", "@nyx/security"],
+  "apps/split": ["@nyx/protocol", "@nyx/config", "@nyx/kernel", "@nyx/session", "@nyx/model", "@nyx/tools", "@nyx/policy", "@nyx/sandbox", "@nyx/memory", "@nyx/persona", "@nyx/agent", "@nyx/db", "@nyx/ipc", "@nyx/tasks"],
   "apps/web": [],
 };
 
-const ALL_PACKAGES = ["@nyx/protocol", "@nyx/config", "@nyx/kernel", "@nyx/session", "@nyx/model", "@nyx/scope", "@nyx/policy", "@nyx/sandbox", "@nyx/memory", "@nyx/persona", "@nyx/tools", "@nyx/agent", "@nyx/runtime", "@nyx/channels", "@nyx/db", "@nyx/skills", "@nyx/subagents", "@nyx/tasks", "@nyx/security", "@nyx/server", "@nyx/cli", "@nyx/web"];
+const ALL_PACKAGES = ["@nyx/protocol", "@nyx/config", "@nyx/kernel", "@nyx/session", "@nyx/model", "@nyx/scope", "@nyx/policy", "@nyx/sandbox", "@nyx/memory", "@nyx/persona", "@nyx/tools", "@nyx/agent", "@nyx/runtime", "@nyx/channels", "@nyx/db", "@nyx/skills", "@nyx/subagents", "@nyx/tasks", "@nyx/security", "@nyx/ipc", "@nyx/server", "@nyx/cli", "@nyx/web", "@nyx/split"];
 
 const boundaryOverrides = Object.entries(ALLOWED).map(([dir, allowed]) => {
   const forbidden = ALL_PACKAGES.filter((p) => !allowed.includes(p));

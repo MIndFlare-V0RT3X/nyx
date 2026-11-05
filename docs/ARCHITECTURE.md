@@ -212,10 +212,17 @@ flowchart TD
 - **Model provider (external).** Receives prompts and curated tool schemas
   (`ToolSchema`), never handlers, credentials, audit data, or host paths.
 
-Phase 0 composes these zones inside one server process; the seams are enforced
+Phase 0 composed these zones inside one server process; the seams were enforced
 structurally (dependency direction, the policy broker, the sandbox) rather than
-by OS process isolation. The full model, including what Phase 0 does **not**
-defend against, is `docs/SECURITY-MODEL.md`.
+by OS process isolation. **Phase 7.3 makes the split structural**: `NYX_PROCESS_MODE=split`
+boots three processes — nyx-kernel (trusted: config, credential vault,
+policy, audit, nyx.db, sessions, tasks, memory), nyx-agent (semi-trusted: loop,
+prompts, persona, model router, remote views — no credentials, no db handle,
+no data dir), nyx-tools (untrusted: registry, runtime, sandbox) — joined by a
+token-authenticated JSON-RPC unix socket (`@nyx/ipc`). Single mode remains
+the default and byte-identical to Phase 6; the full model, scope notes, and
+both modes' guarantees are in `docs/PROCESS-MODEL.md` and
+`docs/SECURITY-MODEL.md`.
 
 ## Event sourcing
 

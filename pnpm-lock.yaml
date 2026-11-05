@@ -209,6 +209,64 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.5)
 
+  apps/split:
+    dependencies:
+      '@nyx/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
+      '@nyx/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@nyx/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@nyx/ipc':
+        specifier: workspace:*
+        version: link:../../packages/ipc
+      '@nyx/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@nyx/memory':
+        specifier: workspace:*
+        version: link:../../packages/memory
+      '@nyx/model':
+        specifier: workspace:*
+        version: link:../../packages/model
+      '@nyx/persona':
+        specifier: workspace:*
+        version: link:../../packages/persona
+      '@nyx/policy':
+        specifier: workspace:*
+        version: link:../../packages/policy
+      '@nyx/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@nyx/sandbox':
+        specifier: workspace:*
+        version: link:../../packages/sandbox
+      '@nyx/session':
+        specifier: workspace:*
+        version: link:../../packages/session
+      '@nyx/tasks':
+        specifier: workspace:*
+        version: link:../../packages/tasks
+      '@nyx/tools':
+        specifier: workspace:*
+        version: link:../../packages/tools
+      nanoid:
+        specifier: ^5.0.9
+        version: 5.1.16
+      pino:
+        specifier: ^9.6.0
+        version: 9.14.0
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.20.5
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.5)
+
   apps/web:
     dependencies:
       '@tanstack/react-query':
@@ -333,6 +391,19 @@ importers:
       '@types/better-sqlite3':
         specifier: ^7.6.12
         version: 7.6.13
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.20.5
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.5)
+
+  packages/ipc:
+    dependencies:
+      '@nyx/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+    devDependencies:
       '@types/node':
         specifier: ^22.10.2
         version: 22.20.5
@@ -723,6 +794,12 @@ importers:
       '@nyx/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@nyx/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@nyx/ipc':
+        specifier: workspace:*
+        version: link:../../packages/ipc
       '@nyx/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
@@ -756,6 +833,9 @@ importers:
       '@nyx/session':
         specifier: workspace:*
         version: link:../../packages/session
+      '@nyx/split':
+        specifier: workspace:*
+        version: link:../../apps/split
       '@nyx/subagents':
         specifier: workspace:*
         version: link:../../packages/subagents

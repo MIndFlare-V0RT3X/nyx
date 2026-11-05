@@ -23,7 +23,10 @@
     "@nyx/server": "workspace:*",
     "@nyx/session": "workspace:*",
     "@nyx/subagents": "workspace:*",
-    "@nyx/tools": "workspace:*"
+    "@nyx/tools": "workspace:*",
+    "@nyx/ipc": "workspace:*",
+    "@nyx/split": "workspace:*",
+    "@nyx/db": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^2.1.8",

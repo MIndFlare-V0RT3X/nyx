@@ -1,0 +1,50 @@
+{
+  "name": "@nyx/split",
+  "version": "0.1.0",
+  "description": "NYX — the Phase 7.3 process split: nyx-kernel (trusted: config, credentials, policy, audit, DB), nyx-agent (semi-trusted: loop, prompts, model), nyx-tools (untrusted: tools, sandbox)",
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "bin": {
+    "nyx-kernel": "./dist/kernel-main.js",
+    "nyx-agent": "./dist/agent-main.js",
+    "nyx-tools": "./dist/tools-main.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@nyx/agent": "workspace:*",
+    "@nyx/config": "workspace:*",
+    "@nyx/db": "workspace:*",
+    "@nyx/ipc": "workspace:*",
+    "@nyx/kernel": "workspace:*",
+    "@nyx/memory": "workspace:*",
+    "@nyx/model": "workspace:*",
+    "@nyx/persona": "workspace:*",
+    "@nyx/policy": "workspace:*",
+    "@nyx/protocol": "workspace:*",
+    "@nyx/sandbox": "workspace:*",
+    "@nyx/session": "workspace:*",
+    "@nyx/tasks": "workspace:*",
+    "@nyx/tools": "workspace:*",
+    "nanoid": "^5.0.9",
+    "pino": "^9.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "vitest": "^2.1.8"
+  }
+}
