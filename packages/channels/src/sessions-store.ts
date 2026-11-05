@@ -42,7 +42,9 @@ export class ChannelSessionStore {
   constructor(db: Database.Database) {
     db.exec(DDL);
     this.stmts = {
-      get: db.prepare("SELECT channel_key, session_id, updated_at FROM channel_sessions WHERE channel_key = ?"),
+      get: db.prepare(
+        "SELECT channel_key, session_id, updated_at FROM channel_sessions WHERE channel_key = ?",
+      ),
       put: db.prepare(
         `INSERT INTO channel_sessions (channel_key, channel, channel_user_id, thread_id, session_id, updated_at)
          VALUES (?, ?, ?, ?, ?, ?)
@@ -54,8 +56,7 @@ export class ChannelSessionStore {
 
   get(channel: string, channel_user_id: string, thread_id?: string): ChannelSessionMapping | null {
     const row = this.stmts.get.get(channelKey(channel, channel_user_id, thread_id)) as
-      | { channel_key: string; session_id: string; updated_at: number }
-      | undefined;
+      { channel_key: string; session_id: string; updated_at: number } | undefined;
     return row ?? null;
   }
 

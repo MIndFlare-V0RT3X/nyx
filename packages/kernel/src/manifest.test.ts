@@ -1,12 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { describe, expect, it } from "vitest";
 import { CapabilitySchema } from "@nyx/protocol";
-import {
-  HOOK_NAMES,
-  manifestIssues,
-  pluginManifestSchema,
-  v1MigrationHints,
-} from "./manifest.js";
+import { HOOK_NAMES, manifestIssues, pluginManifestSchema, v1MigrationHints } from "./manifest.js";
 
 const ALL_CAPABILITIES = [
   "fs.read",
@@ -24,8 +19,7 @@ const ALL_CAPABILITIES = [
   "deploy",
 ] as const;
 
-const SHA =
-  "a".repeat(64);
+const SHA = "a".repeat(64);
 const SIG = {
   public_key: "b".repeat(64),
   signature: "c".repeat(128),
@@ -139,9 +133,7 @@ describe("pluginManifestSchema (v2)", () => {
         dependencies: [{ name: "x", version_range: 7 }],
       }).success,
     ).toBe(false);
-    expect(pluginManifestSchema.safeParse({ ...valid, dependencies: "other" }).success).toBe(
-      false,
-    );
+    expect(pluginManifestSchema.safeParse({ ...valid, dependencies: "other" }).success).toBe(false);
     expect(pluginManifestSchema.safeParse({ ...valid, tools: [""] }).success).toBe(false);
     // integrity: 64 lowercase hex, nothing else.
     expect(pluginManifestSchema.safeParse({ ...valid, integrity: "XYZ" }).success).toBe(false);

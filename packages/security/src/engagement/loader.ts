@@ -33,11 +33,7 @@ export type EngagementAuditSink = (entry: {
 export class EngagementFileError extends Error {
   constructor(
     readonly code:
-      | "unreadable"
-      | "invalid_yaml"
-      | "validation_failed"
-      | "invalid_targets"
-      | "expired",
+      "unreadable" | "invalid_yaml" | "validation_failed" | "invalid_targets" | "expired",
     message: string,
     readonly path: string,
   ) {

@@ -89,10 +89,7 @@ export function childToolAllowlist(
   const parentHas = new Set(parentRegistry.list().map((d) => d.name));
   const structural = new Set(["spawn_subagent", "subagent_read_artifact"]);
   return (name: string): boolean =>
-    !structural.has(name) &&
-    !forbidden.has(name) &&
-    requestedSet.has(name) &&
-    parentHas.has(name);
+    !structural.has(name) && !forbidden.has(name) && requestedSet.has(name) && parentHas.has(name);
 }
 
 /** The parent kernel with "tools.runtime" replaced by the child's filtered runtime. */
@@ -114,8 +111,7 @@ export class ChildKernelView implements Kernel {
       get: <T>(name: string): T | undefined =>
         name === "tools.runtime" ? (childRuntime as T) : parentServices.get<T>(name),
       set: (name: string, service: unknown): void => parentServices.set(name, service),
-      has: (name: string): boolean =>
-        name === "tools.runtime" ? true : parentServices.has(name),
+      has: (name: string): boolean => (name === "tools.runtime" ? true : parentServices.has(name)),
       delete: (name: string): void => parentServices.delete(name),
     };
   }
@@ -144,8 +140,7 @@ export function buildChildTooling(
 ): { tools: ToolRegistry; kernel: Kernel } {
   const allowed = childToolAllowlist(requestedTools, config, parent_ctx.tools);
   const filtered = new FilteredToolRegistry(parent_ctx.tools, allowed);
-  const tools: ToolRegistry =
-    extra.length > 0 ? new ExtraToolsRegistry(filtered, extra) : filtered;
+  const tools: ToolRegistry = extra.length > 0 ? new ExtraToolsRegistry(filtered, extra) : filtered;
   const runtime = createToolRuntime({
     registry: tools,
     router: new ToolRouterImpl(),
@@ -186,7 +181,10 @@ export class BudgetTrackingRouter implements ModelRouter {
     return this.tripped;
   }
 
-  async *complete(req: CompletionRequest, opts?: RouteOptions): AsyncGenerator<ModelChunk, void, unknown> {
+  async *complete(
+    req: CompletionRequest,
+    opts?: RouteOptions,
+  ): AsyncGenerator<ModelChunk, void, unknown> {
     for await (const chunk of this.inner.complete(req, opts)) {
       if (chunk.type === "usage") {
         this.used += usageTotal(chunk.usage);

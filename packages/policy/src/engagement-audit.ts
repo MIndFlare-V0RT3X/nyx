@@ -71,7 +71,8 @@ export async function auditEngagementCreated(
   const domainOnly = isDomainOnlyEngagement(engagement);
 
   const resolvedDomains: Array<
-    { domain: string; resolved_ips: string[]; error?: string } | { domain: string; resolved_ips: string[] }
+    | { domain: string; resolved_ips: string[]; error?: string }
+    | { domain: string; resolved_ips: string[] }
   > = [];
   if (domainOnly) {
     for (const domain of domains) {
@@ -80,7 +81,9 @@ export async function auditEngagementCreated(
         resolvedDomains.push({
           domain,
           resolved_ips: addresses.map((a) => a.address),
-          ...(addresses.length === 0 ? { error: "no addresses returned (or resolution timed out)" } : {}),
+          ...(addresses.length === 0
+            ? { error: "no addresses returned (or resolution timed out)" }
+            : {}),
         });
       } catch (err) {
         resolvedDomains.push({

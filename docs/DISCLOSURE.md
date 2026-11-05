@@ -69,7 +69,7 @@ after the tooling has done the assembly.
 
 ## Residuals (owned, with target phases)
 
-| Finding | Severity | Reason | Target Phase |
-|---|---|---|---|
-| Trusted plugins can unregister/re-register submit-cve at R1 (R3-14) | info | the registry API is a trusted-plugin surface; the R4 invariant itself is unbypassable | Phase 7 (plugin trust boundaries) |
-| Pinned CVE fetch: single-address connect, no pagination, unauthenticated GHSA (R3-16) | info | fixed-host research traffic; NVD page 1 is the practical corpus for correlation | Phase 7 (research client hardening) |
+| Finding                                                                               | Severity | Reason                                                                                | Target Phase                        |
+| ------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------- | ----------------------------------- |
+| Trusted plugins can unregister/re-register submit-cve at R1 (R3-14)                   | info     | the registry API is a trusted-plugin surface; the R4 invariant itself is unbypassable | Phase 7 (plugin trust boundaries)   |
+| Pinned CVE fetch: single-address connect, no pagination, unauthenticated GHSA (R3-16) | info     | fixed-host research traffic; NVD page 1 is the practical corpus for correlation       | Phase 7 (research client hardening) |

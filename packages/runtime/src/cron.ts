@@ -203,7 +203,14 @@ function tzOffsetMs(utcMs: number, tz: string): number {
  * exist (DST spring-forward gap). Ambiguous times (fall-back) resolve to the
  * FIRST occurrence — one fire, never two.
  */
-function zonedWallToUtc(y: number, m0: number, d: number, h: number, min: number, tz: string): number | null {
+function zonedWallToUtc(
+  y: number,
+  m0: number,
+  d: number,
+  h: number,
+  min: number,
+  tz: string,
+): number | null {
   const guess = Date.UTC(y, m0, d, h, min);
   const off1 = tzOffsetMs(guess, tz);
   let t = guess - off1;
@@ -215,7 +222,12 @@ function zonedWallToUtc(y: number, m0: number, d: number, h: number, min: number
 }
 
 /** Local-date arithmetic: advance a (y, m0, d) by `days`, normalized. */
-function addDays(y: number, m0: number, d: number, days: number): { y: number; m0: number; d: number } {
+function addDays(
+  y: number,
+  m0: number,
+  d: number,
+  days: number,
+): { y: number; m0: number; d: number } {
   const norm = new Date(Date.UTC(y, m0, d + days));
   return { y: norm.getUTCFullYear(), m0: norm.getUTCMonth(), d: norm.getUTCDate() };
 }
@@ -236,7 +248,14 @@ export function nextFire(s: CronSchedule, afterMs: number, timeZone = "UTC"): nu
   }
   const after = new Date(afterMs);
   // Start at the next minute boundary strictly after `afterMs`.
-  let cursor = Date.UTC(after.getUTCFullYear(), after.getUTCMonth(), after.getUTCDate(), after.getUTCHours(), after.getUTCMinutes()) + MINUTE_MS;
+  let cursor =
+    Date.UTC(
+      after.getUTCFullYear(),
+      after.getUTCMonth(),
+      after.getUTCDate(),
+      after.getUTCHours(),
+      after.getUTCMinutes(),
+    ) + MINUTE_MS;
 
   for (let dayOffset = 0; dayOffset <= MAX_DAY_SCAN; dayOffset++) {
     const probe = new Date(cursor);

@@ -18,20 +18,20 @@ v0.7.0; see the Phase 7 brief §12).
 
 Twelve evals, one YAML spec each (`tests/evals/evals/*.eval.yaml`):
 
-| # | Eval | Asserts (on events) |
-|---|---|---|
-| 1 | clarification-on-underspecified-prompt | message.assistant present, ZERO tool.call, full order |
-| 2 | validator-before-done | tool.call(validator) before turn.completed, result in the log |
-| 3 | scope-enforcement | action.denied reason=scope, no tool.result, no approval asked |
-| 4 | approval-flow | approval.requested → resolved → action.denied reason=approval |
-| 5 | subagent-delegation | subagent.spawned/completed mirrored, result returns as tool.result |
-| 6 | compaction-trigger | compaction.started/completed strategy=rule-elision, freed tokens |
-| 7 | memory-write-after-turn | tool.call(memory.write) + the entry in the real store |
-| 8 | rate-limit-respect | 4 calls @ 2rps paced ≥ 1500ms wall clock (real clock) |
-| 9 | cve-correlation-accuracy | Apache httpd 2.4.49 → CVE-2021-41773 exact-match, finding updated |
-| 10 | disclosure-package-integrity | manifest sha256 == recomputed on-disk artifact hashes |
-| 11 | abort-propagation | tool.error code=aborted, turn.failed aborted, nothing after |
-| 12 | scope-refusal-owner-mismatch | foreign-operator engagement refused (engagement_ownership) |
+| #   | Eval                                   | Asserts (on events)                                                |
+| --- | -------------------------------------- | ------------------------------------------------------------------ |
+| 1   | clarification-on-underspecified-prompt | message.assistant present, ZERO tool.call, full order              |
+| 2   | validator-before-done                  | tool.call(validator) before turn.completed, result in the log      |
+| 3   | scope-enforcement                      | action.denied reason=scope, no tool.result, no approval asked      |
+| 4   | approval-flow                          | approval.requested → resolved → action.denied reason=approval      |
+| 5   | subagent-delegation                    | subagent.spawned/completed mirrored, result returns as tool.result |
+| 6   | compaction-trigger                     | compaction.started/completed strategy=rule-elision, freed tokens   |
+| 7   | memory-write-after-turn                | tool.call(memory.write) + the entry in the real store              |
+| 8   | rate-limit-respect                     | 4 calls @ 2rps paced ≥ 1500ms wall clock (real clock)              |
+| 9   | cve-correlation-accuracy               | Apache httpd 2.4.49 → CVE-2021-41773 exact-match, finding updated  |
+| 10  | disclosure-package-integrity           | manifest sha256 == recomputed on-disk artifact hashes              |
+| 11  | abort-propagation                      | tool.error code=aborted, turn.failed aborted, nothing after        |
+| 12  | scope-refusal-owner-mismatch           | foreign-operator engagement refused (engagement_ownership)         |
 
 The rig is REAL everywhere except the model: real agent loop, real tool
 runtime, real policy engine, real approval engine (with the production
@@ -80,20 +80,21 @@ a visible diff.
    description: >
      One paragraph: what the model is scripted to do and what the harness
      must observably do about it.
-   kind: loop            # loop | rate_limit | cve_correlation |
-                         # disclosure_integrity | ownership_refusal
+   kind:
+     loop # loop | rate_limit | cve_correlation |
+     # disclosure_integrity | ownership_refusal
    setup:
-     provider_script:    # each item = one model turn, in order
+     provider_script: # each item = one model turn, in order
        - tool_call: { name: my_tool, call_id: c1, input: { ... } }
        - text: "the final reply"
-     tools:              # fake tools the script can call
+     tools: # fake tools the script can call
        - name: my_tool
          risk: R0
      policy:
        - { id: allow-r0, match: { risk: R0 }, decision: allow }
    input:
      user_message: "do the thing"
-   assertions:           # ON THE EVENT LOG — hard rule #4
+   assertions: # ON THE EVENT LOG — hard rule #4
      - { assert: event_present, event: tool.call }
      - { assert: event_field, event: tool.call, field: name, equals: my_tool }
      - { assert: event_order, events: [tool.call, tool.result, turn.completed] }
@@ -108,6 +109,7 @@ a visible diff.
    diff, commit the spec together with the regenerated `baseline.json`.
 
 Rules of the house:
+
 - **Assert on events, not final text.** An eval that only checks the
   reply is not an eval (the meta-test enforces this for `loop` evals).
 - One behavior per eval; put the observable in the assertion, not the

@@ -32,9 +32,7 @@ describe("CVSS 4.0 base scoring", () => {
   }
 
   it("a no-impact vector scores 0", () => {
-    expect(
-      scoreCvss4("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:N/SC:N/SI:N/SA:N"),
-    ).toBe(0);
+    expect(scoreCvss4("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:N/SC:N/SI:N/SA:N")).toBe(0);
   });
 
   it("threat metrics move the score (E:U lowers the same base vector)", () => {
@@ -47,12 +45,12 @@ describe("CVSS 4.0 base scoring", () => {
     expect(() => scoreCvss4("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H")).toThrow(
       /missing mandatory base metric SC/,
     );
-    expect(() => scoreCvss4("CVSS:4.0/AV:Q/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N")).toThrow(
-      /invalid value "Q"/,
-    );
-    expect(() => scoreCvss4("CVSS:4.0/AV:N/AV:N/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N")).toThrow(
-      /duplicated metric/,
-    );
+    expect(() =>
+      scoreCvss4("CVSS:4.0/AV:Q/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"),
+    ).toThrow(/invalid value "Q"/);
+    expect(() =>
+      scoreCvss4("CVSS:4.0/AV:N/AV:N/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"),
+    ).toThrow(/duplicated metric/);
   });
 
   it("equivalentClasses computes the macrovector digits", () => {

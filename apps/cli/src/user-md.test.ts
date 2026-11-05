@@ -53,7 +53,14 @@ function fakePrompter(answers: {
 describe("isUserMdPopulated", () => {
   it("treats the template placeholder as unpopulated and real names as populated", () => {
     expect(isUserMdPopulated(DEFAULT_USER_MD)).toBe(false);
-    expect(isUserMdPopulated(DEFAULT_USER_MD.replace("- Name: (fill in — what the assistant should call you)", "- Name: Rizz"))).toBe(true);
+    expect(
+      isUserMdPopulated(
+        DEFAULT_USER_MD.replace(
+          "- Name: (fill in — what the assistant should call you)",
+          "- Name: Rizz",
+        ),
+      ),
+    ).toBe(true);
     // Empty value → still template-shaped.
     expect(isUserMdPopulated("- Name: \n- Timezone: UTC")).toBe(false);
     // Custom shape without a Name line → never clobbered.
@@ -125,9 +132,7 @@ describe("bootstrapUserMd", () => {
       timezone: "UTC",
       standingInstructions: "",
     });
-    await import("node:fs/promises").then((fsp) =>
-      fsp.mkdir(personaDir, { recursive: true }),
-    );
+    await import("node:fs/promises").then((fsp) => fsp.mkdir(personaDir, { recursive: true }));
     await writeFile(join(personaDir, "USER.md"), populated, "utf8");
     const prompter = fakePrompter({
       name: "ShouldNot",
@@ -184,9 +189,7 @@ describe("bootstrapUserMd", () => {
     const home = await freshHome();
     const personaDir = join(home, "personas", "default");
     const source = join(home, "source-persona");
-    await import("node:fs/promises").then((fsp) =>
-      fsp.mkdir(source, { recursive: true }),
-    );
+    await import("node:fs/promises").then((fsp) => fsp.mkdir(source, { recursive: true }));
     await writeFile(join(source, "USER.md"), DEFAULT_USER_MD, "utf8");
     await writeFile(join(source, "SOUL.md"), "# SOUL\n", "utf8");
 

@@ -528,16 +528,16 @@ describe("loadConfig — egress proxy posture (Phase 6.1)", () => {
 
   it("enabled: false with NYX_ENV=production is a hard validation error", async () => {
     const file = await tempConfig(NO_PROXY_YAML);
-    await expect(
-      loadConfig(file, { env: { NYX_ENV: "production" } }),
-    ).rejects.toThrow(/not "development"/);
+    await expect(loadConfig(file, { env: { NYX_ENV: "production" } })).rejects.toThrow(
+      /not "development"/,
+    );
   });
 
   it("enabled: false with NYX_ENV=development but WITHOUT the flag still errors", async () => {
     const file = await tempConfig(NO_PROXY_YAML);
-    await expect(
-      loadConfig(file, { env: { NYX_ENV: "development" } }),
-    ).rejects.toThrow(/--allow-direct-egress/);
+    await expect(loadConfig(file, { env: { NYX_ENV: "development" } })).rejects.toThrow(
+      /--allow-direct-egress/,
+    );
   });
 
   it("enabled: false with NYX_ENV=development AND --allow-direct-egress loads (the dev escape hatch)", async () => {
@@ -576,7 +576,11 @@ describe("plugins config (Phase 7.2)", () => {
   it("defaults: empty dirs, unset mode (resolved at runtime by the app)", async () => {
     const file = await tempConfig(ROUTER);
     const cfg = await loadConfig(file, { env: {} });
-    expect(cfg.plugins).toEqual({ signature_mode: undefined, trusted_keys_file: undefined, dirs: [] });
+    expect(cfg.plugins).toEqual({
+      signature_mode: undefined,
+      trusted_keys_file: undefined,
+      dirs: [],
+    });
   });
 
   it("accepts explicit strict/warn and a trusted-keys file + dirs", async () => {
@@ -602,16 +606,16 @@ describe("plugins config (Phase 7.2)", () => {
 
   it("signature_mode: off with NYX_ENV=production is a hard validation error", async () => {
     const file = await tempConfig(PLUGINS_OFF);
-    await expect(
-      loadConfig(file, { env: { NYX_ENV: "production" } }),
-    ).rejects.toThrow(/not "development"/);
+    await expect(loadConfig(file, { env: { NYX_ENV: "production" } })).rejects.toThrow(
+      /not "development"/,
+    );
   });
 
   it("signature_mode: off with development but WITHOUT the flag still errors", async () => {
     const file = await tempConfig(PLUGINS_OFF);
-    await expect(
-      loadConfig(file, { env: { NYX_ENV: "development" } }),
-    ).rejects.toThrow(/--allow-unsigned-plugins/);
+    await expect(loadConfig(file, { env: { NYX_ENV: "development" } })).rejects.toThrow(
+      /--allow-unsigned-plugins/,
+    );
   });
 
   it("signature_mode: off with development AND --allow-unsigned-plugins loads (test-only escape hatch)", async () => {

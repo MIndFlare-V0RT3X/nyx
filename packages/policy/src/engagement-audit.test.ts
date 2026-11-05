@@ -11,10 +11,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll } from "vitest";
 import Database from "better-sqlite3";
 import { appendAudit, verifyAuditChain } from "./audit.js";
-import {
-  auditEngagementCreated,
-  isDomainOnlyEngagement,
-} from "./engagement-audit.js";
+import { auditEngagementCreated, isDomainOnlyEngagement } from "./engagement-audit.js";
 import type { DnsResolver, EngagementAuditDeps, ResolvedAddress } from "./engagement-audit.js";
 import type { Engagement, Logger } from "@nyx/protocol";
 
@@ -26,10 +23,7 @@ afterAll(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-function engagement(
-  partial: Partial<Engagement["targets"]>,
-  id = "ENG-1",
-): Engagement {
+function engagement(partial: Partial<Engagement["targets"]>, id = "ENG-1"): Engagement {
   // The frozen protocol requires both arrays; "absent" is an empty array.
   return {
     id,
@@ -46,9 +40,11 @@ interface CapturedEntry {
   payload: unknown;
 }
 
-function makeDeps(
-  resolve?: DnsResolver,
-): { deps: EngagementAuditDeps; entries: CapturedEntry[]; warnings: Array<[string, Record<string, unknown>]> } {
+function makeDeps(resolve?: DnsResolver): {
+  deps: EngagementAuditDeps;
+  entries: CapturedEntry[];
+  warnings: Array<[string, Record<string, unknown>]>;
+} {
   const entries: CapturedEntry[] = [];
   const warnings: Array<[string, Record<string, unknown>]> = [];
   const logger: Logger = {
@@ -78,7 +74,9 @@ const okResolver =
 describe("isDomainOnlyEngagement", () => {
   it("domains without cidrs is domain-only; cidrs (with or without domains) is not", () => {
     expect(isDomainOnlyEngagement(engagement({ domains: ["example.com"] }))).toBe(true);
-    expect(isDomainOnlyEngagement(engagement({ domains: ["example.com"], cidrs: ["10.0.0.0/8"] }))).toBe(false);
+    expect(
+      isDomainOnlyEngagement(engagement({ domains: ["example.com"], cidrs: ["10.0.0.0/8"] })),
+    ).toBe(false);
     expect(isDomainOnlyEngagement(engagement({ cidrs: ["10.0.0.0/8"] }))).toBe(false);
     expect(isDomainOnlyEngagement(engagement({}))).toBe(false);
   });
@@ -115,9 +113,7 @@ describe("auditEngagementCreated", () => {
   });
 
   it("CIDR-constrained engagement: audit row notes the constraint, no resolution", async () => {
-    const { deps, entries, warnings } = makeDeps(
-      okResolver({ "example.com": ["93.184.216.34"] }),
-    );
+    const { deps, entries, warnings } = makeDeps(okResolver({ "example.com": ["93.184.216.34"] }));
     await auditEngagementCreated(deps, {
       session_id: "sess-2",
       engagement: engagement({ domains: ["example.com"], cidrs: ["93.184.0.0/16"] }),
@@ -187,9 +183,9 @@ describe("auditEngagementCreated", () => {
       owner_id: "owner",
     });
     expect(verifyAuditChain(db).ok).toBe(true);
-    const row = db
-      .prepare("SELECT action FROM audit ORDER BY id DESC LIMIT 1")
-      .get() as { action: string };
+    const row = db.prepare("SELECT action FROM audit ORDER BY id DESC LIMIT 1").get() as {
+      action: string;
+    };
     expect(row.action).toBe("engagement.created");
     db.close();
   });

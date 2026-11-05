@@ -177,10 +177,7 @@ export class TaskDispatchProvider implements ModelProvider {
 
   private nextTurn(req: CompletionRequest): { turn: MockTurn | undefined; hold: number } {
     const lastUser = [...req.messages].reverse().find((m) => m.role === "user");
-    const text =
-      lastUser?.content
-        .map((b) => (b.type === "text" ? b.text : ""))
-        .join("") ?? "";
+    const text = lastUser?.content.map((b) => (b.type === "text" ? b.text : "")).join("") ?? "";
     for (const marker of this.byMarker.keys()) {
       if (text.includes(marker)) {
         return { turn: this.byMarker.get(marker)!.shift(), hold: this.holds.get(marker) ?? 0 };

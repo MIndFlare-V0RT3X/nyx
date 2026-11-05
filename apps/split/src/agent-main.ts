@@ -48,11 +48,15 @@ class RemoteToolRegistry implements ToolRegistry {
   }
 
   register(): never {
-    throw new Error("the agent process cannot register tools (split mode: nyx-tools owns the registry)");
+    throw new Error(
+      "the agent process cannot register tools (split mode: nyx-tools owns the registry)",
+    );
   }
 
   unregister(): never {
-    throw new Error("the agent process cannot unregister tools (split mode: nyx-tools owns the registry)");
+    throw new Error(
+      "the agent process cannot unregister tools (split mode: nyx-tools owns the registry)",
+    );
   }
 
   list(): ToolDefinition[] {
@@ -119,7 +123,9 @@ async function buildSplitProviders(
     if (entry.kind === "openai") {
       const { OpenAICompatibleProvider } = await import("@nyx/model");
       const apiKey =
-        apiKeyEnv !== undefined ? await injectKernelCredential(kernel, apiKeyEnv, apiKeyEnv) : undefined;
+        apiKeyEnv !== undefined
+          ? await injectKernelCredential(kernel, apiKeyEnv, apiKeyEnv)
+          : undefined;
       providers.push(
         new OpenAICompatibleProvider({
           id,

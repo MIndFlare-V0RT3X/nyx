@@ -103,7 +103,12 @@ export class HostSecurityExecutor implements SecurityExecutor {
  */
 export class SandboxSecurityExecutor implements SecurityExecutor {
   constructor(
-    private readonly sandbox: { exec: (cmd: string, opts?: { timeout_ms?: number }) => Promise<{ exit_code: number; stdout: string; stderr: string }> },
+    private readonly sandbox: {
+      exec: (
+        cmd: string,
+        opts?: { timeout_ms?: number },
+      ) => Promise<{ exit_code: number; stdout: string; stderr: string }>;
+    },
   ) {}
 
   async run(

@@ -5,8 +5,8 @@ Compaction is the capability multiplier behind long sessions and Phase 3
 subagents: a subagent's summary return only matters if the main context can
 hold multiple turn-rounds without blowing the window.
 
-**Compaction never loses events.** Only the *message list presented to the
-model* is compacted. Elided content stays in the append-only event log;
+**Compaction never loses events.** Only the _message list presented to the
+model_ is compacted. Elided content stays in the append-only event log;
 recovery is `session.read()`. The pipeline never mutates its input list.
 
 **Tool outputs are persisted (Philosophy B).** Every `tool.result` event —
@@ -34,7 +34,7 @@ defaults. `enabled: false` disables it entirely.
 
 Tiers run in order; **the first non-null plan is applied** (§3.1). Tier 4 is
 the explicit exception: its precondition is "still exceeds after Tiers 1–3",
-so it re-checks *after* the first applicable tier ran and may follow it in
+so it re-checks _after_ the first applicable tier ran and may follow it in
 the same pass. (Documented interpretation — a single pass with only
 "first non-null wins" could never reach Tier 4 after Tier 1 freed too little.)
 
@@ -54,7 +54,7 @@ the same pass. (Documented interpretation — a single pass with only
   `session_memory_min_turns` (20) turns **and** the estimate exceeds
   `session_memory_threshold` (60%) of the window.
 - **Apply:** a cheap model call at `reasoning_effort: low` compacts
-  everything before the last 5 *completed* turns (plus the current one — the
+  everything before the last 5 _completed_ turns (plus the current one — the
   current ask is never compacted) into one system message
   (`[session memory …]`). The summary is written to `@nyx/memory` scope
   `session` (tags `compaction`, `session-memory`), so it survives restart
@@ -65,8 +65,8 @@ the same pass. (Documented interpretation — a single pass with only
 - **Precondition:** Tier 2 has been applied at least once in this session
   (a session-memory entry exists) **or** the estimate exceeds
   `llm_summary_threshold` (80%).
-- **Apply:** a cheap model call summarizes the K = 10 messages *before the
-  current ask* into one assistant message with the shape
+- **Apply:** a cheap model call summarizes the K = 10 messages _before the
+  current ask_ into one assistant message with the shape
   `Decisions: / Current task state: / Open questions:`. The current ask is
   never summarized away.
 
@@ -99,14 +99,14 @@ silently; the model can re-read on demand.
 context:
   compaction:
     elision_threshold_tokens: 5000
-    session_memory_threshold: 0.60    # fraction of the window
+    session_memory_threshold: 0.60 # fraction of the window
     session_memory_min_turns: 20
     llm_summary_threshold: 0.80
     emergency_threshold: 0.95
     post_compaction_reread_tokens: 5000
     post_compaction_reread_files: 5
     enabled: true
-    verbose_events: false             # per-block diagnostics via debug logs
+    verbose_events: false # per-block diagnostics via debug logs
 ```
 
 `verbose_events` routes per-block diagnostics to the logger's debug channel —
@@ -115,10 +115,10 @@ undocumented events would break every consumer.
 
 ## Events and audit
 
-| event | when |
-| --- | --- |
-| `compaction.started` / `compaction.completed` (strategy `rule-elision` / `session-memory` / `llm-summary` / `emergency-degrade`) | around each applied tier |
-| audit row `compaction.completed` (actor `system:compaction`) | **emergency truncations only** |
+| event                                                                                                                            | when                           |
+| -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `compaction.started` / `compaction.completed` (strategy `rule-elision` / `session-memory` / `llm-summary` / `emergency-degrade`) | around each applied tier       |
+| audit row `compaction.completed` (actor `system:compaction`)                                                                     | **emergency truncations only** |
 
 Append and reconcile in `@nyx/policy` key on the same predicate
 (`isEmergencyCompactionEvent`), so the cross-check stays symmetric.

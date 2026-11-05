@@ -135,9 +135,7 @@ describe("e2e: two subagents in one round (Phase 3 §5.2)", () => {
     expect(completed).toHaveLength(2);
     // No child turn events leaked into the parent's log (hard rule #3): the
     // parent's non-subagent events are exactly its own turn's.
-    const ownTypes = parentEvents
-      .filter((e) => !e.type.startsWith("subagent."))
-      .map((e) => e.type);
+    const ownTypes = parentEvents.filter((e) => !e.type.startsWith("subagent.")).map((e) => e.type);
     expect(ownTypes).toEqual([
       "session.created",
       "turn.started",
@@ -163,8 +161,7 @@ describe("e2e: two subagents in one round (Phase 3 §5.2)", () => {
     ): Promise<{ start: number; end: number; events: SessionEvent[] }> => {
       const events = await readEvents(rig, id);
       const start = events.find((e) => e.type === "turn.started")?.ts ?? 0;
-      const end =
-        [...events].reverse().find((e) => e.type === "turn.completed")?.ts ?? 0;
+      const end = [...events].reverse().find((e) => e.type === "turn.completed")?.ts ?? 0;
       return { start, end, events };
     };
     const slowWindow = await window(slow.subagent_session_id);
@@ -195,7 +192,9 @@ describe("e2e: two subagents in one round (Phase 3 §5.2)", () => {
       const slowTypes = slowWindow.events.map((e) => e.type);
       expect(slowTypes).toContain("message.user");
       expect(slowTypes).toContain("turn.completed");
-      expect(slowWindow.events.every((e) => e.type !== "message.user" || e.type === "message.user")).toBe(true);
+      expect(
+        slowWindow.events.every((e) => e.type !== "message.user" || e.type === "message.user"),
+      ).toBe(true);
       const userMsg = slowWindow.events.find((e) => e.type === "message.user") as Extract<
         SessionEvent,
         { type: "message.user" }
@@ -213,11 +212,12 @@ describe("e2e: two subagents in one round (Phase 3 §5.2)", () => {
       (e): e is Extract<SessionEvent, { type: "tool.result" }> => e.type === "tool.result",
     );
     expect(results).toHaveLength(2);
-    const summaries = results.map(
-      (r) => (r.output as { json: { summary: string } }).json.summary,
-    );
+    const summaries = results.map((r) => (r.output as { json: { summary: string } }).json.summary);
     expect(summaries).toEqual(
-      expect.arrayContaining(["slow findings: the answer is 41", "quick findings: the answer is 1"]),
+      expect.arrayContaining([
+        "slow findings: the answer is 41",
+        "quick findings: the answer is 1",
+      ]),
     );
     // The tool.result EVENTS land in completion order — quick finished while
     // slow was still running, more overlap evidence. (The MODEL-FACING result
@@ -231,7 +231,9 @@ describe("e2e: two subagents in one round (Phase 3 §5.2)", () => {
       { type: "message.assistant" }
     >;
     const finalText = finalAssistant.content
-      .filter((b): b is Extract<{ type: string; text?: string }, { type: "text" }> => b.type === "text")
+      .filter(
+        (b): b is Extract<{ type: string; text?: string }, { type: "text" }> => b.type === "text",
+      )
       .map((b) => b.text)
       .join("");
     expect(finalText).toContain("41");
@@ -239,7 +241,9 @@ describe("e2e: two subagents in one round (Phase 3 §5.2)", () => {
     expect(finalText).toContain("42");
 
     // ── duration + token breakdown (§6 reporting evidence) ──
-    const slowCompleted = completed.find((e) => e.subagent_session_id === slow.subagent_session_id)!;
+    const slowCompleted = completed.find(
+      (e) => e.subagent_session_id === slow.subagent_session_id,
+    )!;
     const quickCompleted = completed.find(
       (e) => e.subagent_session_id === quick.subagent_session_id,
     )!;

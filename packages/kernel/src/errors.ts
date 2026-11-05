@@ -62,10 +62,7 @@ export class DependencyVersionError extends Error {
   readonly plugin: string;
   readonly mismatches: { name: string; loaded: string; range: string }[];
 
-  constructor(
-    plugin: string,
-    mismatches: { name: string; loaded: string; range: string }[],
-  ) {
+  constructor(plugin: string, mismatches: { name: string; loaded: string; range: string }[]) {
     super(
       `plugin "${plugin}" has dependencies whose loaded versions miss the declared ranges: ${mismatches
         .map((m) => `"${m.name}" ${m.loaded} !~ ${m.range}`)

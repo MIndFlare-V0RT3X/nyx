@@ -46,7 +46,9 @@ export async function listTasks(
     }
     return await cli.manager.list({
       ...(state !== undefined ? { state } : {}),
-      ...(opts.parent_session_id !== undefined ? { parent_session_id: opts.parent_session_id } : {}),
+      ...(opts.parent_session_id !== undefined
+        ? { parent_session_id: opts.parent_session_id }
+        : {}),
       limit: opts.limit ?? 50,
     });
   } finally {
@@ -122,7 +124,11 @@ export async function mutateTask(
       const code =
         err instanceof Error && "code" in err ? String((err as { code: unknown }).code) : "unknown";
       const cliCode: "validation_failed" | "not_found" | "runtime_error" =
-        code === "not_found" ? "not_found" : code === "validation_failed" ? "validation_failed" : "runtime_error";
+        code === "not_found"
+          ? "not_found"
+          : code === "validation_failed"
+            ? "validation_failed"
+            : "runtime_error";
       throw new CliError(cliCode, err instanceof Error ? err.message : String(err));
     }
     // Cross-process abort insurance: a cancel/pause of a task whose attempt

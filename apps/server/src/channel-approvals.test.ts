@@ -159,8 +159,16 @@ class MockTelegram implements TelegramClient {
     return Promise.resolve({ message_id: 500 + this.sent.length });
   }
 
-  editMessageText(chat_id: string, message_id: number, text: string, opts?: { reply_markup?: unknown }) {
-    this.sent.push({ method: "editMessageText", args: { chat_id, message_id, text, ...(opts ?? {}) } });
+  editMessageText(
+    chat_id: string,
+    message_id: number,
+    text: string,
+    opts?: { reply_markup?: unknown },
+  ) {
+    this.sent.push({
+      method: "editMessageText",
+      args: { chat_id, message_id, text, ...(opts ?? {}) },
+    });
     return Promise.resolve();
   }
 
@@ -173,7 +181,10 @@ class MockTelegram implements TelegramClient {
 /** The approval_id from the first keyboard the client was asked to send. */
 function approvalIdFromKeyboard(client: MockTelegram): string {
   const send = client.sent.find(
-    (s) => s.method === "sendMessage" && (s.args.reply_markup as { inline_keyboard?: unknown } | undefined)?.inline_keyboard !== undefined,
+    (s) =>
+      s.method === "sendMessage" &&
+      (s.args.reply_markup as { inline_keyboard?: unknown } | undefined)?.inline_keyboard !==
+        undefined,
   );
   if (send === undefined) throw new Error("no keyboard sent yet");
   const markup = send.args.reply_markup as {
@@ -192,11 +203,17 @@ describe("channel approvals over Telegram (2.1.4)", () => {
   it("message → keyboard → Allow click → tool runs; text during pending is NOT a decision", async () => {
     const telegram = new MockTelegram();
     const rig = await makeRig({
-      providers: [new MockProvider("mock", [
-        mockToolTurn({ call_id: "c1", name: "fs.write", input: { path: "t.txt", content: "TG-OK" } }),
-        mockTextTurn("file written"),
-        mockTextTurn("queued reply"),
-      ])],
+      providers: [
+        new MockProvider("mock", [
+          mockToolTurn({
+            call_id: "c1",
+            name: "fs.write",
+            input: { path: "t.txt", content: "TG-OK" },
+          }),
+          mockTextTurn("file written"),
+          mockTextTurn("queued reply"),
+        ]),
+      ],
       channels: {
         telegram: {
           enabled: true,
@@ -267,10 +284,14 @@ describe("channel approvals over Telegram (2.1.4)", () => {
 
     // The button press was answered and the keyboard edited to the decision.
     expect(
-      telegram.sent.some((s) => s.method === "answerCallbackQuery" && s.args.text === "approved ✅"),
+      telegram.sent.some(
+        (s) => s.method === "answerCallbackQuery" && s.args.text === "approved ✅",
+      ),
     ).toBe(true);
     expect(
-      telegram.sent.some((s) => s.method === "editMessageText" && s.args.text === "✅ approved by telegram:42"),
+      telegram.sent.some(
+        (s) => s.method === "editMessageText" && s.args.text === "✅ approved by telegram:42",
+      ),
     ).toBe(true);
 
     // The queued text turn ran after the approved one (FIFO, no policy skip).
@@ -283,13 +304,15 @@ describe("channel approvals over Telegram (2.1.4)", () => {
   it("Deny click skips the tool; timeout sends the expired message and auto-denies", async () => {
     const telegram = new MockTelegram();
     const rig = await makeRig({
-      providers: [new MockProvider("mock", [
-        mockToolTurn({ call_id: "c1", name: "fs.write", input: { path: "d.txt", content: "x" } }),
-        mockTextTurn("file written"),
-        // the deny path's follow-up turn
-        mockToolTurn({ call_id: "c2", name: "fs.write", input: { path: "e.txt", content: "y" } }),
-        mockTextTurn("done"),
-      ])],
+      providers: [
+        new MockProvider("mock", [
+          mockToolTurn({ call_id: "c1", name: "fs.write", input: { path: "d.txt", content: "x" } }),
+          mockTextTurn("file written"),
+          // the deny path's follow-up turn
+          mockToolTurn({ call_id: "c2", name: "fs.write", input: { path: "e.txt", content: "y" } }),
+          mockTextTurn("done"),
+        ]),
+      ],
       channels: {
         telegram: {
           enabled: true,
@@ -326,7 +349,9 @@ describe("channel approvals over Telegram (2.1.4)", () => {
     const afterDeny = await allEvents(rig.dataDir);
     expect(afterDeny.some((e) => e.type === "tool.result")).toBe(false); // skipped
     expect(
-      telegram.sent.some((s) => s.method === "editMessageText" && s.args.text === "❌ denied by telegram:42"),
+      telegram.sent.some(
+        (s) => s.method === "editMessageText" && s.args.text === "❌ denied by telegram:42",
+      ),
     ).toBe(true);
 
     // Timeout leg (same chat, new conversation turn).
@@ -345,17 +370,21 @@ describe("channel approvals over Telegram (2.1.4)", () => {
     );
     await until(async () => {
       const events = await allEvents(rig.dataDir);
-      return events.filter((e) => e.type === "action.denied" && e.reason === "approval").length >= 2;
+      return (
+        events.filter((e) => e.type === "action.denied" && e.reason === "approval").length >= 2
+      );
     });
   });
 
   it("aborting the session while an approval is pending withdraws it (no orphan)", async () => {
     const telegram = new MockTelegram();
     const rig = await makeRig({
-      providers: [new MockProvider("mock", [
-        mockToolTurn({ call_id: "c1", name: "fs.write", input: { path: "a.txt", content: "x" } }),
-        mockTextTurn("file written"),
-      ])],
+      providers: [
+        new MockProvider("mock", [
+          mockToolTurn({ call_id: "c1", name: "fs.write", input: { path: "a.txt", content: "x" } }),
+          mockTextTurn("file written"),
+        ]),
+      ],
       channels: {
         telegram: {
           enabled: true,
@@ -394,13 +423,16 @@ describe("channel approvals over Telegram (2.1.4)", () => {
     // The presenter learned the request died: the keyboard message is edited
     // to "approval withdrawn".
     await until(() =>
-      telegram.sent.some((s) => s.method === "editMessageText" && s.args.text === "approval withdrawn"),
+      telegram.sent.some(
+        (s) => s.method === "editMessageText" && s.args.text === "approval withdrawn",
+      ),
     );
     // The turn ended aborted and nothing is pending.
     await until(async () => {
       const events = await allEvents(rig.dataDir);
       return events.some(
-        (e) => e.type === "turn.failed" && (e as { error: { code?: string } }).error.code === "aborted",
+        (e) =>
+          e.type === "turn.failed" && (e as { error: { code?: string } }).error.code === "aborted",
       );
     });
     const pending = await rig.server.app.request(`/v1/approvals?session_id=${sessionId}`, {
@@ -414,12 +446,22 @@ describe("channel approvals over webhook (2.1.4)", () => {
   it("POST → approval_required body → resolve_url allow → tool runs; deny skips", async () => {
     const port = await freePort();
     const rig = await makeRig({
-      providers: [new MockProvider("mock", [
-        mockToolTurn({ call_id: "c1", name: "fs.write", input: { path: "w.txt", content: "WH-OK" } }),
-        mockTextTurn("file written"),
-        mockToolTurn({ call_id: "c2", name: "fs.write", input: { path: "w2.txt", content: "y" } }),
-        mockTextTurn("written"),
-      ])],
+      providers: [
+        new MockProvider("mock", [
+          mockToolTurn({
+            call_id: "c1",
+            name: "fs.write",
+            input: { path: "w.txt", content: "WH-OK" },
+          }),
+          mockTextTurn("file written"),
+          mockToolTurn({
+            call_id: "c2",
+            name: "fs.write",
+            input: { path: "w2.txt", content: "y" },
+          }),
+          mockTextTurn("written"),
+        ]),
+      ],
       channels: {
         webhook: {
           enabled: true,
@@ -433,14 +475,20 @@ describe("channel approvals over webhook (2.1.4)", () => {
     });
 
     const url = `http://127.0.0.1:${port}/webhook`;
-    const apiHeaders = { Authorization: `Bearer ${OWNER_TOKEN}`, "content-type": "application/json" };
+    const apiHeaders = {
+      Authorization: `Bearer ${OWNER_TOKEN}`,
+      "content-type": "application/json",
+    };
 
     // The first POST hits the ask verdict: the response IS the presentation.
     const first = await fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ channel_user_id: "owner:primary", text: "write it" }),
-    }).then(async (res) => ({ status: res.status, body: (await res.json()) as Record<string, unknown> }));
+    }).then(async (res) => ({
+      status: res.status,
+      body: (await res.json()) as Record<string, unknown>,
+    }));
     expect(first.status).toBe(200);
     expect(first.body.status).toBe("approval_required");
     expect(typeof first.body.approval_id).toBe("string");
@@ -473,7 +521,10 @@ describe("channel approvals over webhook (2.1.4)", () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ channel_user_id: "owner:primary", text: "write another" }),
-    }).then(async (res) => ({ status: res.status, body: (await res.json()) as Record<string, unknown> }));
+    }).then(async (res) => ({
+      status: res.status,
+      body: (await res.json()) as Record<string, unknown>,
+    }));
     expect(second.body.status).toBe("approval_required");
     const deny = await rig.server.app.request(String(second.body.resolve_url), {
       method: "POST",

@@ -116,10 +116,15 @@ describe("LaneQueueImpl", () => {
     const started: string[] = [];
 
     const running = lanes.enqueue(
-      task("victim", "interactive", () => {
-        started.push("victim-1");
-        return gate.promise.then(() => "never"); // ignores the signal on purpose
-      }, ac.signal),
+      task(
+        "victim",
+        "interactive",
+        () => {
+          started.push("victim-1");
+          return gate.promise.then(() => "never"); // ignores the signal on purpose
+        },
+        ac.signal,
+      ),
     );
     const queued2 = lanes.enqueue(
       task("victim", "interactive", async () => {
@@ -168,9 +173,14 @@ describe("LaneQueueImpl", () => {
       }),
     );
     const doomed = lanes.enqueue(
-      task("s", "interactive", async () => {
-        started.push(2);
-      }, ac.signal),
+      task(
+        "s",
+        "interactive",
+        async () => {
+          started.push(2);
+        },
+        ac.signal,
+      ),
     );
     const third = lanes.enqueue(
       task("s", "interactive", async () => {

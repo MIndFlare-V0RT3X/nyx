@@ -9,13 +9,7 @@
 import type { SerializedError } from "./util.js";
 import type { SubagentResult, SubagentSpec } from "./subagents.js";
 
-export type TaskState =
-  | "pending"
-  | "running"
-  | "paused"
-  | "completed"
-  | "failed"
-  | "cancelled";
+export type TaskState = "pending" | "running" | "paused" | "completed" | "failed" | "cancelled";
 
 /**
  * Caller-authored task definition. `subagent_spec` is everything a spawn needs

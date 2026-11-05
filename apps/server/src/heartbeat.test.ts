@@ -106,6 +106,8 @@ describe("heartbeat (server integration)", () => {
   it("heartbeat config absent → no specs registered, nothing runs", async () => {
     const rig = await makeRig();
     expect(rig.server.heartbeats.list()).toEqual([]);
-    await expect(rig.server.heartbeats.trigger("anything")).rejects.toThrow(/unknown heartbeat spec/);
+    await expect(rig.server.heartbeats.trigger("anything")).rejects.toThrow(
+      /unknown heartbeat spec/,
+    );
   });
 });

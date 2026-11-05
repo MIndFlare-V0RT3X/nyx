@@ -683,9 +683,9 @@ describe("parallel-round dispatch (Phase 3 §2.3)", () => {
     expect(toolResultBlockOf(final.messages, "c1").output).toMatchObject({
       kind: "text",
     });
-    expect(
-      (toolResultBlockOf(final.messages, "c1").output as { text: string }).text,
-    ).toContain("out-1");
+    expect((toolResultBlockOf(final.messages, "c1").output as { text: string }).text).toContain(
+      "out-1",
+    );
     const order = final.messages
       .flatMap((m) => m.content)
       .filter((b): b is Extract<ContentBlock, { type: "tool_result" }> => b.type === "tool_result")

@@ -82,19 +82,67 @@ export function registerSecurityTools(
     handler: () => ToolHandler;
     meta: { name: string; meta: typeof SUBFINDER_META };
   }> = [
-    { def: subfinderDefinition, handler: () => subfinderHandler(shared), meta: { name: "security.subfinder", meta: SUBFINDER_META } },
-    { def: httpxDefinition, handler: () => httpxHandler(shared), meta: { name: "security.httpx", meta: HTTPX_META } },
-    { def: nucleiDefinition, handler: () => nucleiHandler({ ...shared, store: deps.store }), meta: { name: "security.nuclei", meta: NUCLEI_META } },
-    { def: ffufDefinition, handler: () => ffufHandler(shared), meta: { name: "security.ffuf", meta: FFUF_META } },
-    { def: katanaDefinition, handler: () => katanaHandler(shared), meta: { name: "security.katana", meta: KATANA_META } },
-    { def: nmapDefinition, handler: () => nmapHandler(shared), meta: { name: "security.nmap", meta: NMAP_META } },
+    {
+      def: subfinderDefinition,
+      handler: () => subfinderHandler(shared),
+      meta: { name: "security.subfinder", meta: SUBFINDER_META },
+    },
+    {
+      def: httpxDefinition,
+      handler: () => httpxHandler(shared),
+      meta: { name: "security.httpx", meta: HTTPX_META },
+    },
+    {
+      def: nucleiDefinition,
+      handler: () => nucleiHandler({ ...shared, store: deps.store }),
+      meta: { name: "security.nuclei", meta: NUCLEI_META },
+    },
+    {
+      def: ffufDefinition,
+      handler: () => ffufHandler(shared),
+      meta: { name: "security.ffuf", meta: FFUF_META },
+    },
+    {
+      def: katanaDefinition,
+      handler: () => katanaHandler(shared),
+      meta: { name: "security.katana", meta: KATANA_META },
+    },
+    {
+      def: nmapDefinition,
+      handler: () => nmapHandler(shared),
+      meta: { name: "security.nmap", meta: NMAP_META },
+    },
     // Phase 6.2 — the exploitation toolkit (docs/EXPLOITATION.md).
-    { def: sqlmapScanDefinition, handler: () => sqlmapScanHandler({ ...shared, store: deps.store }), meta: { name: "security.sqlmap-scan", meta: SQLMAP_SCAN_META } },
-    { def: sqlmapExploitDefinition, handler: () => sqlmapExploitHandler(shared), meta: { name: "security.sqlmap-exploit", meta: SQLMAP_EXPLOIT_META } },
-    { def: nucleiTemplateDefinition, handler: () => nucleiTemplateHandler({ ...shared, store: deps.store }), meta: { name: "security.nuclei-template", meta: NUCLEI_TEMPLATE_META } },
-    { def: msfSearchDefinition, handler: () => msfSearchHandler(shared), meta: { name: "security.msf-search", meta: MSF_SEARCH_META } },
-    { def: msfRunDefinition, handler: () => msfRunHandler(shared), meta: { name: "security.msf-run", meta: MSF_RUN_META } },
-    { def: burpDefinition, handler: () => burpHandler(shared), meta: { name: "security.burp", meta: BURP_META } },
+    {
+      def: sqlmapScanDefinition,
+      handler: () => sqlmapScanHandler({ ...shared, store: deps.store }),
+      meta: { name: "security.sqlmap-scan", meta: SQLMAP_SCAN_META },
+    },
+    {
+      def: sqlmapExploitDefinition,
+      handler: () => sqlmapExploitHandler(shared),
+      meta: { name: "security.sqlmap-exploit", meta: SQLMAP_EXPLOIT_META },
+    },
+    {
+      def: nucleiTemplateDefinition,
+      handler: () => nucleiTemplateHandler({ ...shared, store: deps.store }),
+      meta: { name: "security.nuclei-template", meta: NUCLEI_TEMPLATE_META },
+    },
+    {
+      def: msfSearchDefinition,
+      handler: () => msfSearchHandler(shared),
+      meta: { name: "security.msf-search", meta: MSF_SEARCH_META },
+    },
+    {
+      def: msfRunDefinition,
+      handler: () => msfRunHandler(shared),
+      meta: { name: "security.msf-run", meta: MSF_RUN_META },
+    },
+    {
+      def: burpDefinition,
+      handler: () => burpHandler(shared),
+      meta: { name: "security.burp", meta: BURP_META },
+    },
   ];
 
   for (const r of registrations) {
@@ -112,7 +160,13 @@ export function registerSecurityTools(
   });
 }
 
-export { FakeSecurityExecutor, HostSecurityExecutor, SandboxSecurityExecutor, assertSafeTokens, SecurityToolError } from "./executor.js";
+export {
+  FakeSecurityExecutor,
+  HostSecurityExecutor,
+  SandboxSecurityExecutor,
+  assertSafeTokens,
+  SecurityToolError,
+} from "./executor.js";
 export type { SecurityExecutor, ExecutorResult } from "./executor.js";
 export type { SecurityToolDeps } from "./shared.js";
 export { runSecurityTool, parseJsonl } from "./shared.js";

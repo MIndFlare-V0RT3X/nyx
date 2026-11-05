@@ -45,8 +45,7 @@ const urlSchema = z
   .regex(/^https?:\/\/[^\s]+$/, "absolute http(s) URL without userinfo");
 
 /** The console sections the parser keys on (real sqlmap format). */
-const INJECTION_HEADER =
-  "sqlmap identified the following injection point(s) with a total of";
+const INJECTION_HEADER = "sqlmap identified the following injection point(s) with a total of";
 const NOT_INJECTABLE = "all tested parameters do not appear to be injectable";
 const BACKEND_DBMS = "back-end DBMS:";
 
@@ -182,8 +181,16 @@ export const sqlmapScanInput = z
 const SCAN_INPUT_SCHEMA = {
   type: "object",
   properties: {
-    url: { type: "string", description: "Absolute http(s) target URL (must be in engagement scope)." },
-    level: { type: "integer", minimum: 1, maximum: 5, description: "sqlmap --level (detection depth). Default 1." },
+    url: {
+      type: "string",
+      description: "Absolute http(s) target URL (must be in engagement scope).",
+    },
+    level: {
+      type: "integer",
+      minimum: 1,
+      maximum: 5,
+      description: "sqlmap --level (detection depth). Default 1.",
+    },
     risk: { type: "integer", minimum: 1, maximum: 3, description: "sqlmap --risk. Default 1." },
   },
   required: ["url"],
@@ -203,18 +210,20 @@ export function sqlmapScanDefinition(): ToolDefinition {
   };
 }
 
-export function sqlmapScanHandler(deps: SecurityToolDeps & {
-  store: FindingStore;
-}): ToolHandler {
+export function sqlmapScanHandler(
+  deps: SecurityToolDeps & {
+    store: FindingStore;
+  },
+): ToolHandler {
   return {
     async execute(call, ctx: ToolContext): Promise<ToolOutput> {
       const input = sqlmapScanInput.parse(call.input);
       const parsed = parseActionUrl(input.url);
       if (parsed === null) {
-        throw Object.assign(
-          new Error("url must be an absolute http(s) URL without userinfo"),
-          { name: "SecurityToolError", code: "skill.error" },
-        );
+        throw Object.assign(new Error("url must be an absolute http(s) URL without userinfo"), {
+          name: "SecurityToolError",
+          code: "skill.error",
+        });
       }
       return runSecurityTool({
         tool: "security.sqlmap-scan",
@@ -255,9 +264,7 @@ export function sqlmapScanHandler(deps: SecurityToolDeps & {
                   (result.dbms !== null ? `. Back-end DBMS: ${result.dbms}.` : ""),
                 severity: "high",
                 target: { host: parsed!.host },
-                evidence: [
-                  { path: evidencePath, hash, mime: "text/plain" },
-                ],
+                evidence: [{ path: evidencePath, hash, mime: "text/plain" }],
                 reproduction:
                   `sqlmap --batch -u ${parsed!.url} (parameter '${point.parameter}', ` +
                   `payload: ${point.types[0]?.payload ?? "see evidence"})`,
@@ -269,7 +276,10 @@ export function sqlmapScanHandler(deps: SecurityToolDeps & {
                 notes: "",
               },
             );
-            return { kind: "json", json: { ...result, finding_id: finding.id, evidence: { path: evidencePath, hash } } };
+            return {
+              kind: "json",
+              json: { ...result, finding_id: finding.id, evidence: { path: evidencePath, hash } },
+            };
           }
           return { kind: "json", json: { ...result, evidence: { path: evidencePath, hash } } };
         },
@@ -300,8 +310,15 @@ export const sqlmapExploitInput = z
 const EXPLOIT_INPUT_SCHEMA = {
   type: "object",
   properties: {
-    url: { type: "string", description: "Absolute http(s) target URL (must be in engagement scope)." },
-    action: { type: "string", enum: ["dbs", "tables", "dump"], description: "Enumeration or data extraction." },
+    url: {
+      type: "string",
+      description: "Absolute http(s) target URL (must be in engagement scope).",
+    },
+    action: {
+      type: "string",
+      enum: ["dbs", "tables", "dump"],
+      description: "Enumeration or data extraction.",
+    },
     database: { type: "string", description: "For action=tables: restrict to one database." },
     table: { type: "string", description: "For action=dump: the table to extract." },
   },
@@ -467,10 +484,10 @@ export function sqlmapExploitHandler(deps: SecurityToolDeps): ToolHandler {
       const input = sqlmapExploitInput.parse(call.input);
       const parsed = parseActionUrl(input.url);
       if (parsed === null) {
-        throw Object.assign(
-          new Error("url must be an absolute http(s) URL without userinfo"),
-          { name: "SecurityToolError", code: "skill.error" },
-        );
+        throw Object.assign(new Error("url must be an absolute http(s) URL without userinfo"), {
+          name: "SecurityToolError",
+          code: "skill.error",
+        });
       }
       return runSecurityTool({
         tool: "security.sqlmap-exploit",
@@ -496,10 +513,8 @@ export function sqlmapExploitHandler(deps: SecurityToolDeps): ToolHandler {
           await c.sandbox.writeFile(evidencePath, stdout);
           const hash = createHash("sha256").update(stdout).digest("hex");
           const tables = parseSqlmapDump(stdout);
-          const databases =
-            input.action === "dbs" ? parseSqlmapDbs(stdout).databases : undefined;
-          const dbsNote =
-            input.action === "dbs" ? parseSqlmapDbs(stdout).note : undefined;
+          const databases = input.action === "dbs" ? parseSqlmapDbs(stdout).databases : undefined;
+          const dbsNote = input.action === "dbs" ? parseSqlmapDbs(stdout).note : undefined;
           return {
             kind: "json",
             json: {

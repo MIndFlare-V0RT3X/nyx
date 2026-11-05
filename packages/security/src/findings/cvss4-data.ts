@@ -277,199 +277,167 @@ export const CVSS4_LOOKUP_TABLE: Readonly<Record<string, number>> = {
   "012121": 2.9,
   "012201": 6.3,
   "012211": 2.9,
-  "012221": 1.7
+  "012221": 1.7,
 } as const;
 
 /** The highest-severity vector parts per EQ class. */
-export const CVSS4_MAX_COMPOSED: Readonly<Record<string, Record<string, string[] | Record<string, string[]>>>> = {
-  "eq1": {
-    "0": [
-      "AV:N/PR:N/UI:N/"
-    ],
-    "1": [
-      "AV:A/PR:N/UI:N/",
-      "AV:N/PR:L/UI:N/",
-      "AV:N/PR:N/UI:P/"
-    ],
-    "2": [
-      "AV:P/PR:N/UI:N/",
-      "AV:A/PR:L/UI:P/"
-    ]
+export const CVSS4_MAX_COMPOSED: Readonly<
+  Record<string, Record<string, string[] | Record<string, string[]>>>
+> = {
+  eq1: {
+    "0": ["AV:N/PR:N/UI:N/"],
+    "1": ["AV:A/PR:N/UI:N/", "AV:N/PR:L/UI:N/", "AV:N/PR:N/UI:P/"],
+    "2": ["AV:P/PR:N/UI:N/", "AV:A/PR:L/UI:P/"],
   },
-  "eq2": {
-    "0": [
-      "AC:L/AT:N/"
-    ],
-    "1": [
-      "AC:H/AT:N/",
-      "AC:L/AT:P/"
-    ]
+  eq2: {
+    "0": ["AC:L/AT:N/"],
+    "1": ["AC:H/AT:N/", "AC:L/AT:P/"],
   },
-  "eq3": {
+  eq3: {
     "0": {
-      "0": [
-        "VC:H/VI:H/VA:H/CR:H/IR:H/AR:H/"
-      ],
-      "1": [
-        "VC:H/VI:H/VA:L/CR:M/IR:M/AR:H/",
-        "VC:H/VI:H/VA:H/CR:M/IR:M/AR:M/"
-      ]
+      "0": ["VC:H/VI:H/VA:H/CR:H/IR:H/AR:H/"],
+      "1": ["VC:H/VI:H/VA:L/CR:M/IR:M/AR:H/", "VC:H/VI:H/VA:H/CR:M/IR:M/AR:M/"],
     },
     "1": {
-      "0": [
-        "VC:L/VI:H/VA:H/CR:H/IR:H/AR:H/",
-        "VC:H/VI:L/VA:H/CR:H/IR:H/AR:H/"
-      ],
+      "0": ["VC:L/VI:H/VA:H/CR:H/IR:H/AR:H/", "VC:H/VI:L/VA:H/CR:H/IR:H/AR:H/"],
       "1": [
         "VC:L/VI:H/VA:L/CR:H/IR:M/AR:H/",
         "VC:L/VI:H/VA:H/CR:H/IR:M/AR:M/",
         "VC:H/VI:L/VA:H/CR:M/IR:H/AR:M/",
         "VC:H/VI:L/VA:L/CR:M/IR:H/AR:H/",
-        "VC:L/VI:L/VA:H/CR:H/IR:H/AR:M/"
-      ]
+        "VC:L/VI:L/VA:H/CR:H/IR:H/AR:M/",
+      ],
     },
     "2": {
-      "1": [
-        "VC:L/VI:L/VA:L/CR:H/IR:H/AR:H/"
-      ]
-    }
+      "1": ["VC:L/VI:L/VA:L/CR:H/IR:H/AR:H/"],
+    },
   },
-  "eq4": {
-    "0": [
-      "SC:H/SI:S/SA:S/"
-    ],
-    "1": [
-      "SC:H/SI:H/SA:H/"
-    ],
-    "2": [
-      "SC:L/SI:L/SA:L/"
-    ]
+  eq4: {
+    "0": ["SC:H/SI:S/SA:S/"],
+    "1": ["SC:H/SI:H/SA:H/"],
+    "2": ["SC:L/SI:L/SA:L/"],
   },
-  "eq5": {
-    "0": [
-      "E:A/"
-    ],
-    "1": [
-      "E:P/"
-    ],
-    "2": [
-      "E:U/"
-    ]
-  }
+  eq5: {
+    "0": ["E:A/"],
+    "1": ["E:P/"],
+    "2": ["E:U/"],
+  },
 } as const;
 
 /** Max severity distances per EQ MacroVector (+1). */
-export const CVSS4_MAX_SEVERITY: Readonly<Record<string, Record<string, number | Record<string, number>>>> = {
-  "eq1": {
+export const CVSS4_MAX_SEVERITY: Readonly<
+  Record<string, Record<string, number | Record<string, number>>>
+> = {
+  eq1: {
     "0": 1,
     "1": 4,
-    "2": 5
+    "2": 5,
   },
-  "eq2": {
+  eq2: {
     "0": 1,
-    "1": 2
+    "1": 2,
   },
-  "eq3eq6": {
+  eq3eq6: {
     "0": {
       "0": 7,
-      "1": 6
+      "1": 6,
     },
     "1": {
       "0": 8,
-      "1": 8
+      "1": 8,
     },
     "2": {
-      "1": 10
-    }
+      "1": 10,
+    },
   },
-  "eq4": {
+  eq4: {
     "0": 6,
     "1": 5,
-    "2": 4
+    "2": 4,
   },
-  "eq5": {
+  eq5: {
     "0": 1,
     "1": 1,
-    "2": 1
-  }
+    "2": 1,
+  },
 } as const;
 
 /** Metric value indices for severity-distance computation. */
 export const CVSS4_METRIC_LEVELS: Readonly<Record<string, Record<string, number>>> = {
-  "AV": {
-    "N": 0,
-    "A": 0.1,
-    "L": 0.2,
-    "P": 0.3
+  AV: {
+    N: 0,
+    A: 0.1,
+    L: 0.2,
+    P: 0.3,
   },
-  "PR": {
-    "N": 0,
-    "L": 0.1,
-    "H": 0.2
+  PR: {
+    N: 0,
+    L: 0.1,
+    H: 0.2,
   },
-  "UI": {
-    "N": 0,
-    "P": 0.1,
-    "A": 0.2
+  UI: {
+    N: 0,
+    P: 0.1,
+    A: 0.2,
   },
-  "AC": {
-    "L": 0,
-    "H": 0.1
+  AC: {
+    L: 0,
+    H: 0.1,
   },
-  "AT": {
-    "N": 0,
-    "P": 0.1
+  AT: {
+    N: 0,
+    P: 0.1,
   },
-  "VC": {
-    "H": 0,
-    "L": 0.1,
-    "N": 0.2
+  VC: {
+    H: 0,
+    L: 0.1,
+    N: 0.2,
   },
-  "VI": {
-    "H": 0,
-    "L": 0.1,
-    "N": 0.2
+  VI: {
+    H: 0,
+    L: 0.1,
+    N: 0.2,
   },
-  "VA": {
-    "H": 0,
-    "L": 0.1,
-    "N": 0.2
+  VA: {
+    H: 0,
+    L: 0.1,
+    N: 0.2,
   },
-  "SC": {
-    "H": 0.1,
-    "L": 0.2,
-    "N": 0.3
+  SC: {
+    H: 0.1,
+    L: 0.2,
+    N: 0.3,
   },
-  "SI": {
-    "S": 0,
-    "H": 0.1,
-    "L": 0.2,
-    "N": 0.3
+  SI: {
+    S: 0,
+    H: 0.1,
+    L: 0.2,
+    N: 0.3,
   },
-  "SA": {
-    "S": 0,
-    "H": 0.1,
-    "L": 0.2,
-    "N": 0.3
+  SA: {
+    S: 0,
+    H: 0.1,
+    L: 0.2,
+    N: 0.3,
   },
-  "CR": {
-    "H": 0,
-    "M": 0.1,
-    "L": 0.2
+  CR: {
+    H: 0,
+    M: 0.1,
+    L: 0.2,
   },
-  "IR": {
-    "H": 0,
-    "M": 0.1,
-    "L": 0.2
+  IR: {
+    H: 0,
+    M: 0.1,
+    L: 0.2,
   },
-  "AR": {
-    "H": 0,
-    "M": 0.1,
-    "L": 0.2
+  AR: {
+    H: 0,
+    M: 0.1,
+    L: 0.2,
   },
-  "E": {
-    "U": 0.2,
-    "P": 0.1,
-    "A": 0
-  }
+  E: {
+    U: 0.2,
+    P: 0.1,
+    A: 0,
+  },
 } as const;

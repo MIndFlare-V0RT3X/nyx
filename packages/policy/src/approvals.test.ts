@@ -360,7 +360,9 @@ describe("ApprovalEngineImpl", () => {
     // Tamper with a committed audit row out-of-band (edit without rehashing).
     const raw = new Database(path);
     raw.prepare("UPDATE audit SET payload_json = '{\"hacked\":true}'").run();
-    expect((raw.prepare("SELECT COUNT(*) AS n FROM audit").get() as { n: number }).n).toBeGreaterThan(0);
+    expect(
+      (raw.prepare("SELECT COUNT(*) AS n FROM audit").get() as { n: number }).n,
+    ).toBeGreaterThan(0);
     raw.close();
 
     // Loading the tampered store must fail loudly — tamper-evidence only

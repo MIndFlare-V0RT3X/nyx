@@ -350,7 +350,8 @@ export class TaskWorkerPool {
       let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
       if (task.spec.timeout_ms !== undefined) {
         timeoutTimer = setTimeout(
-          () => controller.abort(abortError(`task attempt timed out after ${task.spec.timeout_ms}ms`)),
+          () =>
+            controller.abort(abortError(`task attempt timed out after ${task.spec.timeout_ms}ms`)),
           task.spec.timeout_ms,
         );
       }

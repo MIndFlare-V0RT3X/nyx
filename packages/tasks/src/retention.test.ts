@@ -163,7 +163,9 @@ describe("archiving (§3.2)", () => {
     const meta = await s.store.meta(sid);
     expect(meta).not.toBeNull();
     expect(meta!.archived_at).toBe(T0);
-    const row = s.db.prepare("SELECT archived, archived_at FROM sessions WHERE id = ?").get(sid) as {
+    const row = s.db
+      .prepare("SELECT archived, archived_at FROM sessions WHERE id = ?")
+      .get(sid) as {
       archived: number;
       archived_at: number;
     };
@@ -176,7 +178,9 @@ describe("archiving (§3.2)", () => {
       .get(sid) as { n: number };
     expect(mainCount.n).toBe(0);
     const archiveRows = s.db
-      .prepare("SELECT seq, session_id, type, payload_json, ts FROM archive.events WHERE session_id = ? ORDER BY seq")
+      .prepare(
+        "SELECT seq, session_id, type, payload_json, ts FROM archive.events WHERE session_id = ? ORDER BY seq",
+      )
       .all(sid) as Array<{ seq: number; session_id: string; type: string; ts: number }>;
     expect(archiveRows).toHaveLength(3);
     expect(archiveRows[0]!.type).toBe("session.created");
@@ -185,7 +189,9 @@ describe("archiving (§3.2)", () => {
 
     // list() hides it by default, shows it with include_archived.
     expect((await s.store.list({})).find((m) => m.session_id === sid)).toBeUndefined();
-    expect((await s.store.list({ include_archived: true })).find((m) => m.session_id === sid)).toBeDefined();
+    expect(
+      (await s.store.list({ include_archived: true })).find((m) => m.session_id === sid),
+    ).toBeDefined();
 
     // read() serves the full log from the archive — same shape as before.
     const events = await s.store.read(sid);
@@ -199,7 +205,14 @@ describe("archiving (§3.2)", () => {
     // Appends are refused: the log must never split across databases.
     await expect(
       s.store.append(sid, [
-        { type: "subagent.aborted", session_id: sid, subagent_session_id: sid, parent_session_id: "none", reason: "late", ts: T0 },
+        {
+          type: "subagent.aborted",
+          session_id: sid,
+          subagent_session_id: sid,
+          parent_session_id: "none",
+          reason: "late",
+          ts: T0,
+        },
       ]),
     ).rejects.toMatchObject({ code: "archived" });
     await expect(s.store.fork(sid, 1)).rejects.toMatchObject({ code: "archived" });
@@ -216,7 +229,11 @@ describe("archiving (§3.2)", () => {
     for (const sid of [fresh, primary, fork]) {
       expect((await s.store.read(sid)).length).toBeGreaterThan(0);
       expect(
-        (s.db.prepare("SELECT archived FROM sessions WHERE id = ?").get(sid) as { archived: number }).archived,
+        (
+          s.db.prepare("SELECT archived FROM sessions WHERE id = ?").get(sid) as {
+            archived: number;
+          }
+        ).archived,
       ).toBe(0);
     }
   });
@@ -225,22 +242,41 @@ describe("archiving (§3.2)", () => {
     const s = makeStack();
     await agedSubagent(s, 30);
     await agedSubagent(s, 30);
-    const a = runRetention({ db: s.db, archivePath: ":memory:", config: CFG({ retention_scope: "none" }), now: () => T0 });
-    const b = runRetention({ db: s.db, archivePath: ":memory:", config: CFG({ retention_days: 0 }), now: () => T0 });
+    const a = runRetention({
+      db: s.db,
+      archivePath: ":memory:",
+      config: CFG({ retention_scope: "none" }),
+      now: () => T0,
+    });
+    const b = runRetention({
+      db: s.db,
+      archivePath: ":memory:",
+      config: CFG({ retention_days: 0 }),
+      now: () => T0,
+    });
     expect(a.archived_sessions).toBe(0);
     expect(b.archived_sessions).toBe(0);
-    expect((s.db.prepare("SELECT COUNT(*) AS n FROM events").get() as { n: number }).n).toBeGreaterThan(0);
+    expect(
+      (s.db.prepare("SELECT COUNT(*) AS n FROM events").get() as { n: number }).n,
+    ).toBeGreaterThan(0);
   });
 
   it("re-running is idempotent (archived rows leave the candidate set)", async () => {
     const s = makeStack();
     await agedSubagent(s, 10);
     const first = runRetention({ db: s.db, archivePath: ":memory:", config: CFG(), now: () => T0 });
-    const second = runRetention({ db: s.db, archivePath: ":memory:", config: CFG(), now: () => T0 });
+    const second = runRetention({
+      db: s.db,
+      archivePath: ":memory:",
+      config: CFG(),
+      now: () => T0,
+    });
     expect(first.archived_sessions).toBe(1);
     expect(second).toMatchObject({ scanned: 0, archived_sessions: 0 });
     // No duplicated archive rows either.
-    expect((s.db.prepare("SELECT COUNT(*) AS n FROM archive.events").get() as { n: number }).n).toBe(3);
+    expect(
+      (s.db.prepare("SELECT COUNT(*) AS n FROM archive.events").get() as { n: number }).n,
+    ).toBe(3);
   });
 });
 
@@ -249,14 +285,18 @@ describe("live-work protection (§3.2)", () => {
     const s = makeStack();
     // Park a task whose own session is old: create then age its session row.
     const running = await taskIn(s, "running", { child_session_id: await agedSubagent(s, 30) });
-    s.db.prepare("UPDATE sessions SET updated_at = ? WHERE id = ?").run(T0 - 30 * DAY, running.task_session_id);
+    s.db
+      .prepare("UPDATE sessions SET updated_at = ? WHERE id = ?")
+      .run(T0 - 30 * DAY, running.task_session_id);
     const boundParent = await agedSubagent(s, 30, { kind: "session" });
     await taskIn(s, "pending", { parent_session_id: boundParent });
     // The task.created mirror touched the parent with the REAL clock —
     // re-age it so the window sees it (updated_at is the age signal).
     s.db.prepare("UPDATE sessions SET updated_at = ? WHERE id = ?").run(T0 - 30 * DAY, boundParent);
     const ownPending = await taskIn(s, "pending");
-    s.db.prepare("UPDATE sessions SET updated_at = ? WHERE id = ?").run(T0 - 30 * DAY, ownPending.task_session_id);
+    s.db
+      .prepare("UPDATE sessions SET updated_at = ? WHERE id = ?")
+      .run(T0 - 30 * DAY, ownPending.task_session_id);
 
     // Scope "subagent": the only scanned candidate is the running attempt's
     // child (kind=subagent) — kept.
@@ -285,9 +325,16 @@ describe("live-work protection (§3.2)", () => {
     const s = makeStack();
     const failedChild = await agedSubagent(s, 30);
     const failed = await taskIn(s, "failed", { child_session_id: failedChild });
-    s.db.prepare("UPDATE sessions SET updated_at = ? WHERE id = ?").run(T0 - 30 * DAY, failed.task_session_id);
+    s.db
+      .prepare("UPDATE sessions SET updated_at = ? WHERE id = ?")
+      .run(T0 - 30 * DAY, failed.task_session_id);
 
-    const strict = runRetention({ db: s.db, archivePath: ":memory:", config: CFG(), now: () => T0 });
+    const strict = runRetention({
+      db: s.db,
+      archivePath: ":memory:",
+      config: CFG(),
+      now: () => T0,
+    });
     expect(strict.archived_sessions).toBe(0);
     // The failed task's CHILD is scanned (kind=subagent) and kept; the task's
     // own session (kind=session) is outside the "subagent" scan set entirely.
@@ -327,7 +374,11 @@ describe("live-work protection (§3.2)", () => {
     expect((await s.store.read(subagent)).length).toBe(3);
     expect((await s.store.read(liveParent)).length).toBeGreaterThan(0);
     expect(
-      (s.db.prepare("SELECT archived FROM sessions WHERE id = ?").get(liveParent) as { archived: number }).archived,
+      (
+        s.db.prepare("SELECT archived FROM sessions WHERE id = ?").get(liveParent) as {
+          archived: number;
+        }
+      ).archived,
     ).toBe(0);
   });
 });
@@ -355,9 +406,9 @@ describe("audit chain (§3.2)", () => {
       config: CFG({ delete_after_days: 1 }),
       now: () => T0 + 2 * DAY,
     });
-    const rows2 = s.db
-      .prepare("SELECT action FROM audit ORDER BY id")
-      .all() as Array<{ action: string }>;
+    const rows2 = s.db.prepare("SELECT action FROM audit ORDER BY id").all() as Array<{
+      action: string;
+    }>;
     expect(rows2.some((r) => r.action === "retention.deleted")).toBe(true);
     expect(verifyAuditChain(s.db).ok).toBe(true);
   });
@@ -396,7 +447,11 @@ describe("hard deletion (§3.2 — opt-in, archived only)", () => {
     expect(late).toMatchObject({ deleted_sessions: 1, deleted_events: 3 });
     expect(await s.store.meta(sid)).toBeNull();
     expect(
-      (s.db.prepare("SELECT COUNT(*) AS n FROM archive.events WHERE session_id = ?").get(sid) as { n: number }).n,
+      (
+        s.db.prepare("SELECT COUNT(*) AS n FROM archive.events WHERE session_id = ?").get(sid) as {
+          n: number;
+        }
+      ).n,
     ).toBe(0);
   });
 
@@ -430,7 +485,9 @@ describe("the durable task (§3 — scheduled task, not a startup sweep)", () =>
     expect(rec.next_attempt_at).toBeGreaterThan(T0); // first fire — NOT now
 
     // The nyx: prefix is refused for non-system callers.
-    await expect(s.manager.create(spec, OWNER)).rejects.toMatchObject({ code: "validation_failed" });
+    await expect(s.manager.create(spec, OWNER)).rejects.toMatchObject({
+      code: "validation_failed",
+    });
   });
 
   it("ensureRetentionTask: creates when absent, revives terminal, leaves paused alone", async () => {
@@ -483,7 +540,10 @@ describe("the archive file (§3)", () => {
     const store = openSessionStore(mainPath, { db, archivePath });
     try {
       const meta = await store.create({ owner_id: "o", persona_id: "p", kind: "subagent" });
-      db.prepare("UPDATE sessions SET updated_at = ? WHERE id = ?").run(T0 - 30 * DAY, meta.session_id);
+      db.prepare("UPDATE sessions SET updated_at = ? WHERE id = ?").run(
+        T0 - 30 * DAY,
+        meta.session_id,
+      );
       const stats = runRetention({ db, archivePath, config: CFG(), now: () => T0 });
       expect(stats.archived_sessions).toBe(1);
 

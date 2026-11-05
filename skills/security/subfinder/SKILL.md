@@ -15,10 +15,12 @@ domain must be inside the engagement's scope (suffix-anchored); out-of-scope
 domains are denied before the tool fires.
 
 ## Reading the output
+
 The tool returns `{ domain, subdomains: string[], count }`. Subdomains are
 deduplicated and lowercased.
 
 ## Gotchas
+
 - Passive sources only — no packets touch the target domain itself.
 - API-key sources need the operator's provider config; the public sources
   still work without keys.
@@ -28,6 +30,7 @@ deduplicated and lowercased.
   the apex needs its own entry.
 
 ## Preserving output
+
 To keep a run as evidence, write the result into the workspace (`fs.write`
 to `artifacts/subfinder-<domain>.json`) and record its sha256 via `shell.exec`
 (`sha256sum artifacts/subfinder-<domain>.json`) — a finding you record later can then cite it

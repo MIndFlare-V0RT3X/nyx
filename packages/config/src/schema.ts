@@ -374,9 +374,7 @@ export const configSchema = z
         // to the archive database on first boot would otherwise surprise.
         retention_enabled: z.boolean().default(false),
         retention_days: z.number().int().min(0).default(7),
-        retention_scope: z
-          .enum(["subagent", "subagent+failed", "all", "none"])
-          .default("subagent"),
+        retention_scope: z.enum(["subagent", "subagent+failed", "all", "none"]).default("subagent"),
         delete_after_days: z.number().int().min(0).default(0),
         retention_schedule: z.string().min(1).default("30 3 * * *"),
       })

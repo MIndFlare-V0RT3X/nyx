@@ -18,7 +18,12 @@
 
 export { startKernelHost, type KernelHost, type KernelHostOptions } from "./kernel-host.js";
 export { startToolsHost, type ToolsHost, type ToolsHostOptions } from "./tools-host.js";
-export { runSplitTurn, loadSplitConfig, type AgentRunOptions, type AgentRunResult } from "./agent-main.js";
+export {
+  runSplitTurn,
+  loadSplitConfig,
+  type AgentRunOptions,
+  type AgentRunResult,
+} from "./agent-main.js";
 export {
   RemoteApprovalEngine,
   RemoteMemoryStore,

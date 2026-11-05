@@ -129,7 +129,11 @@ export function assertFindingsInScope(
       }
       continue;
     }
-    throw new OutOfScopeFindingError(f.id, `${host}${port !== undefined ? `:${port}` : ""}`, verdict.reason);
+    throw new OutOfScopeFindingError(
+      f.id,
+      `${host}${port !== undefined ? `:${port}` : ""}`,
+      verdict.reason,
+    );
   }
 }
 
@@ -152,7 +156,10 @@ export async function generateReport(input: ReportInput): Promise<RenderedReport
       );
     }
     // Keyed with the index: duplicate ids cannot mis-attribute evidence (R2-7).
-    evidenceByFinding.set(`${f.id}#${index}`, await verifyEvidence(input.evidence_root, f.evidence));
+    evidenceByFinding.set(
+      `${f.id}#${index}`,
+      await verifyEvidence(input.evidence_root, f.evidence),
+    );
   }
 
   const ordered = orderFindingsForReport(input.findings);

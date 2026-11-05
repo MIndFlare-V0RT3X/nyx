@@ -14,11 +14,7 @@ import type Database from "better-sqlite3";
 
 /** Event types whose occurrence must be audited. */
 export type AuditableEventType =
-  | "tool.call"
-  | "tool.result"
-  | "tool.error"
-  | "action.denied"
-  | "compaction.completed"; // 2.2: emergency truncations only (see below)
+  "tool.call" | "tool.result" | "tool.error" | "action.denied" | "compaction.completed"; // 2.2: emergency truncations only (see below)
 
 export type AuditableEvent = Extract<SessionEvent, { type: AuditableEventType }>;
 
@@ -142,7 +138,9 @@ export function reconcileEventAudit(
   }
   for (const [seq, found] of bySeq) {
     if (!auditableSeqs.has(seq)) {
-      problems.push(`audit row(s) ${found.map((r) => r.id).join(",")} reference seq ${seq}, which is not an auditable event`);
+      problems.push(
+        `audit row(s) ${found.map((r) => r.id).join(",")} reference seq ${seq}, which is not an auditable event`,
+      );
     }
   }
   return problems;

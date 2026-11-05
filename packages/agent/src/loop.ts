@@ -217,8 +217,7 @@ export class AgentLoopImpl implements AgentLoop {
       if (estimateTriggered || routerTriggered) {
         // The pipeline is a kernel service so surfaces can configure it
         // (context.compaction in nyx.config.yaml); absent → defaults.
-        const pipeline =
-          ctx.kernel.services.get<Pipeline>(COMPACTION_SERVICE) ?? defaultPipeline();
+        const pipeline = ctx.kernel.services.get<Pipeline>(COMPACTION_SERVICE) ?? defaultPipeline();
         const compactionCtx: CompactionContext = {
           session_id: input.session_id,
           turn_id: input.turn_id,
@@ -568,9 +567,9 @@ export class AgentLoopImpl implements AgentLoop {
             emit(e);
             wake?.();
           };
-          const results: Array<ContentBlock | undefined> = new Array(
-            stream.toolCalls.length,
-          ).fill(undefined);
+          const results: Array<ContentBlock | undefined> = new Array(stream.toolCalls.length).fill(
+            undefined,
+          );
           let dispatchFailure: { err: unknown } | undefined;
           const running = stream.toolCalls.map((call, i) =>
             dispatchToolCall(call, emitRound)

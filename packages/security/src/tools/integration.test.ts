@@ -200,7 +200,13 @@ function autoApprove(): ApprovalEngine {
   const never = async (): Promise<never> => {
     throw new Error("approvals not reached");
   };
-  return { request: async () => "allow", resolve: never, get: async () => null, pending: async () => [], consume: never };
+  return {
+    request: async () => "allow",
+    resolve: never,
+    get: async () => null,
+    pending: async () => [],
+    consume: never,
+  };
 }
 
 describe("§3.3 — running a skill against an in-scope target", () => {
@@ -216,7 +222,11 @@ describe("§3.3 — running a skill against an in-scope target", () => {
           name: "Example Reflected XSS",
           severity: "high",
           description: "Reflected XSS in the q parameter.",
-          classification: { "cve-id": ["CVE-2026-1234"], "cwe-id": ["79"], "cvss-metrics": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N" },
+          classification: {
+            "cve-id": ["CVE-2026-1234"],
+            "cwe-id": ["79"],
+            "cvss-metrics": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
+          },
         },
         "matched-at": "https://app.example.com/portal/login",
         host: "app.example.com",
@@ -226,11 +236,19 @@ describe("§3.3 — running a skill against an in-scope target", () => {
 
     const runtime = rig.kernel.services.get<ToolRuntime>("tools.runtime")!;
     const out = await runtime.execute(
-      { call_id: "c1", name: "security.nuclei", input: { targets: ["https://app.example.com/portal/login"] } },
+      {
+        call_id: "c1",
+        name: "security.nuclei",
+        input: { targets: ["https://app.example.com/portal/login"] },
+      },
       ctx as never,
     );
     expect(out.kind).toBe("json");
-    const json = (out as { json: { findings: Array<{ id: string }>; count: number; artifact: string; sha256: string } }).json;
+    const json = (
+      out as {
+        json: { findings: Array<{ id: string }>; count: number; artifact: string; sha256: string };
+      }
+    ).json;
     expect(json.count).toBe(1);
 
     // The finding landed in the DB, bound to THIS session's engagement.
@@ -258,11 +276,19 @@ describe("§3.3 — running a skill against an in-scope target", () => {
   it("argv is composed from validated input only — in-scope URL, cooperative rate flags", async () => {
     const eng = engagement();
     const rig = makeRig(eng);
-    rig.executor.respondWith(() => ({ exit_code: 0, stdout: '{"url":"https://app.example.com/portal/","status_code":200}', stderr: "" }));
+    rig.executor.respondWith(() => ({
+      exit_code: 0,
+      stdout: '{"url":"https://app.example.com/portal/","status_code":200}',
+      stderr: "",
+    }));
     const ctx = toolContext(rig, eng);
     const runtime = rig.kernel.services.get<ToolRuntime>("tools.runtime")!;
     await runtime.execute(
-      { call_id: "c1", name: "security.httpx", input: { targets: ["https://app.example.com/portal/"] } },
+      {
+        call_id: "c1",
+        name: "security.httpx",
+        input: { targets: ["https://app.example.com/portal/"] },
+      },
       ctx as never,
     );
     expect(rig.executor.calls).toHaveLength(1);
@@ -290,11 +316,17 @@ describe("§3.3 — out-of-scope targets: both layers proven", () => {
     const runtime = rig.kernel.services.get<ToolRuntime>("tools.runtime")!;
     const events: SessionEvent[] = (ctx as unknown as { __events: SessionEvent[] }).__events;
     const out = await runtime.execute(
-      { call_id: "c1", name: "security.nuclei", input: { targets: ["https://app.example.com/portal/"] } },
+      {
+        call_id: "c1",
+        name: "security.nuclei",
+        input: { targets: ["https://app.example.com/portal/"] },
+      },
       ctx as never,
     );
     expect(out).toEqual({ kind: "text", text: 'error: unknown tool "security.nuclei"' });
-    expect(events.find((e) => e.type === "tool.error")).toMatchObject({ error: { code: "tool_unknown" } });
+    expect(events.find((e) => e.type === "tool.error")).toMatchObject({
+      error: { code: "tool_unknown" },
+    });
     expect(rig.executor.calls).toHaveLength(0);
   });
 
@@ -304,7 +336,11 @@ describe("§3.3 — out-of-scope targets: both layers proven", () => {
     const ctx = toolContext(rig, eng);
     const handler = rig.registry.get("security.httpx")!.handler;
     const out = await handler.execute(
-      { call_id: "c1", name: "security.httpx", input: { targets: ["https://rebind.example.com/"] } },
+      {
+        call_id: "c1",
+        name: "security.httpx",
+        input: { targets: ["https://rebind.example.com/"] },
+      },
       ctx,
     );
     // rebind.example.com suffix-matches example.com, but the fake resolver
@@ -347,7 +383,8 @@ describe("§3.3 — out-of-scope targets: both layers proven", () => {
     // REAL greppable format: Ports is a TAB field on the Host line (R3-5).
     rig.executor.respondWith(() => ({
       exit_code: 0,
-      stdout: "Host: 203.0.113.20 (up)\tPorts: 22/open/tcp//ssh///, 443/open/tcp//https///\tIgnored State: closed (998)\n",
+      stdout:
+        "Host: 203.0.113.20 (up)\tPorts: 22/open/tcp//ssh///, 443/open/tcp//https///\tIgnored State: closed (998)\n",
       stderr: "",
     }));
     const ctx = toolContext(rig, eng);
@@ -385,8 +422,14 @@ describe("§3.3 — rate limits and malformed output", () => {
     const rig = makeRig(eng);
     rig.executor.respondWith(() => ({ exit_code: 0, stdout: "", stderr: "" }));
     const handler = rig.registry.get("security.subfinder")!.handler;
-    await handler.execute({ call_id: "c1", name: "security.subfinder", input: { domain: "example.com" } }, toolContext(rig, eng));
-    await handler.execute({ call_id: "c2", name: "security.subfinder", input: { domain: "example.com" } }, toolContext(rig, eng));
+    await handler.execute(
+      { call_id: "c1", name: "security.subfinder", input: { domain: "example.com" } },
+      toolContext(rig, eng),
+    );
+    await handler.execute(
+      { call_id: "c2", name: "security.subfinder", input: { domain: "example.com" } },
+      toolContext(rig, eng),
+    );
     // default 10 rps → the second call waited a full 100 ms interval.
     expect(rig.clock.now - T0).toBeGreaterThanOrEqual(100);
   });
@@ -398,7 +441,14 @@ describe("§3.3 — rate limits and malformed output", () => {
     const ctx = toolContext(rig, eng);
     const handler = rig.registry.get("security.httpx")!.handler;
     await expect(
-      handler.execute({ call_id: "c1", name: "security.httpx", input: { targets: ["https://app.example.com/portal/"] } }, ctx),
+      handler.execute(
+        {
+          call_id: "c1",
+          name: "security.httpx",
+          input: { targets: ["https://app.example.com/portal/"] },
+        },
+        ctx,
+      ),
     ).rejects.toMatchObject({ name: "SecurityToolError", code: "skill.error" });
   });
 
@@ -409,8 +459,19 @@ describe("§3.3 — rate limits and malformed output", () => {
     const ctx = toolContext(rig, eng);
     const handler = rig.registry.get("security.katana")!.handler;
     await expect(
-      handler.execute({ call_id: "c1", name: "security.katana", input: { targets: ["https://app.example.com/portal/"] } }, ctx),
-    ).rejects.toMatchObject({ name: "SecurityToolError", code: "skill.error", message: expect.stringContaining("boom") });
+      handler.execute(
+        {
+          call_id: "c1",
+          name: "security.katana",
+          input: { targets: ["https://app.example.com/portal/"] },
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({
+      name: "SecurityToolError",
+      code: "skill.error",
+      message: expect.stringContaining("boom"),
+    });
   });
 });
 
@@ -423,7 +484,11 @@ describe("the two-reviewer fan-out regressions (tool layer)", () => {
     for (const wordlist of ["/etc/passwd", "../../.ssh/id_rsa", "wordlists/../../etc/passwd"]) {
       await expect(
         handler.execute(
-          { call_id: "c1", name: "security.ffuf", input: { url: "https://app.example.com/portal/FUZZ", wordlist } },
+          {
+            call_id: "c1",
+            name: "security.ffuf",
+            input: { url: "https://app.example.com/portal/FUZZ", wordlist },
+          },
           ctx,
         ),
       ).rejects.toThrow();
@@ -438,7 +503,11 @@ describe("the two-reviewer fan-out regressions (tool layer)", () => {
     const ctx = toolContext(rig, eng);
     const handler = rig.registry.get("security.ffuf")!.handler;
     const out = await handler.execute(
-      { call_id: "c1", name: "security.ffuf", input: { url: "https://app.example.com/portal/FUZZ", wordlist: "wordlists/common.txt" } },
+      {
+        call_id: "c1",
+        name: "security.ffuf",
+        input: { url: "https://app.example.com/portal/FUZZ", wordlist: "wordlists/common.txt" },
+      },
       ctx,
     );
     expect(out.kind).toBe("json");
@@ -446,14 +515,23 @@ describe("the two-reviewer fan-out regressions (tool layer)", () => {
   });
 
   it("R1-3: a call that sleeps past the engagement window never fires", async () => {
-    const eng = engagement({ expires_at: T0 + 150, rate_limits: { default: { requests_per_second: 10 } } });
+    const eng = engagement({
+      expires_at: T0 + 150,
+      rate_limits: { default: { requests_per_second: 10 } },
+    });
     const rig = makeRig(eng);
     const handler = rig.registry.get("security.subfinder")!.handler;
     // First call charges the shared default bucket (next allowed at +100ms).
-    await handler.execute({ call_id: "c1", name: "security.subfinder", input: { domain: "example.com" } }, toolContext(rig, eng));
+    await handler.execute(
+      { call_id: "c1", name: "security.subfinder", input: { domain: "example.com" } },
+      toolContext(rig, eng),
+    );
     expect(rig.executor.calls).toHaveLength(1);
     // Second call sleeps to T0+200, past expires_at (T0+150) — denied, executor silent.
-    const out = await handler.execute({ call_id: "c2", name: "security.subfinder", input: { domain: "example.com" } }, toolContext(rig, eng));
+    const out = await handler.execute(
+      { call_id: "c2", name: "security.subfinder", input: { domain: "example.com" } },
+      toolContext(rig, eng),
+    );
     expect((out as { text: string }).text).toContain("expired");
     expect(rig.executor.calls).toHaveLength(1);
   });
@@ -462,8 +540,14 @@ describe("the two-reviewer fan-out regressions (tool layer)", () => {
     const eng = engagement();
     const rig = makeRig(eng);
     const handler = rig.registry.get("security.subfinder")!.handler;
-    await handler.execute({ call_id: "c1", name: "security.subfinder", input: { domain: "example.com" } }, toolContext(rig, eng));
-    await handler.execute({ call_id: "c2", name: "security.subfinder", input: { domain: "example.com." } }, toolContext(rig, eng));
+    await handler.execute(
+      { call_id: "c1", name: "security.subfinder", input: { domain: "example.com" } },
+      toolContext(rig, eng),
+    );
+    await handler.execute(
+      { call_id: "c2", name: "security.subfinder", input: { domain: "example.com." } },
+      toolContext(rig, eng),
+    );
     // Same bucket (10 rps): the second call waited a full interval — not a
     // fresh bucket, which would not have waited at all.
     expect(rig.clock.now - T0).toBeGreaterThanOrEqual(100);
@@ -491,7 +575,10 @@ describe("the two-reviewer fan-out regressions (tool layer)", () => {
     const rig = makeRig(eng);
     const commands: string[] = [];
     const sandbox = fakeSandbox(rig);
-    const sandboxExec = sandbox.exec as unknown as (cmd: string, opts?: unknown) => Promise<{ exit_code: number; stdout: string; stderr: string }>;
+    const sandboxExec = sandbox.exec as unknown as (
+      cmd: string,
+      opts?: unknown,
+    ) => Promise<{ exit_code: number; stdout: string; stderr: string }>;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (sandbox as any).exec = async (cmd: string, opts?: unknown) => {
       commands.push(cmd);
@@ -510,7 +597,11 @@ describe("the two-reviewer fan-out regressions (tool layer)", () => {
     const rig = makeRig(eng);
     const handler = rig.registry.get("security.httpx")!.handler;
     const out = await handler.execute(
-      { call_id: "c1", name: "security.httpx", input: { targets: ["https://[2001:db8::1]/portal/"] } },
+      {
+        call_id: "c1",
+        name: "security.httpx",
+        input: { targets: ["https://[2001:db8::1]/portal/"] },
+      },
       toolContext(rig, eng),
     );
     expect(out.kind).toBe("json");
@@ -537,12 +628,20 @@ describe("the two-reviewer fan-out regressions (tool layer)", () => {
     const stdout = [
       JSON.stringify({
         "template-id": "good-template",
-        info: { name: "Good finding", severity: "high", classification: { "cvss-metrics": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H" } },
+        info: {
+          name: "Good finding",
+          severity: "high",
+          classification: { "cvss-metrics": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H" },
+        },
         "matched-at": "https://app.example.com/portal/login",
       }),
       JSON.stringify({
         "template-id": "bad-vector",
-        info: { name: "Bad vector", severity: "medium", classification: { "cvss-metrics": "CVSS:9.9/AV:N" } },
+        info: {
+          name: "Bad vector",
+          severity: "medium",
+          classification: { "cvss-metrics": "CVSS:9.9/AV:N" },
+        },
         "matched-at": "https://app.example.com/portal/x",
       }),
     ].join("\n");
@@ -550,7 +649,11 @@ describe("the two-reviewer fan-out regressions (tool layer)", () => {
     const ctx = toolContext(rig, eng);
     const handler = rig.registry.get("security.nuclei")!.handler;
     const out = await handler.execute(
-      { call_id: "c1", name: "security.nuclei", input: { targets: ["https://app.example.com/portal/login"] } },
+      {
+        call_id: "c1",
+        name: "security.nuclei",
+        input: { targets: ["https://app.example.com/portal/login"] },
+      },
       ctx,
     );
     const json = (out as { json: { count: number } }).json;
@@ -570,7 +673,8 @@ describe("R3 regressions — real binary invocation and output formats", () => {
     const rig = makeRig(eng);
     rig.executor.respondWith(() => ({
       exit_code: 0,
-      stdout: 'admin\n{"url":"https://app.example.com/portal/admin","status":200,"length":512,"words":40}\n',
+      stdout:
+        'admin\n{"url":"https://app.example.com/portal/admin","status":200,"length":512,"words":40}\n',
       stderr: "",
     }));
     const ctx = toolContext(rig, eng);
@@ -579,11 +683,17 @@ describe("R3 regressions — real binary invocation and output formats", () => {
       {
         call_id: "c1",
         name: "security.ffuf",
-        input: { url: "https://app.example.com/portal/FUZZ", wordlist: "wordlists/common.txt", extensions: ["php"] },
+        input: {
+          url: "https://app.example.com/portal/FUZZ",
+          wordlist: "wordlists/common.txt",
+          extensions: ["php"],
+        },
       },
       ctx,
     );
-    const json = (out as { json: { hits: Array<{ url: string; status: number | null }>; count: number } }).json;
+    const json = (
+      out as { json: { hits: Array<{ url: string; status: number | null }>; count: number } }
+    ).json;
     expect(json.count).toBe(1);
     expect(json.hits[0]!.url).toBe("https://app.example.com/portal/admin");
     expect(json.hits[0]!.status).toBe(200);
@@ -604,7 +714,9 @@ describe("R3 regressions — real binary invocation and output formats", () => {
       {
         call_id: "c1",
         name: "security.nuclei",
-        input: { targets: ["https://app.example.com/portal/a", "https://app.example.com/portal/b"] },
+        input: {
+          targets: ["https://app.example.com/portal/a", "https://app.example.com/portal/b"],
+        },
       },
       ctx,
     );
@@ -619,17 +731,25 @@ describe("R3 regressions — real binary invocation and output formats", () => {
     const rig = makeRig(eng);
     rig.executor.respondWith(() => ({
       exit_code: 0,
-      stdout: "https://app.example.com/portal/a\n[WARN] some noise\nhttps://app.example.com/portal/b\n",
+      stdout:
+        "https://app.example.com/portal/a\n[WARN] some noise\nhttps://app.example.com/portal/b\n",
       stderr: "",
     }));
     const ctx = toolContext(rig, eng);
     const handler = rig.registry.get("security.katana")!.handler;
     const out = await handler.execute(
-      { call_id: "c1", name: "security.katana", input: { targets: ["https://app.example.com/portal/"] } },
+      {
+        call_id: "c1",
+        name: "security.katana",
+        input: { targets: ["https://app.example.com/portal/"] },
+      },
       ctx,
     );
     const json = (out as { json: { urls: string[]; count: number } }).json;
-    expect(json.urls).toEqual(["https://app.example.com/portal/a", "https://app.example.com/portal/b"]);
+    expect(json.urls).toEqual([
+      "https://app.example.com/portal/a",
+      "https://app.example.com/portal/b",
+    ]);
     expect(rig.executor.calls[0]!.args).toContain("-u");
   });
 
@@ -639,7 +759,10 @@ describe("R3 regressions — real binary invocation and output formats", () => {
     rig.executor.respondWith(() => ({ exit_code: 0, stdout: "", stderr: "" }));
     const ctx = toolContext(rig, eng);
     const handler = rig.registry.get("security.nmap")!.handler;
-    await handler.execute({ call_id: "c1", name: "security.nmap", input: { target: "203.0.113.20" } }, ctx);
+    await handler.execute(
+      { call_id: "c1", name: "security.nmap", input: { target: "203.0.113.20" } },
+      ctx,
+    );
     const args = rig.executor.calls[0]!.args;
     expect(args).toContain("--max-rate");
     expect(args[args.indexOf("--max-rate") + 1]).toBe("10");

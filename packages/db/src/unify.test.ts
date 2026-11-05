@@ -145,12 +145,12 @@ describe("2.0.1 unified database migration", () => {
       .get() as { session_id: string };
     expect(chan.session_id).toBe("sess-chan-1");
     const hb = db
-      .prepare("SELECT last_fired_at, next_fire_at FROM heartbeat_state WHERE spec_id = 'memory-review'")
+      .prepare(
+        "SELECT last_fired_at, next_fire_at FROM heartbeat_state WHERE spec_id = 'memory-review'",
+      )
       .get() as { last_fired_at: number; next_fire_at: number };
     expect(hb).toEqual({ last_fired_at: 1000, next_fire_at: 2000 });
-    const hbHist = db
-      .prepare("SELECT COUNT(*) AS n FROM heartbeat_history")
-      .get() as { n: number };
+    const hbHist = db.prepare("SELECT COUNT(*) AS n FROM heartbeat_history").get() as { n: number };
     expect(hbHist.n).toBe(1);
 
     // Legacy files renamed (never deleted), content still readable.
@@ -163,7 +163,9 @@ describe("2.0.1 unified database migration", () => {
     const renamedPolicy = unified.migratedLegacyFiles.find((p) => p.includes("policy.db"))!;
     expect(renamedPolicy).toMatch(/policy\.db\.migrated-\d+$/);
     const old = new Database(renamedPolicy);
-    expect((old.prepare("SELECT COUNT(*) AS n FROM audit").get() as { n: number }).n).toBe(auditRows);
+    expect((old.prepare("SELECT COUNT(*) AS n FROM audit").get() as { n: number }).n).toBe(
+      auditRows,
+    );
     old.close();
     unified.close();
 
@@ -220,7 +222,9 @@ describe("2.0.1 unified database migration", () => {
     policyDb.close();
 
     const unified = openUnifiedDatabase(join(root, "nyx.db"));
-    expect((unified.db.prepare("SELECT COUNT(*) AS n FROM audit").get() as { n: number }).n).toBe(2);
+    expect((unified.db.prepare("SELECT COUNT(*) AS n FROM audit").get() as { n: number }).n).toBe(
+      2,
+    );
     expect(verifyAuditChain(unified.db).ok).toBe(true);
     unified.close();
   });

@@ -71,7 +71,7 @@ export function severityFromScore(score: number): FindingSeverity {
 export function cvssSeverityLabel(score: number): "None" | "Low" | "Medium" | "High" | "Critical" {
   const band = severityFromScore(score);
   if (band === "info") return "None";
-  return band.charAt(0).toUpperCase() + band.slice(1) as "Low" | "Medium" | "High" | "Critical";
+  return (band.charAt(0).toUpperCase() + band.slice(1)) as "Low" | "Medium" | "High" | "Critical";
 }
 
 /**

@@ -24,6 +24,7 @@ charset-guarded; exactly ONE module per call — no auxiliary-to-exploit
 chains. Requires the `exploitation` technique.
 
 ## Gotchas
+
 - The wrapper drives `msfconsole -q -x "..."` (batch mode) — see
   docs/EXPLOITATION.md for why the RPC daemon is not used.
 - `rhosts` must be in engagement scope; an out-of-scope target denies before

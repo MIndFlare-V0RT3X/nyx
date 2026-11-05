@@ -22,23 +22,13 @@ import {
 } from "./sessions.js";
 import { listApprovals, renderApprovalList, resolveApproval } from "./approvals.js";
 import { abortSubagent, listSubagents, renderSubagentList } from "./subagents.js";
-import {
-  listTasks,
-  mutateTask,
-  renderTaskDetail,
-  renderTaskList,
-  showTask,
-} from "./tasks.js";
+import { listTasks, mutateTask, renderTaskDetail, renderTaskList, showTask } from "./tasks.js";
 import { listDeclaredModels, renderModels } from "./models.js";
 import { validateConfigFile } from "./validate.js";
 import { doctorChecks, renderDoctorReport } from "./doctor.js";
 import { pluginAudit, renderPluginAudit } from "./plugin.js";
 import { initNextSteps, runInit, STARTER_CONFIG_NAME } from "./init.js";
-import {
-  bootstrapUserMd,
-  createReadlinePrompter,
-  userMdNote,
-} from "./user-md.js";
+import { bootstrapUserMd, createReadlinePrompter, userMdNote } from "./user-md.js";
 import { CliError } from "./errors.js";
 
 const CLI_ID = "nyx/0.1.0";
@@ -97,14 +87,29 @@ async function main(): Promise<void> {
     )
     .argument("<message>", "the user message for the turn")
     .option("--persona <id>", "persona id for a new session")
-    .option("--engagement <file>", "engagement YAML file bound at session creation (JSON also accepted)")
+    .option(
+      "--engagement <file>",
+      "engagement YAML file bound at session creation (JSON also accepted)",
+    )
     .option("--session <id>", "reuse an existing session")
-    .option("--allow-direct-egress", "dev-only: accept sandbox.egress_proxy.enabled: false (NYX_ENV=development required; the Phase 5 posture)")
-    .option("--allow-unsigned-plugins", "dev-only: accept plugins.signature_mode: off (NYX_ENV=development required; test-only mode)")
+    .option(
+      "--allow-direct-egress",
+      "dev-only: accept sandbox.egress_proxy.enabled: false (NYX_ENV=development required; the Phase 5 posture)",
+    )
+    .option(
+      "--allow-unsigned-plugins",
+      "dev-only: accept plugins.signature_mode: off (NYX_ENV=development required; test-only mode)",
+    )
     .action(
       async (
         message: string,
-        opts: { persona?: string; engagement?: string; session?: string; allowDirectEgress?: boolean; allowUnsignedPlugins?: boolean },
+        opts: {
+          persona?: string;
+          engagement?: string;
+          session?: string;
+          allowDirectEgress?: boolean;
+          allowUnsignedPlugins?: boolean;
+        },
       ) => {
         const { config } = await resolveCliConfig(undefined, {
           ...(opts.allowDirectEgress === true ? { allow_direct_egress: true } : {}),
@@ -133,52 +138,69 @@ async function main(): Promise<void> {
     )
     .option("--session <id>", "reuse an existing session (a new one is created by default)")
     .option("--persona <id>", "persona id for a new session")
-    .option("--engagement <file>", "engagement YAML file bound at session creation (JSON also accepted)")
-    .option("--allow-direct-egress", "dev-only: accept sandbox.egress_proxy.enabled: false (NYX_ENV=development required; the Phase 5 posture)")
-    .option("--allow-unsigned-plugins", "dev-only: accept plugins.signature_mode: off (NYX_ENV=development required; test-only mode)")
-    .action(async (opts: { session?: string; persona?: string; engagement?: string; allowDirectEgress?: boolean; allowUnsignedPlugins?: boolean }) => {
-      if (process.stdin.isTTY !== true) {
-        fatal(
-          'chat requires an interactive terminal (stdin is not a TTY); use `nyx run "<message>"` for one-shot turns',
-        );
-      }
-      const { config } = await resolveCliConfig(undefined, {
-        ...(opts.allowDirectEgress === true ? { allow_direct_egress: true } : {}),
-        ...(opts.allowUnsignedPlugins === true ? { allow_unsigned_plugins: true } : {}),
-      });
-      const engagement =
-        opts.engagement !== undefined
-          ? (await loadEngagementFile(opts.engagement)).engagement
-          : undefined;
-      let driver: ReturnType<typeof createChatDriver> | undefined;
-      const runtime = createLocalRuntime({
-        config,
-        data_dir: resolveDataDir(),
-        approval_mode: "interactive",
-        on_approval_event: (event, record) => {
-          driver?.onApprovalEvent(event, record);
-        },
-      });
-      try {
-        const session =
-          opts.session !== undefined
-            ? ((await runtime.meta(opts.session)) ?? fatal(`session ${opts.session} not found`))
-            : await runtime.createSession({
-                ...(opts.persona !== undefined ? { persona_id: opts.persona } : {}),
-                ...(engagement !== undefined ? { engagement } : {}),
-              });
-        process.stdout.write(
-          `nyx chat — session ${session.session_id} (persona ${session.persona_id})\n`,
-        );
-        driver = createChatDriver({ runtime, session });
-        const tui = startChatTui(driver, config.owner_id);
-        process.on("SIGINT", () => driver?.requestExit());
-        await tui.waitUntilExit();
-        await driver.idle();
-      } finally {
-        await runtime.close();
-      }
-    });
+    .option(
+      "--engagement <file>",
+      "engagement YAML file bound at session creation (JSON also accepted)",
+    )
+    .option(
+      "--allow-direct-egress",
+      "dev-only: accept sandbox.egress_proxy.enabled: false (NYX_ENV=development required; the Phase 5 posture)",
+    )
+    .option(
+      "--allow-unsigned-plugins",
+      "dev-only: accept plugins.signature_mode: off (NYX_ENV=development required; test-only mode)",
+    )
+    .action(
+      async (opts: {
+        session?: string;
+        persona?: string;
+        engagement?: string;
+        allowDirectEgress?: boolean;
+        allowUnsignedPlugins?: boolean;
+      }) => {
+        if (process.stdin.isTTY !== true) {
+          fatal(
+            'chat requires an interactive terminal (stdin is not a TTY); use `nyx run "<message>"` for one-shot turns',
+          );
+        }
+        const { config } = await resolveCliConfig(undefined, {
+          ...(opts.allowDirectEgress === true ? { allow_direct_egress: true } : {}),
+          ...(opts.allowUnsignedPlugins === true ? { allow_unsigned_plugins: true } : {}),
+        });
+        const engagement =
+          opts.engagement !== undefined
+            ? (await loadEngagementFile(opts.engagement)).engagement
+            : undefined;
+        let driver: ReturnType<typeof createChatDriver> | undefined;
+        const runtime = createLocalRuntime({
+          config,
+          data_dir: resolveDataDir(),
+          approval_mode: "interactive",
+          on_approval_event: (event, record) => {
+            driver?.onApprovalEvent(event, record);
+          },
+        });
+        try {
+          const session =
+            opts.session !== undefined
+              ? ((await runtime.meta(opts.session)) ?? fatal(`session ${opts.session} not found`))
+              : await runtime.createSession({
+                  ...(opts.persona !== undefined ? { persona_id: opts.persona } : {}),
+                  ...(engagement !== undefined ? { engagement } : {}),
+                });
+          process.stdout.write(
+            `nyx chat — session ${session.session_id} (persona ${session.persona_id})\n`,
+          );
+          driver = createChatDriver({ runtime, session });
+          const tui = startChatTui(driver, config.owner_id);
+          process.on("SIGINT", () => driver?.requestExit());
+          await tui.waitUntilExit();
+          await driver.idle();
+        } finally {
+          await runtime.close();
+        }
+      },
+    );
 
   const sessions = program.command("sessions").description("session projections");
   sessions
@@ -246,7 +268,10 @@ async function main(): Promise<void> {
   tasksCmd
     .command("list")
     .description("tasks: id, state, attempts, next attempt, title")
-    .option("--state <s>", "filter by comma-separated states (pending,running,paused,completed,failed,cancelled)")
+    .option(
+      "--state <s>",
+      "filter by comma-separated states (pending,running,paused,completed,failed,cancelled)",
+    )
     .option("--parent <id>", "filter by the parent session the task is bound to")
     .option("--limit <n>", "maximum tasks to show", "50")
     .action(async (opts: { state?: string; parent?: string; limit: string }) => {
@@ -373,7 +398,10 @@ async function main(): Promise<void> {
       "static trust audit of a plugin directory: manifest v2, index.js integrity, signature against trusted keys, declared capabilities",
     )
     .argument("<dir>", "the plugin directory (manifest.json + index.js)")
-    .option("--trusted-keys <file>", "trusted keys JSON (default: ~/.nyx/plugins/trusted-keys.json)")
+    .option(
+      "--trusted-keys <file>",
+      "trusted keys JSON (default: ~/.nyx/plugins/trusted-keys.json)",
+    )
     .action(async (dir: string, opts: { trustedKeys?: string }) => {
       const { config } = await resolveCliConfig();
       const report = await pluginAudit(dir, {

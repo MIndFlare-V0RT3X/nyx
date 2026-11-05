@@ -11,21 +11,21 @@ delivery surface the Phase 5 security subsystem will gate.
 
 ```markdown
 ---
-name: deploy-runbook          # lowercase kebab-case, 1–64 chars
-description: >                # 8–300 chars — the catalog line
+name: deploy-runbook # lowercase kebab-case, 1–64 chars
+description: > # 8–300 chars — the catalog line
   Step-by-step deploy procedure for the prod cluster.
-when_to_use: deploying to production        # optional trigger hint
-tools: [shell.exec, web.fetch]               # optional, INFORMATIONAL (Phase 4)
-persona_scope: [sre, default]                # optional — only these personas
-version: 1.2.0                               # optional, MAJOR.MINOR.PATCH
+when_to_use: deploying to production # optional trigger hint
+tools: [shell.exec, web.fetch] # optional, INFORMATIONAL (Phase 4)
+persona_scope: [sre, default] # optional — only these personas
+version: 1.2.0 # optional, MAJOR.MINOR.PATCH
 ---
 
 1. Freeze the lane queue …
 ```
 
 - **`tools` is informational in Phase 4**: parsed, validated, surfaced in
-  the catalog, and used to *filter the catalog by the session's real
-  capabilities* — but it does NOT gate anything at runtime. Runtime tool
+  the catalog, and used to _filter the catalog by the session's real
+  capabilities_ — but it does NOT gate anything at runtime. Runtime tool
   gating is the Phase 5 security subsystem's job.
 - A malformed skill is a **warning, never a session failure**: the entry is
   refused and logged (`skills.scan_warning`), the rest of the catalog loads.
@@ -68,7 +68,7 @@ memory catalog does before compaction indexing):
 load_skill({name}) → tool.result TEXT block with the skill's body
 ```
 
-- **R0, `capabilities: []`** — a skill is trusted *content*, not a tool:
+- **R0, `capabilities: []`** — a skill is trusted _content_, not a tool:
   loading its body grants no authority the session didn't already have.
 - Every load lands on the session's event log as **`skill.loaded`**
   (name + version) — progressive disclosure, on the record.
@@ -81,10 +81,10 @@ load_skill({name}) → tool.result TEXT block with the skill's body
 
 ```yaml
 skills:
-  catalog_max_tokens: 2000     # min 200, max 20000
+  catalog_max_tokens: 2000 # min 200, max 20000
   dirs: ["~/.nyx/skills"]
-  pinned: []                   # always in the catalog, in this order
-  excluded: []                 # never advertised
+  pinned: [] # always in the catalog, in this order
+  excluded: [] # never advertised
 ```
 
 ## The golden test

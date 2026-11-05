@@ -11,7 +11,13 @@
 // SubagentManager.spawn. The SubagentResult comes back to the model as the
 // tool.result JSON.
 
-import type { ToolContext, ToolDefinition, ToolHandler, ToolOutput, ToolRegistry } from "@nyx/protocol";
+import type {
+  ToolContext,
+  ToolDefinition,
+  ToolHandler,
+  ToolOutput,
+  ToolRegistry,
+} from "@nyx/protocol";
 import type { SubagentManager } from "./manager.js";
 import type { SubagentsConfig } from "./config.js";
 import { SubagentError } from "./errors.js";
@@ -59,7 +65,10 @@ function isSpawnInput(value: unknown): value is SpawnSubagentInput {
   for (const key of keys) {
     if (key !== "task" && key !== "tools" && key !== "budget_tokens") return false;
   }
-  if (v.tools !== undefined && (!Array.isArray(v.tools) || v.tools.some((t) => typeof t !== "string"))) {
+  if (
+    v.tools !== undefined &&
+    (!Array.isArray(v.tools) || v.tools.some((t) => typeof t !== "string"))
+  ) {
     return false;
   }
   if (

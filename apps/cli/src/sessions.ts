@@ -110,7 +110,8 @@ export function renderSessionDetail(detail: SessionDetail): string {
   // subagents additionally name their spawning turn via the spawned event.
   if (meta.kind === "subagent") {
     const spawned = detail.events.find((e) => e.type === "subagent.spawned");
-    const turn = spawned !== undefined ? (spawned as { parent_turn_id: string }).parent_turn_id : "?";
+    const turn =
+      spawned !== undefined ? (spawned as { parent_turn_id: string }).parent_turn_id : "?";
     out.push(`subagent  of ${meta.parent_id ?? "?"} (turn ${turn})`);
   } else if (meta.parent_id !== null) {
     out.push(`forked-of ${meta.parent_id}`);

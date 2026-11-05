@@ -21,7 +21,11 @@ export {
   type ForkableSandbox,
 } from "./fork.js";
 // Phase 6.1: the kernel-process egress proxy (see docs/EGRESS-PROXY.md).
-export { EgressProxyServer, DEFAULT_MAX_CONNECTIONS, parseConnectAuthority } from "./egress_proxy/proxy.js";
+export {
+  EgressProxyServer,
+  DEFAULT_MAX_CONNECTIONS,
+  parseConnectAuthority,
+} from "./egress_proxy/proxy.js";
 export type {
   EgressDecisionProvider,
   EgressDecision,

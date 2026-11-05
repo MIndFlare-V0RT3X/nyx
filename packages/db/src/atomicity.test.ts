@@ -86,9 +86,9 @@ describe("2.0.1 unified database transactionality", () => {
       },
     });
     const meta = await store.create({ owner_id: "owner", persona_id: "default" });
-    await expect(
-      store.append(meta.session_id, [toolCall(meta.session_id, 1)]),
-    ).rejects.toThrow(/simulated crash/);
+    await expect(store.append(meta.session_id, [toolCall(meta.session_id, 1)])).rejects.toThrow(
+      /simulated crash/,
+    );
     store.close();
 
     const check = new Database(dbPath);
@@ -121,9 +121,9 @@ describe("2.0.1 unified database transactionality", () => {
       },
     });
     const meta = await store.create({ owner_id: "owner", persona_id: "default" });
-    await expect(
-      store.append(meta.session_id, [toolCall(meta.session_id, 2)]),
-    ).rejects.toThrow(/before commit/);
+    await expect(store.append(meta.session_id, [toolCall(meta.session_id, 2)])).rejects.toThrow(
+      /before commit/,
+    );
     expect(appended).toBe(true);
     store.close();
 
@@ -145,9 +145,7 @@ describe("2.0.1 unified database transactionality", () => {
     const dbPath = join(dir, "crash.db");
     const db = new Database(dbPath);
     db.pragma("journal_mode = WAL");
-    db.exec(
-      "CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT NOT NULL)",
-    );
+    db.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT NOT NULL)");
     // Open a deferred transaction, write, then close WITHOUT committing —
     // the shape of a process dying between two statements.
     db.exec("BEGIN");
@@ -179,9 +177,7 @@ describe("2.0.1 unified database transactionality", () => {
         await store.append(sid, [toolCall(sid, workerId * PER_WORKER + i)]);
       }
     };
-    await Promise.all(
-      Array.from({ length: WORKERS }, (_, w) => worker(w)),
-    );
+    await Promise.all(Array.from({ length: WORKERS }, (_, w) => worker(w)));
     store.close();
 
     const check = new Database(dbPath);

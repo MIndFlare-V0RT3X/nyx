@@ -653,9 +653,7 @@ describe("web.fetch scope enforcement (net.egress)", () => {
     expect(results(h.events)).toHaveLength(1);
     // One request; the connection went to the pinned 127.0.0.1 while the
     // Host header kept the scope-checked hostname.
-    expect(requests).toEqual([
-      { method: "GET", url: "/a", host: `in-scope.test:${port}` },
-    ]);
+    expect(requests).toEqual([{ method: "GET", url: "/a", host: `in-scope.test:${port}` }]);
   });
 
   it("REGRESSION: redirect to an out-of-scope host is denied, never followed", async () => {
@@ -844,9 +842,7 @@ describe("web.fetch scope enforcement (net.egress)", () => {
     if (out.kind === "text") expect(out.text).toContain("IN-SCOPE-BODY");
     expect(denials(h.events)).toEqual([]);
     expect(results(h.events)).toHaveLength(1);
-    expect(requests).toEqual([
-      { method: "GET", url: "/x", host: `allowed.example.com:${port}` },
-    ]);
+    expect(requests).toEqual([{ method: "GET", url: "/x", host: `allowed.example.com:${port}` }]);
   });
 
   it("REGRESSION: the pinned endpoint is what is validated — a changed re-resolution cannot pivot", async () => {
@@ -855,7 +851,9 @@ describe("web.fetch scope enforcement (net.egress)", () => {
     // must be validated against and placed on the FIRST (pinned) answer: one
     // resolve per connection, no re-resolution at connect time.
     resolveAnswer = (_hostname, callNo) =>
-      callNo === 1 ? [{ address: "127.0.0.1", family: 4 }] : [{ address: "203.0.113.66", family: 4 }];
+      callNo === 1
+        ? [{ address: "127.0.0.1", family: 4 }]
+        : [{ address: "203.0.113.66", family: 4 }];
     route = (_q, rs) => {
       rs.writeHead(200, { "content-type": "text/plain" });
       rs.end("PINNED-BODY");
@@ -872,9 +870,7 @@ describe("web.fetch scope enforcement (net.egress)", () => {
     // Exactly one resolution; the connection used it; the out-of-scope
     // second answer was never consulted.
     expect(resolvedHostnames).toEqual(["allowed.example.com"]);
-    expect(requests).toEqual([
-      { method: "GET", url: "/x", host: `allowed.example.com:${port}` },
-    ]);
+    expect(requests).toEqual([{ method: "GET", url: "/x", host: `allowed.example.com:${port}` }]);
   });
 
   it("REGRESSION: a trailing-dot hostname does not bypass the resolved-IP check", async () => {
@@ -906,12 +902,9 @@ describe("host-field egress scope enforcement (net.egress)", () => {
 
   /** Registers a fake net.egress tool that takes { host, port? } and would "connect". */
   const registerProbe = (r: ToolRegistryImpl): void => {
-    r.register(
-      fakeDef("net.probe", { risk: "R2", capabilities: ["net.egress"] }),
-      {
-        execute: async () => ({ kind: "text", text: "connected" }) as ToolOutput,
-      },
-    );
+    r.register(fakeDef("net.probe", { risk: "R2", capabilities: ["net.egress"] }), {
+      execute: async () => ({ kind: "text", text: "connected" }) as ToolOutput,
+    });
   };
 
   it("REGRESSION: an inline host:port is checked against the engagement port policy", async () => {

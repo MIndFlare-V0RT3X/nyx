@@ -9,7 +9,7 @@ default** — an operator opts in per adapter in `nyx.config.yaml`.
 Every channel turn runs through the **same machinery as the HTTP API**: the
 session's lane in `@nyx/runtime`'s lane queue, the one agent loop, the deny-first
 policy engine, the approval flow, the sandbox. Channels add **no parallel
-policy path**. What a channel adds is *ingress* — a new way for an operator's
+policy path**. What a channel adds is _ingress_ — a new way for an operator's
 message to arrive — never new authority.
 
 ## Architecture
@@ -37,9 +37,9 @@ Each `channel_user_id` must map to a known owner, configured per channel:
 ```yaml
 channels:
   webhook:
-    allowed_owners: ["owner:primary"]   # POST bodies must carry one of these
+    allowed_owners: ["owner:primary"] # POST bodies must carry one of these
   telegram:
-    allowed_user_ids: [123456789]       # numeric Telegram user ids
+    allowed_user_ids: [123456789] # numeric Telegram user ids
 ```
 
 - Webhook: the POST body's `channel_user_id` must be in `allowed_owners`; the
@@ -111,7 +111,7 @@ the TTY default stays 10 minutes).
 - **Webhook:** there is no push channel — the pending HTTP request itself
   becomes the presentation: the POST returns
   `{status: "approval_required", approval_id, summary, risk, expires_at,
-  resolve_url}` and the external client resolves via
+resolve_url}` and the external client resolves via
   `POST /v1/approvals/<id>/resolve` (bearer auth; same handler and R4
   owner-only gate as the canonical resolve route). Presentations are
   buffered per session, so a fast turn cannot race the response.

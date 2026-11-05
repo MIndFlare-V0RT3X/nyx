@@ -54,7 +54,9 @@ describe("sha256Hex", () => {
   it("matches node's digest", () => {
     expect(sha256Hex("hello")).toBe(createHash("sha256").update("hello").digest("hex"));
     expect(sha256Hex(new Uint8Array([1, 2, 3]))).toBe(
-      createHash("sha256").update(Buffer.from([1, 2, 3])).digest("hex"),
+      createHash("sha256")
+        .update(Buffer.from([1, 2, 3]))
+        .digest("hex"),
     );
   });
 });

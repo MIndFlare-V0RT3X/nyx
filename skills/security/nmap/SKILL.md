@@ -15,15 +15,18 @@ Call `security.nmap` with
 optional, default top 1000). Requires the `port_scanning` technique.
 
 ## Scope rules for CIDR targets
+
 A CIDR target must be COVERED by an authorized CIDR (same family, shorter or
 equal prefix) and must not overlap ANY exclusion — the containment is
 structural, checked before the scan fires. Scanning an unauthorized range is
 denied with the reason.
 
 ## Reading the output
+
 `{ target, open_ports: [{ host, port, service }], count }`.
 
 ## Gotchas
+
 - Connect scans (-sT) only: no raw sockets, no OS fingerprinting, no NSE
   scripts — those are out of Phase 5's scope by design. Service names come
   from the port table, not version detection (-sV is not passed).
@@ -31,6 +34,7 @@ denied with the reason.
   drops; `--max-rate` is passed to the binary cooperatively as well.
 
 ## Preserving output
+
 To keep a scan as evidence, write the result into the workspace (`fs.write`
 to `artifacts/nmap-<target>.json`) and record its sha256 via `shell.exec`
 (`sha256sum artifacts/nmap-<target>.json`).

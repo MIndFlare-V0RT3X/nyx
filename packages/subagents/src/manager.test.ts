@@ -10,20 +10,11 @@ import * as path from "node:path";
 import { mockTextTurn, mockToolTurn } from "@nyx/model";
 import type { ApprovalEngineImpl, ApprovalPresenter } from "@nyx/policy";
 import { createAgentLoop } from "@nyx/agent";
-import type {
-  AgentLoop,
-  ModelChunk,
-  SessionEvent,
-  StoredEvent,
-  ToolHandler,
-} from "@nyx/protocol";
+import type { AgentLoop, ModelChunk, SessionEvent, StoredEvent, ToolHandler } from "@nyx/protocol";
 import type Database from "better-sqlite3";
 import { SubagentMemory } from "./memory-view.js";
 import { SubagentError } from "./errors.js";
-import {
-  requestSubagentAbort,
-  listSubagentAbortRequests,
-} from "./control.js";
+import { requestSubagentAbort, listSubagentAbortRequests } from "./control.js";
 import { makeSubagentHarness, TaskDispatchProvider, type SubagentHarness } from "./harness.test.js";
 
 const types = (events: readonly SessionEvent[]): string[] => events.map((e) => e.type);
@@ -48,11 +39,10 @@ describe("3.3 — the simplest spawn", () => {
     const h = await makeSubagentHarness();
     h.provider.script("count beans", [mockTextTurn("there are 42 beans")]);
 
-    const result = await h.manager.spawn(
-      { task: "count beans" },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const result = await h.manager.spawn({ task: "count beans" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
 
     expect(result.state).toBe("completed");
     expect(result.summary).toBe("there are 42 beans");
@@ -123,11 +113,10 @@ describe("3.3 — the simplest spawn", () => {
       { fail: { name: "ProviderError", message: "boom", code: "provider_error" } },
     ]);
 
-    const result = await h.manager.spawn(
-      { task: "doomed task" },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const result = await h.manager.spawn({ task: "doomed task" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
 
     expect(result.state).toBe("failed");
     expect(result.error).toMatchObject({ message: expect.stringContaining("boom") });
@@ -145,11 +134,10 @@ describe("3.4 — depth enforcement", () => {
     const h = await makeSubagentHarness({ config: { max_depth: 1 } });
     h.provider.script("first", [mockTextTurn("ok")]);
 
-    const first = await h.manager.spawn(
-      { task: "first" },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const first = await h.manager.spawn({ task: "first" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
     expect(first.state).toBe("completed");
 
     // Recursive attempt: hand the manager a parent ref pointing at the
@@ -192,20 +180,18 @@ describe("3.4 — depth enforcement", () => {
     // …but spawning FROM that subagent (depth 2) is rejected even with the
     // same 99 override — the config ceiling cannot be loosened.
     await expect(
-      h.manager.spawn(
-        { task: "deeper", max_depth_override: 99 },
-        h.parentCtx,
-        { session_id: child.session_id, turn_id: "t2" },
-      ),
+      h.manager.spawn({ task: "deeper", max_depth_override: 99 }, h.parentCtx, {
+        session_id: child.session_id,
+        turn_id: "t2",
+      }),
     ).rejects.toMatchObject({ code: "depth_exceeded" });
 
     // An override BELOW the config tightens: 0 forbids even depth 1.
     await expect(
-      h.manager.spawn(
-        { task: "tighten", max_depth_override: 0 },
-        h.parentCtx,
-        { session_id: h.parent.session_id, turn_id: "t3" },
-      ),
+      h.manager.spawn({ task: "tighten", max_depth_override: 0 }, h.parentCtx, {
+        session_id: h.parent.session_id,
+        turn_id: "t3",
+      }),
     ).rejects.toMatchObject({ code: "depth_exceeded" });
   });
 
@@ -213,11 +199,10 @@ describe("3.4 — depth enforcement", () => {
     const h = await makeSubagentHarness();
     h.provider.script("d", [mockTextTurn("ok")]);
     expect(await h.manager.depth_for(h.parent.session_id)).toBe(3);
-    const child = await h.manager.spawn(
-      { task: "d" },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const child = await h.manager.spawn({ task: "d" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
     expect(await h.manager.depth_for(child.session_id)).toBe(2);
   });
 });
@@ -226,16 +211,12 @@ describe("3.4 — per-turn budget enforcement", () => {
   it("clamps a spec's budget to max_budget_tokens (less, never more)", async () => {
     const h = await makeSubagentHarness();
     h.provider.script("big", [mockTextTurn("ok")]);
-    const r = await h.manager.spawn(
-      { task: "big", budget_tokens: 10_000_000 },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const r = await h.manager.spawn({ task: "big", budget_tokens: 10_000_000 }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
     expect(r.state).toBe("completed");
-    expect(turnSpendOf(h.manager as never)(
-      h.parent.session_id,
-      "t1",
-    )).toBe(65_536); // clamped to the ceiling
+    expect(turnSpendOf(h.manager as never)(h.parent.session_id, "t1")).toBe(65_536); // clamped to the ceiling
   });
 
   it("rejects a spawn that would exceed max_total_per_turn (code budget_exceeded)", async () => {
@@ -246,11 +227,10 @@ describe("3.4 — per-turn budget enforcement", () => {
     h.provider.script("beta-op", [mockTextTurn("ok")]);
     h.provider.script("gamma-op", [mockTextTurn("ok")]);
 
-    const first = await h.manager.spawn(
-      { task: "alpha-op" },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const first = await h.manager.spawn({ task: "alpha-op" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
     expect(first.state).toBe("completed");
     // 60k allocated; a second default spawn (60k) would total 120k > 100k.
     await expect(
@@ -260,16 +240,12 @@ describe("3.4 — per-turn budget enforcement", () => {
       }),
     ).rejects.toMatchObject({ code: "budget_exceeded", name: "SubagentError" });
     // A SMALLER request still fits (arithmetic: 60k + 40k = 100k <= 100k).
-    const third = await h.manager.spawn(
-      { task: "gamma-op", budget_tokens: 40_000 },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const third = await h.manager.spawn({ task: "gamma-op", budget_tokens: 40_000 }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
     expect(third.state).toBe("completed");
-    expect(turnSpendOf(h.manager as never)(
-      h.parent.session_id,
-      "t1",
-    )).toBe(100_000);
+    expect(turnSpendOf(h.manager as never)(h.parent.session_id, "t1")).toBe(100_000);
   });
 
   it("a new parent turn starts from a zero allocation; unbindTurn clears it", async () => {
@@ -280,11 +256,10 @@ describe("3.4 — per-turn budget enforcement", () => {
     h.provider.script("beta-op", [mockTextTurn("ok")]);
     h.provider.script("gamma-op", [mockTextTurn("ok")]);
 
-    const first = await h.manager.spawn(
-      { task: "alpha-op" },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const first = await h.manager.spawn({ task: "alpha-op" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
     expect(first.state).toBe("completed");
     // Same spend in t1 is over the cap…
     await expect(
@@ -294,18 +269,16 @@ describe("3.4 — per-turn budget enforcement", () => {
       }),
     ).rejects.toMatchObject({ code: "budget_exceeded" });
     // …but a fresh turn t2 has the full budget again.
-    const second = await h.manager.spawn(
-      { task: "beta-op" },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t2" },
-    );
+    const second = await h.manager.spawn({ task: "beta-op" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t2",
+    });
     expect(second.state).toBe("completed");
     h.manager.unbindTurn(h.parent.session_id);
-    const third = await h.manager.spawn(
-      { task: "gamma-op" },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t3" },
-    );
+    const third = await h.manager.spawn({ task: "gamma-op" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t3",
+    });
     expect(third.state).toBe("completed");
   });
 
@@ -321,11 +294,10 @@ describe("3.4 — per-turn budget enforcement", () => {
       ],
     ]);
 
-    const result = await h.manager.spawn(
-      { task: "burner" },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const result = await h.manager.spawn({ task: "burner" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
 
     expect(result.state).toBe("budget_exceeded");
     expect(result.error).toMatchObject({ code: "budget_exceeded" });
@@ -438,11 +410,10 @@ describe("3.4 — tool allowlist (structural)", () => {
       mockTextTurn("done"),
     ]);
 
-    const result = await h.manager.spawn(
-      { task: "wiring" },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const result = await h.manager.spawn({ task: "wiring" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
     expect(result.state).toBe("completed");
 
     // The action.after hook captured the CHILD's RunContext.
@@ -480,11 +451,10 @@ describe("3.5 — abort propagation", () => {
       mockTextTurn("never reached"),
     ]);
 
-    const spawned = h2.manager.spawn(
-      { task: "slowpoke", tools: ["test.slow"] },
-      h2.parentCtx,
-      { session_id: h2.parent.session_id, turn_id: "t1" },
-    );
+    const spawned = h2.manager.spawn({ task: "slowpoke", tools: ["test.slow"] }, h2.parentCtx, {
+      session_id: h2.parent.session_id,
+      turn_id: "t1",
+    });
     await new Promise((r) => setTimeout(r, 60));
     h2.parentController.abort();
     const result = await spawned;
@@ -504,16 +474,13 @@ describe("3.5 — abort propagation", () => {
 
   it("manager.abort() aborts a running subagent in-process", async () => {
     const h = await makeSubagentHarness({
-      extraTools: [
-        { name: "test.slow", handler: { execute: () => new Promise(() => undefined) } },
-      ],
+      extraTools: [{ name: "test.slow", handler: { execute: () => new Promise(() => undefined) } }],
     });
     let childId = "";
-    const spawned = h.manager.spawn(
-      { task: "slowpoke", tools: ["test.slow"] },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const spawned = h.manager.spawn({ task: "slowpoke", tools: ["test.slow"] }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
     h.provider.script("slowpoke", [
       [
         {
@@ -559,9 +526,7 @@ describe("3.5 — abort propagation", () => {
     const mgrDb: Database.Database = new Database(dbFile);
     const cliDb: Database.Database = new Database(dbFile);
     const h = await makeSubagentHarness({
-      extraTools: [
-        { name: "test.slow", handler: { execute: () => new Promise(() => undefined) } },
-      ],
+      extraTools: [{ name: "test.slow", handler: { execute: () => new Promise(() => undefined) } }],
       managerDeps: { db: mgrDb, poll_ms: 20 },
     });
     h.provider.script("slowpoke", [
@@ -570,11 +535,10 @@ describe("3.5 — abort propagation", () => {
     ]);
 
     let childId = "";
-    const spawned = h.manager.spawn(
-      { task: "slowpoke", tools: ["test.slow"] },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const spawned = h.manager.spawn({ task: "slowpoke", tools: ["test.slow"] }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
     await new Promise((resolve) => {
       const timer = setInterval(async () => {
         const events = await h.store.read(h.parent.session_id);
@@ -608,11 +572,10 @@ describe("isolation invariants (hard rules #2/#3)", () => {
   it("child events never appear in the parent's log — only summaries cross", async () => {
     const h = await makeSubagentHarness();
     h.provider.script("isolated", [mockTextTurn("the summary")]);
-    const result = await h.manager.spawn(
-      { task: "isolated" },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const result = await h.manager.spawn({ task: "isolated" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
     const parentEvents = await readAll(h, h.parent.session_id);
     for (const e of parentEvents) {
       if (e.type === "subagent.spawned" || e.type === "subagent.completed") continue;
@@ -657,11 +620,10 @@ describe("isolation invariants (hard rules #2/#3)", () => {
       ],
       mockTextTurn("done"),
     ]);
-    const result = await h.manager.spawn(
-      { task: "memreader" },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const result = await h.manager.spawn({ task: "memreader" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
     const childCtx = h.capturedContexts.get(result.session_id)!;
     const childMemory = childCtx.memory;
 
@@ -718,16 +680,14 @@ describe("list() and turn bindings", () => {
     const h = await makeSubagentHarness();
     h.provider.script("alpha", [mockTextTurn("a")]);
     h.provider.script("beta", [{ fail: { name: "E", message: "x", code: "provider_error" } }]);
-    const a = await h.manager.spawn(
-      { task: "alpha" },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
-    const b = await h.manager.spawn(
-      { task: "beta" },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const a = await h.manager.spawn({ task: "alpha" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
+    const b = await h.manager.spawn({ task: "beta" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
 
     let infos = await h.manager.list(h.parent.session_id);
     expect(infos.map((i) => i.state).sort()).toEqual(["completed", "failed"]);
@@ -859,11 +819,10 @@ describe("concurrent spawn allocation (Reviewer-1 hardening)", () => {
     ]);
     // "grep" is not registered on the parent registry → the child's allowlist
     // is EMPTY (fs.read exists but is not in the spec either).
-    const result = await h.manager.spawn(
-      { task: "phantom tools", tools: ["grep"] },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const result = await h.manager.spawn({ task: "phantom tools", tools: ["grep"] }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
     expect(result.state).toBe("completed");
     const childEvents = await readAll(h, result.session_id);
     expect(byType(childEvents, "tool.error")[0]).toMatchObject({
@@ -1038,7 +997,9 @@ describe("fan-out hardening — R2: abort × approvals × poll liveness", () => 
     const cliDb: Database.Database = new Database(dbFile);
     // 40 chunks x 8ms ≈ 320ms of continuous streaming — event gaps stay far
     // below poll_ms, the exact regime that starved the old sleep-based poll.
-    const stream: ModelChunk[] = [{ type: "usage", usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } }];
+    const stream: ModelChunk[] = [
+      { type: "usage", usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } },
+    ];
     for (let i = 0; i < 40; i++) stream.push({ type: "text.delta", text: `chunk ${i} ` });
     stream.push({ type: "done", finish_reason: "stop" });
     const provider = new SlowStreamProvider();
@@ -1162,10 +1123,14 @@ describe("fan-out hardening — R2: abort × approvals × poll liveness", () => 
     requestSubagentAbort(cliDb, "no-such-session", "cli:test");
 
     // The probe child runs ~80ms with poll_ms 20 → several drain passes.
-    const probe = await h.manager.spawn({ task: "drain-one", tools: ["test.linger"] }, h.parentCtx, {
-      session_id: h.parent.session_id,
-      turn_id: "t1",
-    });
+    const probe = await h.manager.spawn(
+      { task: "drain-one", tools: ["test.linger"] },
+      h.parentCtx,
+      {
+        session_id: h.parent.session_id,
+        turn_id: "t1",
+      },
+    );
     expect(probe.state).toBe("completed");
 
     const remaining = listSubagentAbortRequests(cliDb).map((r) => r.session_id);
@@ -1240,7 +1205,8 @@ describe("fan-out hardening — R3: structural absence, proven harder", () => {
         (m) =>
           m.role === "user" &&
           m.content.some(
-            (b) => b.type === "text" && b.text.includes("You are a subagent. Your task: catalog-probe"),
+            (b) =>
+              b.type === "text" && b.text.includes("You are a subagent. Your task: catalog-probe"),
           ),
       ),
     );

@@ -15,7 +15,7 @@
 schema: 1
 id: acme-q4-2026
 client: "Acme Corp"
-operator_id: "owner"                 # must match the session owner (config owner_id)
+operator_id: "owner" # must match the session owner (config owner_id)
 signed_at: 2026-11-01T00:00:00Z
 authorized_by: "Jane Smith, CISO"
 emergency_contact: "security@acme.example"

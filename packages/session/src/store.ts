@@ -441,20 +441,22 @@ export class SessionStoreImpl implements SessionStore {
       .orderBy(desc(schema.sessions.updatedAt), schema.sessions.id)
       .limit(limit)
       .all();
-    return rows.map((row) => this.rowToMeta({
-      id: row.id,
-      parent_id: row.parentId,
-      owner_id: row.ownerId,
-      persona_id: row.personaId,
-      title: row.title,
-      created_at: row.createdAt,
-      updated_at: row.updatedAt,
-      engagement_json: row.engagementJson,
-      metadata_json: row.metadataJson,
-      kind: row.kind,
-      archived_at: row.archivedAt,
-      archived: row.archived,
-    }));
+    return rows.map((row) =>
+      this.rowToMeta({
+        id: row.id,
+        parent_id: row.parentId,
+        owner_id: row.ownerId,
+        persona_id: row.personaId,
+        title: row.title,
+        created_at: row.createdAt,
+        updated_at: row.updatedAt,
+        engagement_json: row.engagementJson,
+        metadata_json: row.metadataJson,
+        kind: row.kind,
+        archived_at: row.archivedAt,
+        archived: row.archived,
+      }),
+    );
   }
 
   async archiveSession(session_id: string): Promise<SessionMeta> {
@@ -470,9 +472,7 @@ export class SessionStoreImpl implements SessionStore {
       return this.rowToMeta(row); // idempotent
     }
     const now = Date.now();
-    this.db
-      .prepare("UPDATE sessions SET archived_at = ? WHERE id = ?")
-      .run(now, session_id);
+    this.db.prepare("UPDATE sessions SET archived_at = ? WHERE id = ?").run(now, session_id);
     return this.rowToMeta(this.requireSessionRow(session_id));
   }
 

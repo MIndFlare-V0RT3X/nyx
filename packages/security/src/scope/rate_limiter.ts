@@ -76,7 +76,8 @@ class MemoryRateBucketStore implements RateBucketStore {
   private readonly buckets = new Map<string, Bucket>();
   reserve(key: string, interval_ms: number, now: number): number {
     const existing = this.buckets.get(key);
-    const slot = existing === undefined ? now + interval_ms : Math.max(now, existing.next_allowed_at);
+    const slot =
+      existing === undefined ? now + interval_ms : Math.max(now, existing.next_allowed_at);
     this.buckets.set(key, { next_allowed_at: slot + interval_ms, interval_ms });
     return slot;
   }
@@ -120,8 +121,7 @@ export class SecurityRateLimiter {
     // The shared per-host default bucket — requests only, and only when the
     // engagement declares a default. An unclassed tool charges exactly this
     // bucket; a classed tool charges it in addition to its own.
-    const hostRate =
-      t.unit === "requests" ? limits.default?.requests_per_second : undefined;
+    const hostRate = t.unit === "requests" ? limits.default?.requests_per_second : undefined;
 
     // The host is normalized (lowercased, one trailing dot stripped) so a
     // "example.com." spelling cannot split one host into two buckets (R1-4).

@@ -291,9 +291,7 @@ export class KernelImpl implements Kernel {
           // is loading or loaded — a deferred callback firing after
           // unuse/close cannot leave ghost tools behind.
           if (!this.#plugins.has(active.plugin) && !this.#loading.has(active.plugin)) {
-            throw new KernelClosedError(
-              `tools.register for unloaded plugin "${active.plugin}"`,
-            );
+            throw new KernelClosedError(`tools.register for unloaded plugin "${active.plugin}"`);
           }
           for (const capability of def.capabilities) {
             if (!active.manifest.capabilities.includes(capability)) {
@@ -354,8 +352,7 @@ export class KernelImpl implements Kernel {
         // enforcement context — handler-time registrations stay attributed
         // (capability-checked, mutation-refused, audited), exactly like
         // setup-time ones.
-        const manifest =
-          this.#plugins.get(owner)?.manifest ?? this.#loading.get(owner);
+        const manifest = this.#plugins.get(owner)?.manifest ?? this.#loading.get(owner);
         if (manifest === undefined) return entry;
         const als = this.#als;
         const inner = entry.handler;

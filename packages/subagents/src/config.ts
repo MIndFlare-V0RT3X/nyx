@@ -54,10 +54,7 @@ export const DEFAULT_ALLOWED_TOOLS: readonly string[] = [
 ];
 
 /** Tools no subagent may ever see. spawn_subagent is structural, not config. */
-export const DEFAULT_FORBIDDEN_TOOLS: readonly string[] = [
-  "spawn_subagent",
-  "spawn_subagent_v2",
-];
+export const DEFAULT_FORBIDDEN_TOOLS: readonly string[] = ["spawn_subagent", "spawn_subagent_v2"];
 
 export const DEFAULT_SUBAGENTS_CONFIG: SubagentsConfig = {
   max_depth: 3,

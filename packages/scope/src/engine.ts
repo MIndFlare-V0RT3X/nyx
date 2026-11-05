@@ -383,9 +383,7 @@ export function checkResolvedTarget(
     if (exclude && (exclude.cidrs ?? []).some((c) => cidrContains(c, address))) {
       return {
         allowed: false,
-        reason:
-          `dns_rebinding_out_of_scope: ${query.host} resolved to excluded ` +
-          `${address}`,
+        reason: `dns_rebinding_out_of_scope: ${query.host} resolved to excluded ` + `${address}`,
       };
     }
   }

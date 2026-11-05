@@ -58,11 +58,7 @@ interface FindingRow {
 export class FindingStoreError extends Error {
   constructor(
     readonly code:
-      | "no_engagement"
-      | "not_found"
-      | "invalid"
-      | "unknown_session"
-      | "engagement_mismatch",
+      "no_engagement" | "not_found" | "invalid" | "unknown_session" | "engagement_mismatch",
     message: string,
   ) {
     super(message);
@@ -167,8 +163,7 @@ export class FindingStore {
 
   async get(id: string): Promise<Finding | null> {
     const row = this.db.prepare("SELECT * FROM findings WHERE id = ?").get(id) as
-      | FindingRow
-      | undefined;
+      FindingRow | undefined;
     return row === undefined ? null : rowToFinding(row);
   }
 
@@ -243,8 +238,7 @@ export class FindingStore {
 
   private require(id: string): Finding {
     const found = this.db.prepare("SELECT * FROM findings WHERE id = ?").get(id) as
-      | FindingRow
-      | undefined;
+      FindingRow | undefined;
     if (found === undefined) {
       throw new FindingStoreError("not_found", `finding ${id} not found after write`);
     }

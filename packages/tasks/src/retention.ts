@@ -95,9 +95,7 @@ export function isSystemTaskId(task_id: string): boolean {
  * tasks never spawn — the runner branch executes runRetention() directly,
  * so there is no model spend to budget.
  */
-export function retentionTaskSpec(config: {
-  retention_schedule: string;
-}): TaskSpec {
+export function retentionTaskSpec(config: { retention_schedule: string }): TaskSpec {
   return {
     id: RETENTION_TASK_ID,
     title: "retention gc",
@@ -182,19 +180,23 @@ export function runRetention(deps: RetentionDeps): RetentionStats {
     }
 
     if (audit && stats.archived_sessions > 0) {
-      appendAudit(db, {
-        actor: RETENTION_TASK_ID,
-        action: "retention.archived",
-        payload: {
-          scope: config.retention_scope,
-          retention_days: config.retention_days,
-          scanned: stats.scanned,
-          archived_sessions: stats.archived_sessions,
-          archived_events: stats.archived_events,
-          protected_live: stats.protected_live,
-          protected_failed: stats.protected_failed,
+      appendAudit(
+        db,
+        {
+          actor: RETENTION_TASK_ID,
+          action: "retention.archived",
+          payload: {
+            scope: config.retention_scope,
+            retention_days: config.retention_days,
+            scanned: stats.scanned,
+            archived_sessions: stats.archived_sessions,
+            archived_events: stats.archived_events,
+            protected_live: stats.protected_live,
+            protected_failed: stats.protected_failed,
+          },
         },
-      }, { now });
+        { now },
+      );
     }
   }
 
@@ -202,22 +204,28 @@ export function runRetention(deps: RetentionDeps): RetentionStats {
   if (config.delete_after_days > 0) {
     const cutoff = now() - config.delete_after_days * DAY_MS;
     const rows = db
-      .prepare("SELECT id FROM sessions WHERE archived = 1 AND archived_at IS NOT NULL AND archived_at <= ?")
+      .prepare(
+        "SELECT id FROM sessions WHERE archived = 1 AND archived_at IS NOT NULL AND archived_at <= ?",
+      )
       .all(cutoff) as Array<{ id: string }>;
     for (const row of rows) {
       stats.deleted_sessions += 1;
       stats.deleted_events += deleteOne(db, row.id);
     }
     if (audit && stats.deleted_sessions > 0) {
-      appendAudit(db, {
-        actor: RETENTION_TASK_ID,
-        action: "retention.deleted",
-        payload: {
-          delete_after_days: config.delete_after_days,
-          deleted_sessions: stats.deleted_sessions,
-          deleted_events: stats.deleted_events,
+      appendAudit(
+        db,
+        {
+          actor: RETENTION_TASK_ID,
+          action: "retention.deleted",
+          payload: {
+            delete_after_days: config.delete_after_days,
+            deleted_sessions: stats.deleted_sessions,
+            deleted_events: stats.deleted_events,
+          },
         },
-      }, { now });
+        { now },
+      );
     }
   }
 
@@ -236,7 +244,9 @@ function archiveOne(db: Database.Database, session_id: string, now: number): num
     `INSERT OR REPLACE INTO archive.events (seq, session_id, type, payload_json, ts)
      SELECT seq, session_id, type, payload_json, ts FROM events WHERE session_id = ?`,
   );
-  const count = db.prepare("SELECT COUNT(*) AS n FROM events WHERE session_id = ?").get(session_id) as {
+  const count = db
+    .prepare("SELECT COUNT(*) AS n FROM events WHERE session_id = ?")
+    .get(session_id) as {
     n: number;
   };
   copy.run(session_id);
@@ -274,7 +284,11 @@ function deleteOne(db: Database.Database, session_id: string): number {
  */
 export async function ensureRetentionTask(
   manager: {
-    create(spec: TaskSpec, owner_ctx: { owner_id: string; persona_id: string }, opts?: { system?: boolean }): Promise<unknown>;
+    create(
+      spec: TaskSpec,
+      owner_ctx: { owner_id: string; persona_id: string },
+      opts?: { system?: boolean },
+    ): Promise<unknown>;
     get(id: string): Promise<{ state: string } | null>;
     retry(id: string): Promise<void>;
   },

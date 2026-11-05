@@ -114,9 +114,9 @@ export function ensureApprovalEngineTables(db: Database.Database): void {
  * and is never touched.
  */
 function renameLegacyApprovalsTable(db: Database.Database): void {
-  const tables = db
-    .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
-    .all() as Array<{ name: string }>;
+  const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{
+    name: string;
+  }>;
   const names = new Set(tables.map((t) => t.name));
   if (names.has("events")) return; // session-store db: `approvals` is the projection
   if (!names.has("approvals")) return; // nothing to rename
@@ -468,7 +468,8 @@ export class ApprovalEngineImpl implements ApprovalEngine {
           },
         });
         const after = this.getRow(row.id);
-        if (!after) throw new CodedError("approval_denied", `approval ${row.id} disappeared mid-transaction`);
+        if (!after)
+          throw new CodedError("approval_denied", `approval ${row.id} disappeared mid-transaction`);
         return toRecord(after);
       })();
       withdrawn += 1;

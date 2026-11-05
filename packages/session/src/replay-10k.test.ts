@@ -52,7 +52,13 @@ function genHistory(seed: number, sid: string, count: number): SessionEvent[] {
       ts: tick(),
     });
     for (let d = 0; d < 1 + Math.floor(rand() * 3); d += 1) {
-      push({ type: "text.delta", session_id: sid, turn_id: turnId, text: `delta-${d}`, ts: tick() });
+      push({
+        type: "text.delta",
+        session_id: sid,
+        turn_id: turnId,
+        text: `delta-${d}`,
+        ts: tick(),
+      });
     }
     push({
       type: "message.assistant",

@@ -27,9 +27,7 @@ describe("CVSS 3.1 base scoring", () => {
   }
 
   it("a no-impact vector scores 0", () => {
-    expect(
-      scoreCvss3Vector("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N"),
-    ).toBe(0);
+    expect(scoreCvss3Vector("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N")).toBe(0);
   });
 
   it("the scope-dependent PR weights are applied (the 9.0 vs 8.x family)", () => {

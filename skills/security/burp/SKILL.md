@@ -31,6 +31,7 @@ with a hash-verified artifact; OUT-OF-SCOPE entries are listed and excluded:
 the capture cannot launder unauthorized traffic into evidence.
 
 ## Gotchas
+
 - Requires an egress-proxied session (an engagement session with the Phase
   6.1 proxy enabled).
 - Burp Community has no REST API (that is a Pro feature) — the wiring +

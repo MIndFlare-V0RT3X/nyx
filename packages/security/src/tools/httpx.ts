@@ -56,9 +56,7 @@ export function httpxHandler(deps: SecurityToolDeps): ToolHandler {
       const parsed = input.targets.map((t) => parseActionUrl(t));
       if (parsed.some((p) => p === null)) {
         throw Object.assign(
-          new Error(
-            "targets must be hosts or absolute http(s) URLs without userinfo",
-          ),
+          new Error("targets must be hosts or absolute http(s) URLs without userinfo"),
           { name: "SecurityToolError", code: "skill.error" },
         );
       }

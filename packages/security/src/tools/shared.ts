@@ -16,12 +16,7 @@
 
 import * as path from "node:path";
 import * as fsp from "node:fs/promises";
-import type {
-  Engagement,
-  ScopeTargetQuery,
-  ToolContext,
-  ToolOutput,
-} from "@nyx/protocol";
+import type { Engagement, ScopeTargetQuery, ToolContext, ToolOutput } from "@nyx/protocol";
 import { checkResolvedTarget, normalizeHost } from "@nyx/scope";
 import type { EgressResolver } from "@nyx/tools";
 import { createScopeEngine } from "../scope/engine.js";
@@ -106,10 +101,10 @@ export function workspaceRelative(ctx: ToolContext, p: string): string {
  */
 export function assertWorkspacePath(ctx: ToolContext, p: string, label: string): string {
   if (p.split("/").includes("..")) {
-    throw Object.assign(
-      new Error(`${label} must contain no .. segments`),
-      { name: "SecurityToolError", code: "skill.error" as const },
-    );
+    throw Object.assign(new Error(`${label} must contain no .. segments`), {
+      name: "SecurityToolError",
+      code: "skill.error" as const,
+    });
   }
   const workdir = ctx.sandbox?.workdir ?? "";
   if (p.startsWith("/")) {
@@ -234,9 +229,7 @@ export async function runSecurityTool(opts: RunSecurityToolOptions): Promise<Too
   });
   if (result.exit_code !== 0) {
     throw Object.assign(
-      new Error(
-        `${opts.binary} exited ${result.exit_code}: ${result.stderr.slice(0, 2000)}`,
-      ),
+      new Error(`${opts.binary} exited ${result.exit_code}: ${result.stderr.slice(0, 2000)}`),
       { name: "SecurityToolError", code: "skill.error" as const },
     );
   }
@@ -254,10 +247,10 @@ export function parseJsonl(stdout: string): unknown[] {
     try {
       out.push(JSON.parse(line));
     } catch {
-      throw Object.assign(
-        new Error(`malformed JSONL from the tool: ${line.slice(0, 200)}`),
-        { name: "SecurityToolError", code: "skill.error" },
-      );
+      throw Object.assign(new Error(`malformed JSONL from the tool: ${line.slice(0, 200)}`), {
+        name: "SecurityToolError",
+        code: "skill.error",
+      });
     }
   }
   return out;
@@ -270,8 +263,7 @@ export function cooperativeRate(
 ): number | undefined {
   const limits = engagement.rate_limits ?? {};
   const own = limits[meta.rate_class];
-  const rate =
-    meta.unit === "requests" ? own?.requests_per_second : own?.packets_per_second;
+  const rate = meta.unit === "requests" ? own?.requests_per_second : own?.packets_per_second;
   if (rate !== undefined) return rate;
   if (meta.unit === "requests") return limits.default?.requests_per_second;
   // Packet-class tools fall back to the default REQUEST rate as a

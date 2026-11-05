@@ -75,8 +75,8 @@ attempts execute as subagent spawns — one at a time per worker slot.
 
 The retention/GC pass (`nyx:retention-gc`) is ITSELF a scheduled durable
 task — see [RETENTION.md](RETENTION.md). It ships **disabled**
-(`subagents.retention_enabled: false`); the surface only *ensures the task
-exists* at boot (create when absent, revive when terminally failed or
+(`subagents.retention_enabled: false`); the surface only _ensures the task
+exists_ at boot (create when absent, revive when terminally failed or
 cancelled, leave a healthy or deliberately paused task untouched) — the
 worker pool fires it on its cron. Never a startup sweep.
 
@@ -94,11 +94,11 @@ worker pool fires it on its cron. Never a startup sweep.
 
 ```yaml
 tasks:
-  enabled: true                 # worker pool starts with the process
-  workers: 2                    # per process
+  enabled: true # worker pool starts with the process
+  workers: 2 # per process
   poll_interval_ms: 500
-  lease_ttl_ms: 300000          # 5 minutes
-  renew_interval_ms: 30000      # MUST be < lease_ttl_ms (validated)
+  lease_ttl_ms: 300000 # 5 minutes
+  renew_interval_ms: 30000 # MUST be < lease_ttl_ms (validated)
 ```
 
 ## Events

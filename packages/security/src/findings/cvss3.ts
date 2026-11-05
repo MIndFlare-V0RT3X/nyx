@@ -78,14 +78,11 @@ function roundup(input: number): number {
 /** The CVSS 3.1 base score for a parsed vector (0–10, one decimal). */
 export function scoreCvss3(metrics: Cvss3Metrics): number {
   const scope = metrics.S === "C" ? "C" : "U";
-  const iss = 1 -
-    (1 - CIA_WEIGHTS[metrics.C]!) *
-    (1 - CIA_WEIGHTS[metrics.I]!) *
-    (1 - CIA_WEIGHTS[metrics.A]!);
+  const iss =
+    1 -
+    (1 - CIA_WEIGHTS[metrics.C]!) * (1 - CIA_WEIGHTS[metrics.I]!) * (1 - CIA_WEIGHTS[metrics.A]!);
   const impact =
-    scope === "U"
-      ? 6.42 * iss
-      : 7.52 * (iss - 0.029) - 3.25 * Math.pow(iss - 0.02, 15);
+    scope === "U" ? 6.42 * iss : 7.52 * (iss - 0.029) - 3.25 * Math.pow(iss - 0.02, 15);
   if (impact <= 0) return 0;
   const exploitability =
     8.22 *

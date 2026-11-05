@@ -53,9 +53,8 @@ export interface ScanReport {
 
 /** Expand `~` and make absolute. */
 export function expandDir(dir: string): string {
-  const expanded = dir.startsWith("~/") || dir === "~"
-    ? path.join(os.homedir(), dir.slice(1))
-    : dir;
+  const expanded =
+    dir.startsWith("~/") || dir === "~" ? path.join(os.homedir(), dir.slice(1)) : dir;
   return path.resolve(expanded);
 }
 
@@ -72,7 +71,9 @@ export async function scanSkills(config: SkillsScanConfig, logger?: Logger): Pro
       entries = await fsp.readdir(root, { withFileTypes: true });
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") continue; // absent dir = no skills there
-      warnings.push(`skills dir ${root} unreadable: ${err instanceof Error ? err.message : String(err)}`);
+      warnings.push(
+        `skills dir ${root} unreadable: ${err instanceof Error ? err.message : String(err)}`,
+      );
       continue;
     }
     // Deterministic order within a dir: name sort.
@@ -119,7 +120,10 @@ export async function scanSkills(config: SkillsScanConfig, logger?: Logger): Pro
  * definitions). A tool name that does not exist grants nothing and costs
  * nothing — Phase 4's `tools` field is informational.
  */
-export function requiredCapabilities(skill: SkillEntry, registry: ToolRegistry | undefined): Set<string> {
+export function requiredCapabilities(
+  skill: SkillEntry,
+  registry: ToolRegistry | undefined,
+): Set<string> {
   const caps = new Set<string>();
   if (skill.tools === undefined || registry === undefined) return caps;
   for (const name of skill.tools) {
@@ -155,7 +159,9 @@ export function estimateTokens(text: string): number {
 export function catalogLine(skill: SkillEntry): string {
   const trigger = skill.when_to_use !== undefined ? ` — trigger: ${skill.when_to_use}` : "";
   const tools =
-    skill.tools !== undefined && skill.tools.length > 0 ? ` [tools: ${skill.tools.join(", ")}]` : "";
+    skill.tools !== undefined && skill.tools.length > 0
+      ? ` [tools: ${skill.tools.join(", ")}]`
+      : "";
   const attack = skill.attack_class !== undefined ? ` [${skill.attack_class}]` : "";
   return `- ${skill.name}${skill.version !== undefined ? ` (v${skill.version})` : ""}: ${skill.description}${trigger}${tools}${attack}`;
 }
@@ -172,7 +178,9 @@ export function curate(
   logger?: Logger,
 ): { catalog: SkillEntry[]; overflow: string[] } {
   const byName = new Map(skills.map((s) => [s.name, s]));
-  const pinned = opts.pinned.map((p) => byName.get(p)).filter((s): s is SkillEntry => s !== undefined);
+  const pinned = opts.pinned
+    .map((p) => byName.get(p))
+    .filter((s): s is SkillEntry => s !== undefined);
   const pinnedSet = new Set(pinned.map((s) => s.name));
   const lastUsed = opts.last_used ?? new Map<string, number>();
   const rest = skills
@@ -213,5 +221,7 @@ export function curate(
 /** The rendered section body for the given (already curated) skills. */
 export function renderCatalog(skills: readonly SkillEntry[]): string {
   if (skills.length === 0) return "No skills installed.";
-  return ["Available skills (load one with the load_skill tool):", ...skills.map(catalogLine)].join("\n");
+  return ["Available skills (load one with the load_skill tool):", ...skills.map(catalogLine)].join(
+    "\n",
+  );
 }

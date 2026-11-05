@@ -17,7 +17,10 @@ export const LOAD_SKILL_TOOL = "load_skill";
 /** Skills are content; loading is quick. Generous tool clock anyway. */
 const LOAD_TIMEOUT_MS = 30_000;
 
-function skillError(code: "already_loaded" | "scope_mismatch" | "not_found", message: string): Error {
+function skillError(
+  code: "already_loaded" | "scope_mismatch" | "not_found",
+  message: string,
+): Error {
   const err = new Error(message) as Error & { code: string };
   err.name = "SkillError";
   err.code = code;

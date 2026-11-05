@@ -14,11 +14,7 @@ import * as path from "node:path";
 import Database from "better-sqlite3";
 import { afterAll, describe, expect, it } from "vitest";
 import { openSessionStore } from "@nyx/session";
-import type {
-  SessionStore,
-  SubagentResult,
-  TaskRecord,
-} from "@nyx/protocol";
+import type { SessionStore, SubagentResult, TaskRecord } from "@nyx/protocol";
 import {
   TaskWorkerPool,
   backoffAt,
@@ -162,7 +158,11 @@ function realisticRunner(
           duration_ms: 12_000,
         };
       }
-      const error = { name: "ProviderError", message: "model stream failed", code: "provider_error" };
+      const error = {
+        name: "ProviderError",
+        message: "model stream failed",
+        code: "provider_error",
+      };
       await store.append(child.session_id, [
         {
           type: "subagent.failed",
@@ -188,11 +188,7 @@ function realisticRunner(
   };
 }
 
-function makePool(
-  s: Stack,
-  runner: TaskRunner,
-  cfg: Record<string, unknown> = {},
-): TaskWorkerPool {
+function makePool(s: Stack, runner: TaskRunner, cfg: Record<string, unknown> = {}): TaskWorkerPool {
   return new TaskWorkerPool({
     manager: s.manager,
     runner,
@@ -526,10 +522,7 @@ describe("recurring tasks (§2.1.5 / §2.1.7)", () => {
     const s = await makeStack();
     const runner = realisticRunner(s.store, ["completed", "completed"]);
     const pool = makePool(s, runner);
-    const rec = await s.manager.create(
-      baseSpec({ schedule: "*/5 * * * *" }) as never,
-      OWNER,
-    );
+    const rec = await s.manager.create(baseSpec({ schedule: "*/5 * * * *" }) as never, OWNER);
     // T0 = 00:00 → first fire 00:05.
     expect(rec.next_attempt_at).toBe(T0 + 300_000);
 

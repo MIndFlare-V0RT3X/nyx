@@ -55,7 +55,9 @@ function buildConfig(overrides: Record<string, unknown> = {}): NyxConfig {
 async function makeRig(
   providers?: ModelProvider[],
   overrides: Record<string, unknown> = {},
-  serverDeps: { engagement_resolver?: (host: string) => Promise<Array<{ address: string; family: number }>> } = {},
+  serverDeps: {
+    engagement_resolver?: (host: string) => Promise<Array<{ address: string; family: number }>>;
+  } = {},
 ): Promise<Rig> {
   const dataDir = await mkdtemp(join(tmpdir(), "nyx-server-data-"));
   const sandboxRoot = await mkdtemp(join(tmpdir(), "nyx-server-sbx-"));
@@ -269,7 +271,10 @@ describe("sessions", () => {
 describe("engagement creation audit (2.0.4)", () => {
   const fakeResolver = async (host: string) =>
     host === "example.com"
-      ? [{ address: "93.184.216.34", family: 4 }, { address: "2606:2800:220:1:248:1893:25c8:1946", family: 6 }]
+      ? [
+          { address: "93.184.216.34", family: 4 },
+          { address: "2606:2800:220:1:248:1893:25c8:1946", family: 6 },
+        ]
       : [];
 
   it("a domain-only engagement writes an engagement.created row with the initial resolution", async () => {
@@ -298,7 +303,9 @@ describe("engagement creation audit (2.0.4)", () => {
     const db = new Database(join(rig.dataDir, "nyx.db"));
     try {
       const rows = db
-        .prepare("SELECT actor, action, payload_json FROM audit WHERE action = 'engagement.created'")
+        .prepare(
+          "SELECT actor, action, payload_json FROM audit WHERE action = 'engagement.created'",
+        )
         .all() as Array<{ actor: string; action: string; payload_json: string }>;
       expect(rows).toHaveLength(1);
       expect(rows[0]!.actor).toBe("owner");
@@ -311,7 +318,10 @@ describe("engagement creation audit (2.0.4)", () => {
       expect(payload.session_id).toBe(meta.session_id);
       expect(payload.domain_only).toBe(true);
       expect(payload.domains[0]!.domain).toBe("example.com");
-      expect(payload.domains[0]!.resolved_ips).toEqual(["93.184.216.34", "2606:2800:220:1:248:1893:25c8:1946"]);
+      expect(payload.domains[0]!.resolved_ips).toEqual([
+        "93.184.216.34",
+        "2606:2800:220:1:248:1893:25c8:1946",
+      ]);
       expect(typeof payload.warning).toBe("string");
       expect(verifyAuditChain(db).ok).toBe(true);
     } finally {
@@ -338,9 +348,11 @@ describe("engagement creation audit (2.0.4)", () => {
     const db = new Database(join(rig.dataDir, "nyx.db"));
     try {
       const payload = JSON.parse(
-        (db
-          .prepare("SELECT payload_json FROM audit WHERE action = 'engagement.created'")
-          .get() as { payload_json: string }).payload_json,
+        (
+          db
+            .prepare("SELECT payload_json FROM audit WHERE action = 'engagement.created'")
+            .get() as { payload_json: string }
+        ).payload_json,
       ) as { domain_only: boolean; cidrs: string[]; note: string };
       expect(payload.domain_only).toBe(false);
       expect(payload.cidrs).toEqual(["93.184.0.0/16"]);
@@ -570,10 +582,9 @@ describe("turns (mock provider, full loop)", () => {
       });
       expect(first.status).toBe(202);
       await until(async () => {
-        const pending = await rig.server.app.request(
-          `/v1/approvals?session_id=${sessionA}`,
-          { headers: ownerHeaders() },
-        );
+        const pending = await rig.server.app.request(`/v1/approvals?session_id=${sessionA}`, {
+          headers: ownerHeaders(),
+        });
         const records = (await pending.json()) as Array<{ id: string }>;
         return records.length > 0;
       });
@@ -696,19 +707,14 @@ describe("turns (mock provider, full loop)", () => {
       turnIds.push(((await res.json()) as { turn_id: string }).turn_id);
     }
 
-    await until(
-      async () => {
-        const events = await readEvents(rig, meta.session_id);
-        return events.filter((e) => e.type === "turn.completed").length === 100;
-      },
-      60_000,
-    );
+    await until(async () => {
+      const events = await readEvents(rig, meta.session_id);
+      return events.filter((e) => e.type === "turn.completed").length === 100;
+    }, 60_000);
 
     const events = await readEvents(rig, meta.session_id);
     // turn.started events appear in exactly the submission order.
-    const startedOrder = events
-      .filter((e) => e.type === "turn.started")
-      .map((e) => e.turn_id);
+    const startedOrder = events.filter((e) => e.type === "turn.started").map((e) => e.turn_id);
     expect(startedOrder).toEqual(turnIds);
     // Global seq is monotonic across the whole log (store guarantee) and the
     // session executed strictly serially: turn N's completion precedes turn
@@ -719,9 +725,7 @@ describe("turns (mock provider, full loop)", () => {
       const prevDone = events.find(
         (e) => e.type === "turn.completed" && e.turn_id === turnIds[i - 1],
       );
-      const thisStart = events.find(
-        (e) => e.type === "turn.started" && e.turn_id === turnIds[i],
-      );
+      const thisStart = events.find((e) => e.type === "turn.started" && e.turn_id === turnIds[i]);
       expect(prevDone).toBeDefined();
       expect(thisStart).toBeDefined();
       expect(prevDone!.seq).toBeLessThan(thisStart!.seq);

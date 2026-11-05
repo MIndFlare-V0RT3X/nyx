@@ -5,10 +5,7 @@
 // filesystem sharing — artifacts are the only handoff), and only the final
 // summary + published artifacts crossing back to the parent.
 
-export {
-  SubagentError,
-  type SubagentErrorCode,
-} from "./errors.js";
+export { SubagentError, type SubagentErrorCode } from "./errors.js";
 export {
   DEFAULT_ALLOWED_TOOLS,
   DEFAULT_FORBIDDEN_TOOLS,

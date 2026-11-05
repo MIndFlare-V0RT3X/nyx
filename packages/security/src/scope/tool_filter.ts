@@ -60,9 +60,7 @@ export function isSecurityTool(name: string): boolean {
  * the engagement authorizes its technique; non-security tools always pass
  * (they are gated by the ordinary policy/risk machinery, not by technique).
  */
-export function engagementToolAllowlist(
-  engagement: Engagement | null,
-): (name: string) => boolean {
+export function engagementToolAllowlist(engagement: Engagement | null): (name: string) => boolean {
   return (name: string): boolean => {
     const meta = SECURITY_TOOL_META.get(name);
     if (meta === undefined) return true;
@@ -123,8 +121,7 @@ export class EngagementKernelView implements Kernel {
       get: <T>(name: string): T | undefined =>
         name === "tools.runtime" ? (engagementRuntime as T) : parentServices.get<T>(name),
       set: (name: string, service: unknown): void => parentServices.set(name, service),
-      has: (name: string): boolean =>
-        name === "tools.runtime" ? true : parentServices.has(name),
+      has: (name: string): boolean => (name === "tools.runtime" ? true : parentServices.has(name)),
       delete: (name: string): void => parentServices.delete(name),
     };
   }

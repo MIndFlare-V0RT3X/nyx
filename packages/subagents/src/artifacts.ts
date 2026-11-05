@@ -81,7 +81,9 @@ function safeArtifactName(name: string): string {
 
 /** Normalize a caller-supplied artifact reference to its bare name. */
 export function artifactNameOf(path: string): string {
-  const stripped = path.startsWith(`${ARTIFACTS_DIR}/`) ? path.slice(ARTIFACTS_DIR.length + 1) : path;
+  const stripped = path.startsWith(`${ARTIFACTS_DIR}/`)
+    ? path.slice(ARTIFACTS_DIR.length + 1)
+    : path;
   return safeArtifactName(stripped);
 }
 
@@ -208,7 +210,7 @@ export function subagentArtifactTool(deps: {
         );
       }
       const name = safeArtifactName(
-        input.name !== undefined ? input.name : input.path.split("/").pop() ?? "",
+        input.name !== undefined ? input.name : (input.path.split("/").pop() ?? ""),
       );
       if (name === "") {
         throw new SubagentError("validation_failed", "subagent_artifact: path has no basename");
@@ -263,7 +265,10 @@ export class ExtraToolsRegistry implements ToolRegistry {
 
   list(): ToolDefinition[] {
     const extraNames = new Set(this.extras.map((e) => e.def.name));
-    return [...this.extras.map((e) => e.def), ...this.inner.list().filter((d) => !extraNames.has(d.name))];
+    return [
+      ...this.extras.map((e) => e.def),
+      ...this.inner.list().filter((d) => !extraNames.has(d.name)),
+    ];
   }
 
   get(name: string): { def: ToolDefinition; handler: ToolHandler } | null {
@@ -275,10 +280,7 @@ export class ExtraToolsRegistry implements ToolRegistry {
 
 /** Back-compat alias: the single-tool constructor shape used by callers. */
 export class ArtifactToolRegistry extends ExtraToolsRegistry {
-  constructor(
-    inner: ToolRegistry,
-    artifact: { def: ToolDefinition; handler: ToolHandler },
-  ) {
+  constructor(inner: ToolRegistry, artifact: { def: ToolDefinition; handler: ToolHandler }) {
     super(inner, [artifact]);
   }
 }
@@ -306,7 +308,8 @@ export function registerSubagentArtifactTools(
         subagent_session_id: { type: "string", description: "The subagent's session id." },
         path: {
           type: "string",
-          description: "Artifact name or path as listed on the subagent's result (e.g. artifacts/report.md).",
+          description:
+            "Artifact name or path as listed on the subagent's result (e.g. artifacts/report.md).",
         },
         dest: {
           type: "string",

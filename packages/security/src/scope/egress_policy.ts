@@ -111,69 +111,69 @@ export function createEgressPolicy(deps: EgressPolicyDeps): EgressDecisionProvid
     // audit row; the scope gate itself already passed in the outer decide.
     const verdict = checkTarget(engagement, { host, port: request.port }, now());
 
-      // 2. Resolution + the rebinding check. IP literals passed checkTarget's
-      //    CIDR containment already — they pin to themselves. Hostnames are
-      //    resolved (the PROXY's resolver, never the container's) and every
-      //    address must be in an authorized CIDR (when the engagement
-      //    declares CIDRs; hostname-only engagements load with a Phase 2.0.4
-      //    warning and resolve like Phase 5's tool layer).
-      let pinnedIps: string[];
-      if (isIPLiteral(host)) {
-        pinnedIps = [host];
-      } else {
-        let endpoint;
-        try {
-          endpoint = await deps.resolver.resolve(host, request.port);
-        } catch (err) {
-          const reason = `egress resolution failed for ${host}: ${(err as Error).message}`;
-          auditRow(context, request, false, reason, {});
-          return { decision: "deny", reason };
-        }
-        const resolved = checkResolvedTarget(
-          engagement,
-          { host, port: request.port },
-          endpoint.ips,
-          now(),
-        );
-        if (!resolved.allowed) {
-          auditRow(context, request, false, resolved.reason, {});
-          return { decision: "deny", reason: resolved.reason };
-        }
-        pinnedIps = endpoint.ips.map((a) => a.address);
-      }
-
-      // 3. Rate limit — per CONNECT, at the proxy (R1-10). Blocks, never
-      //    drops: the CONNECT waits for its slot while the reservation holds.
-      await deps.limiter.acquire({
-        engagement,
-        tool_class: context.rate_class,
-        host,
-        unit: "requests",
-      });
-
-      // 4. The window is the legal authorization boundary: a CONNECT that
-      //    slept past expires_at must not fire (the Phase 5 R1-3 discipline,
-      //    restated for the proxy).
-      if (now() >= engagement.expires_at) {
-        const reason =
-          `engagement expired at ${new Date(engagement.expires_at).toISOString()} ` +
-          "while waiting for the rate limit";
+    // 2. Resolution + the rebinding check. IP literals passed checkTarget's
+    //    CIDR containment already — they pin to themselves. Hostnames are
+    //    resolved (the PROXY's resolver, never the container's) and every
+    //    address must be in an authorized CIDR (when the engagement
+    //    declares CIDRs; hostname-only engagements load with a Phase 2.0.4
+    //    warning and resolve like Phase 5's tool layer).
+    let pinnedIps: string[];
+    if (isIPLiteral(host)) {
+      pinnedIps = [host];
+    } else {
+      let endpoint;
+      try {
+        endpoint = await deps.resolver.resolve(host, request.port);
+      } catch (err) {
+        const reason = `egress resolution failed for ${host}: ${(err as Error).message}`;
         auditRow(context, request, false, reason, {});
         return { decision: "deny", reason };
       }
+      const resolved = checkResolvedTarget(
+        engagement,
+        { host, port: request.port },
+        endpoint.ips,
+        now(),
+      );
+      if (!resolved.allowed) {
+        auditRow(context, request, false, resolved.reason, {});
+        return { decision: "deny", reason: resolved.reason };
+      }
+      pinnedIps = endpoint.ips.map((a) => a.address);
+    }
 
-      // 5. Allow — connect by pinned IP only.
-      const reason = "destination in engagement scope (egress proxy)";
-      auditRow(context, request, true, reason, {
-        matched: verdict.matched,
-        pinned_ips: pinnedIps,
-      });
-      return {
-        decision: "allow",
-        reason,
-        pinned_ips: pinnedIps,
-        ...(verdict.matched !== undefined ? { matched: verdict.matched } : {}),
-      };
+    // 3. Rate limit — per CONNECT, at the proxy (R1-10). Blocks, never
+    //    drops: the CONNECT waits for its slot while the reservation holds.
+    await deps.limiter.acquire({
+      engagement,
+      tool_class: context.rate_class,
+      host,
+      unit: "requests",
+    });
+
+    // 4. The window is the legal authorization boundary: a CONNECT that
+    //    slept past expires_at must not fire (the Phase 5 R1-3 discipline,
+    //    restated for the proxy).
+    if (now() >= engagement.expires_at) {
+      const reason =
+        `engagement expired at ${new Date(engagement.expires_at).toISOString()} ` +
+        "while waiting for the rate limit";
+      auditRow(context, request, false, reason, {});
+      return { decision: "deny", reason };
+    }
+
+    // 5. Allow — connect by pinned IP only.
+    const reason = "destination in engagement scope (egress proxy)";
+    auditRow(context, request, true, reason, {
+      matched: verdict.matched,
+      pinned_ips: pinnedIps,
+    });
+    return {
+      decision: "allow",
+      reason,
+      pinned_ips: pinnedIps,
+      ...(verdict.matched !== undefined ? { matched: verdict.matched } : {}),
+    };
   }
 }
 
@@ -213,9 +213,7 @@ export function createEgressBinder(
       .filter((c) => c !== "default")
       .sort();
     const defaultPort = basePort;
-    const classPorts = new Map<string, number>(
-      classes.map((c, i) => [c, basePort + 1 + i]),
-    );
+    const classPorts = new Map<string, number>(classes.map((c, i) => [c, basePort + 1 + i]));
     const portFor = (rateClass: string | null): number =>
       rateClass === null ? defaultPort : (classPorts.get(rateClass) ?? defaultPort);
 

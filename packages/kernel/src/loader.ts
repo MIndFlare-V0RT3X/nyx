@@ -29,11 +29,7 @@ import { pathToFileURL } from "node:url";
 import type { Plugin, PluginManifest } from "@nyx/protocol";
 import { pluginManifestSchema, manifestIssues, v1MigrationHints } from "./manifest.js";
 import { checkManifestSignature, sha256Hex, type SignatureCheck } from "./signature.js";
-import {
-  ManifestValidationError,
-  PluginIntegrityError,
-  PluginSignatureError,
-} from "./errors.js";
+import { ManifestValidationError, PluginIntegrityError, PluginSignatureError } from "./errors.js";
 
 export type SignatureMode = "strict" | "warn" | "off";
 
@@ -146,10 +142,12 @@ export async function loadPluginDirectory(
     }
     // And every declared file must exist (a stale manifest entry is a lie too).
     for (const name of Object.keys(declared)) {
-      if (!(await fsp
-        .stat(path.join(dir, name))
-        .then(() => true)
-        .catch(() => false))) {
+      if (
+        !(await fsp
+          .stat(path.join(dir, name))
+          .then(() => true)
+          .catch(() => false))
+      ) {
         throw new PluginIntegrityError(
           manifest.name,
           `declared in files but absent on disk ("${name}")`,
@@ -222,9 +220,7 @@ export async function loadPluginDirectory(
 
 function pluginNameOf(raw: unknown, dir: string): string {
   const candidate = (raw as { name?: unknown })?.name;
-  return typeof candidate === "string" && candidate.length > 0
-    ? candidate
-    : path.basename(dir);
+  return typeof candidate === "string" && candidate.length > 0 ? candidate : path.basename(dir);
 }
 
 /**

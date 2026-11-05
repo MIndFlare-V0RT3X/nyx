@@ -53,9 +53,9 @@ class DispatchProvider implements ModelProvider {
     const lastUser = [...req.messages].reverse().find((m) => m.role === "user");
     const text = lastUser?.content.map((b) => (b.type === "text" ? b.text : "")).join("") ?? "";
     const turn =
-      [...this.byMarker.keys()].map((m) => [m, this.byMarker.get(m)!.shift()] as const).find(
-        ([m, t]) => t !== undefined && text.includes(m),
-      )?.[1] ?? this.fallback.shift();
+      [...this.byMarker.keys()]
+        .map((m) => [m, this.byMarker.get(m)!.shift()] as const)
+        .find(([m, t]) => t !== undefined && text.includes(m))?.[1] ?? this.fallback.shift();
     if (turn === undefined) throw new Error("dispatch provider: script exhausted");
     if (!Array.isArray(turn)) throw new Error(turn.fail.message);
     for (const chunk of turn) yield chunk;

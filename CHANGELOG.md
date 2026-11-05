@@ -152,7 +152,7 @@ SPDX headers on all 388 source files.
   `scripts/generate-cvss4-data.mjs` (regenerates the CVSS 4.0 tables from
   the FIRST reference).
 - **Config** — the `security:` section (`enabled`, `executor:
-  sandbox|host`); both apps register the tools when enabled (safe by
+sandbox|host`); both apps register the tools when enabled (safe by
   construction — unauthorized techniques are absent from the session's
   registry view) with the audit sink and one process-level limiter. The
   CLI's `--engagement` now loads YAML engagement files.
@@ -185,7 +185,7 @@ SPDX headers on all 388 source files.
   ride `-u` flags (goflags drops positionals); the nuclei parser reads the
   real dashed-key format with array ids; the nmap parser reads the real
   single-line greppable format; ffuf uses `-json` JSONL (the `-o
-  /dev/stdout` form was polluted by quiet-mode prints) and normalizes
+/dev/stdout` form was polluted by quiet-mode prints) and normalizes
   dotted extensions; Dockerfile.security's three build breakers fixed
   (unzip, mv paths, the Debian nmap pin); nmap derives a conservative
   `--max-rate`; SKILL.md accuracy + evidence-preservation recipes.
@@ -268,7 +268,7 @@ SPDX headers on all 388 source files.
   the frontmatter `tools` field is informational (runtime gating is Phase 5).
   Golden-file prompt test covers the exact assembled catalog.
 - **Protocol (recorded deviations, brief-mandated).** `SubagentResult.
-  artifacts` (path+bytes, optional for pre-Phase-4 results) and the
+artifacts` (path+bytes, optional for pre-Phase-4 results) and the
   `skill.loaded` session event; `SECTION_ORDER`'s `SKILLS_CATALOG` and
   `PromptAssemblyInput.skills_catalog` were already staged.
 - **Docs.** `docs/TASKS.md`, `docs/RETENTION.md`, `docs/SKILLS.md` (new);
@@ -308,8 +308,7 @@ SPDX headers on all 388 source files.
   (`subagent.aborted` on both logs) — abort propagation is not optional and
   is tested on all three paths.
 - **`spawn_subagent` tool (risk R1, `concurrency: "parallel"`).** Registered
-  on the registry at kernel setup — structurally absent when `max_depth` is
-  0. The handler resolves its parent through the manager's per-turn
+  on the registry at kernel setup — structurally absent when `max_depth` is 0. The handler resolves its parent through the manager's per-turn
   `RunContext` binding (`bindTurn`/`unbindTurn` bracket every turn on every
   surface; the lane queue guarantees one live turn per session). Model-facing
   input: `{task, tools?, budget_tokens?}`.
@@ -319,7 +318,7 @@ SPDX headers on all 388 source files.
   call keeps the round sequential (two `shell.exec` never overlap).
   Regression-tested (overlap proven by timing; order by index).
 - **Schema migration `0001_sessions_kind`.** `sessions.kind TEXT NOT NULL
-  DEFAULT 'session' CHECK (kind IN ('session','fork','subagent'))` +
+DEFAULT 'session' CHECK (kind IN ('session','fork','subagent'))` +
   `archived_at`: existing rows become `'session'`, new forks are `'fork'`,
   subagent children are `'subagent'`. `list()` filters by kinds and hides
   archived sessions; `archiveSession()` marks (never deletes) — the id stays
@@ -521,13 +520,12 @@ interactive instead of a TTL death:
 Phase 2 test total: **816 passing, 0 failing** (Phase 1: 744), typecheck
 clean, lint clean, build 16/16 packages.
 
-
 ### Added — Phase 1 (hardening, lanes, channels, heartbeat)
 
 **1.0 Hardening** (the four items the Phase 0 review flagged):
 
 - **DNS-rebinding defense.** `web.fetch` authorizes egress at connection time
-  on the *resolved* addresses: a pinned `EgressResolver` + `checkResolvedTarget`
+  on the _resolved_ addresses: a pinned `EgressResolver` + `checkResolvedTarget`
   (hostname must pass the domain check AND, when the engagement declares CIDRs,
   every resolved IP must fall inside them), a `node:http(s)` transport pinned
   to the validated address via a `lookup` override (DNS is never consulted

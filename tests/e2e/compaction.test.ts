@@ -46,7 +46,12 @@ describe("e2e compaction: a large session", () => {
             session_id: sessionId,
             turn_id: `seed-${i}`,
             content: [
-              { type: "tool_use", call_id: `seed-${i}`, name: "fs.read", input: { path: `big-${i}.txt` } },
+              {
+                type: "tool_use",
+                call_id: `seed-${i}`,
+                name: "fs.read",
+                input: { path: `big-${i}.txt` },
+              },
             ],
             ts: ts++,
           },
@@ -55,7 +60,11 @@ describe("e2e compaction: a large session", () => {
             session_id: sessionId,
             turn_id: `seed-${i}`,
             content: [
-              { type: "tool_result", call_id: `seed-${i}`, output: { kind: "text", text: bigBody } },
+              {
+                type: "tool_result",
+                call_id: `seed-${i}`,
+                output: { kind: "text", text: bigBody },
+              },
             ],
             ts: ts++,
           },
@@ -77,7 +86,10 @@ describe("e2e compaction: a large session", () => {
     await startTurn(rig, sessionId, "summarize everything");
     await until(async () => {
       const events = await readEvents(rig, sessionId);
-      return events.some((e) => e.type === "turn.completed" && e.turn_id !== undefined && !e.turn_id.startsWith("seed-"));
+      return events.some(
+        (e) =>
+          e.type === "turn.completed" && e.turn_id !== undefined && !e.turn_id.startsWith("seed-"),
+      );
     });
 
     const events = await readEvents(rig, sessionId);
@@ -92,7 +104,9 @@ describe("e2e compaction: a large session", () => {
     // elidable; the post-elision estimate is far under 95% of the budget).
     expect(
       events.some(
-        (e) => e.type === "compaction.started" && (e as { strategy: string }).strategy === "emergency-degrade",
+        (e) =>
+          e.type === "compaction.started" &&
+          (e as { strategy: string }).strategy === "emergency-degrade",
       ),
     ).toBe(false);
 

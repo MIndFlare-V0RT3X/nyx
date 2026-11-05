@@ -8,15 +8,10 @@
 // file that fails this schema never becomes a session's scope.
 
 import { z } from "zod";
-import type {
-  Engagement,
-  EngagementRateLimits,
-  EngagementTechnique,
-} from "@nyx/protocol";
+import type { Engagement, EngagementRateLimits, EngagementTechnique } from "@nyx/protocol";
 
 /** ISO-8601 timestamps with a mandatory zone (Z or ±hh:mm). */
-const ISO_TIMESTAMP =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 
 /** Rate-limit class keys: "default" or a tool class like "ffuf", "nmap". */
 const RATE_CLASS_KEY = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -118,10 +113,7 @@ export const SecurityEngagementFileSchema = z
     // leave the per-host aggregate (and the egress proxy's base listener)
     // UNLIMITED — the aggregate is mandatory whenever any limit is declared.
     // An entirely absent rate_limits remains the operator's explicit choice.
-    if (
-      Object.keys(file.rate_limits).length > 0 &&
-      file.rate_limits.default === undefined
-    ) {
+    if (Object.keys(file.rate_limits).length > 0 && file.rate_limits.default === undefined) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["rate_limits"],

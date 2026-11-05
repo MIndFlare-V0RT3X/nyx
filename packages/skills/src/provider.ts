@@ -5,13 +5,7 @@
 // contract), and recency ranking fed by the tool.
 
 import type { Logger, SessionStore, ToolRegistry } from "@nyx/protocol";
-import {
-  curate,
-  filterForSession,
-  renderCatalog,
-  scanSkills,
-  type ScanReport,
-} from "./catalog.js";
+import { curate, filterForSession, renderCatalog, scanSkills, type ScanReport } from "./catalog.js";
 import type { SkillEntry } from "./skill.js";
 
 export interface SkillsConfig {
@@ -118,11 +112,12 @@ export class SkillsProvider {
     const report = await this.scanFor(persona_id);
     const skill = report.skills.find((s) => s.name === name);
     if (skill === null || skill === undefined) return null;
-    const visible = filterForSession([skill], {
-      persona_id,
-      available_capabilities: await this.availableCapabilities(session_id),
-      registry: this.deps.registry,
-    }).length > 0;
+    const visible =
+      filterForSession([skill], {
+        persona_id,
+        available_capabilities: await this.availableCapabilities(session_id),
+        registry: this.deps.registry,
+      }).length > 0;
     return { skill, visible };
   }
 

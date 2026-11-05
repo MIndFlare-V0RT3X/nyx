@@ -88,8 +88,7 @@ export class LaneQueueImpl implements LaneQueue {
     this.cfg = {
       max_concurrent_global: Math.max(1, config.max_concurrent_global ?? 4),
       max_concurrent_per_session: Math.max(1, config.max_concurrent_per_session ?? 1),
-      heartbeat_serialized_with_interactive:
-        config.heartbeat_serialized_with_interactive ?? true,
+      heartbeat_serialized_with_interactive: config.heartbeat_serialized_with_interactive ?? true,
     };
   }
 
@@ -115,10 +114,9 @@ export class LaneQueueImpl implements LaneQueue {
         start: () => {
           const idx = lane.queued.indexOf(entry);
           if (idx >= 0) lane.queued.splice(idx, 1);
-          const slot =
-            isMainClass(task.priority, this.cfg.heartbeat_serialized_with_interactive)
-              ? lane.runningMain
-              : lane.runningHeartbeat;
+          const slot = isMainClass(task.priority, this.cfg.heartbeat_serialized_with_interactive)
+            ? lane.runningMain
+            : lane.runningHeartbeat;
           // Identity marker: removal is by reference, never by a colliding
           // position number.
           const marker = {};
@@ -275,7 +273,9 @@ export class LaneQueueImpl implements LaneQueue {
       const hb = lane.queued.find((e) => e.priority === "heartbeat");
       if (hb !== undefined && lane.runningHeartbeat.length < 1) return hb;
     }
-    const main = lane.queued.find((e) => isMainClass(e.priority, this.cfg.heartbeat_serialized_with_interactive));
+    const main = lane.queued.find((e) =>
+      isMainClass(e.priority, this.cfg.heartbeat_serialized_with_interactive),
+    );
     if (main !== undefined && lane.runningMain.length < this.cfg.max_concurrent_per_session) {
       return main;
     }

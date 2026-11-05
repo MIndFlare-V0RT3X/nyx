@@ -43,10 +43,9 @@ function seedSession(
   ).run(sessionId, T0, T0, engagement === null ? null : JSON.stringify(engagement));
 }
 
-function fixture(overrides: Partial<Omit<Finding, "id" | "discovered_at">> = {}): Omit<
-  Finding,
-  "id" | "discovered_at"
-> {
+function fixture(
+  overrides: Partial<Omit<Finding, "id" | "discovered_at">> = {},
+): Omit<Finding, "id" | "discovered_at"> {
   return {
     engagement_id: "ENG-2026-042",
     session_id: "sess-1",
@@ -101,7 +100,13 @@ describe("FindingStore — list filters", () => {
     const { store } = makeStore();
     await store.create(fixture({ title: "a", severity: "critical", status: "confirmed" }));
     await store.create(
-      fixture({ title: "b", severity: "low", status: "false_positive", engagement_id: "ENG-OTHER", session_id: "sess-other" }),
+      fixture({
+        title: "b",
+        severity: "low",
+        status: "false_positive",
+        engagement_id: "ENG-OTHER",
+        session_id: "sess-other",
+      }),
     );
     await store.create(fixture({ title: "c", severity: "high", status: "open" }));
     await store.create(fixture({ title: "d", severity: "critical", status: "open" }));
@@ -119,7 +124,11 @@ describe("FindingStore — update + FTS sync", () => {
   it("patches fields and the FTS index follows the new title", async () => {
     const { store } = makeStore();
     const f = await store.create(fixture());
-    await store.update(f.id, { status: "confirmed", notes: "client reproduced", title: "Stored XSS in profile name" });
+    await store.update(f.id, {
+      status: "confirmed",
+      notes: "client reproduced",
+      title: "Stored XSS in profile name",
+    });
 
     const got = await store.get(f.id);
     expect(got?.status).toBe("confirmed");
@@ -142,7 +151,12 @@ describe("FindingStore — FTS search", () => {
   it("matches tokens in title and description across findings", async () => {
     const { store } = makeStore();
     await store.create(fixture());
-    await store.create(fixture({ title: "SQL injection in the search endpoint", description: "The id parameter reaches a raw query." }));
+    await store.create(
+      fixture({
+        title: "SQL injection in the search endpoint",
+        description: "The id parameter reaches a raw query.",
+      }),
+    );
     expect((await store.search("XSS")).length).toBe(1);
     expect((await store.search("injection")).length).toBe(1);
     expect((await store.search("parameter")).length).toBe(2);
@@ -154,8 +168,8 @@ describe("FindingStore — FTS search", () => {
     await store.create(fixture());
     // A raw " OR " injection would match everything; sanitized it matches nothing.
     expect((await store.search("xss OR 1=1")).length).toBe(0);
-    expect((await store.search('"; DROP TABLE findings; --'))).toEqual([]);
-    expect((await store.search("   "))).toEqual([]);
+    expect(await store.search('"; DROP TABLE findings; --')).toEqual([]);
+    expect(await store.search("   ")).toEqual([]);
   });
 });
 
@@ -163,7 +177,16 @@ describe("FindingStore — the structural session binding (§5 Reviewer 2)", () 
   it("derives engagement_id and session_id from the binding", async () => {
     const { store } = makeStore();
     const f = await store.createInSession(
-      { session_id: "sess-9", engagement: { id: "ENG-BOUND", operator_id: "owner", authorized_at: 1, expires_at: 2, targets: { cidrs: [], domains: [] } } },
+      {
+        session_id: "sess-9",
+        engagement: {
+          id: "ENG-BOUND",
+          operator_id: "owner",
+          authorized_at: 1,
+          expires_at: 2,
+          targets: { cidrs: [], domains: [] },
+        },
+      },
       fixture(),
     );
     expect(f.engagement_id).toBe("ENG-BOUND");
@@ -187,7 +210,13 @@ describe("FindingStore — the structural session binding (§5 Reviewer 2)", () 
     const f = await store.createInSession(
       {
         session_id: "sess-9",
-        engagement: { id: "ENG-REAL", operator_id: "owner", authorized_at: 1, expires_at: 2, targets: { cidrs: [], domains: [] } },
+        engagement: {
+          id: "ENG-REAL",
+          operator_id: "owner",
+          authorized_at: 1,
+          expires_at: 2,
+          targets: { cidrs: [], domains: [] },
+        },
       },
       // @ts-expect-error deliberately hostile input: a foreign engagement id
       { ...fixture(), engagement_id: "ENG-FORGED" },
@@ -208,9 +237,21 @@ describe("severity helpers + report ordering", () => {
   });
 
   it("orders findings by severity band, then CVSS descending", () => {
-    const a: Finding = { ...fixture(), id: "a", discovered_at: 1, severity: "high", cvss_4_0: 8.5 } as Finding;
+    const a: Finding = {
+      ...fixture(),
+      id: "a",
+      discovered_at: 1,
+      severity: "high",
+      cvss_4_0: 8.5,
+    } as Finding;
     const b: Finding = { ...fixture(), id: "b", discovered_at: 2, severity: "critical" } as Finding;
-    const c: Finding = { ...fixture(), id: "c", discovered_at: 3, severity: "high", cvss_3_1: 7.1 } as Finding;
+    const c: Finding = {
+      ...fixture(),
+      id: "c",
+      discovered_at: 3,
+      severity: "high",
+      cvss_3_1: 7.1,
+    } as Finding;
     const d: Finding = { ...fixture(), id: "d", discovered_at: 4, severity: "info" } as Finding;
     expect(orderFindingsForReport([a, d, b, c]).map((f) => f.id)).toEqual(["b", "a", "c", "d"]);
   });

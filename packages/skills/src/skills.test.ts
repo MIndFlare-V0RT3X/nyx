@@ -154,10 +154,20 @@ describe("catalog pipeline", () => {
 
   it("filters by persona scope and by the session's real capabilities", async () => {
     const dir = await tmpDir("nyx-skills-filter-");
-    await writeSkill(dir, "scoped", "name: scoped\ndescription: Only for the sre persona.\npersona_scope: [sre]");
+    await writeSkill(
+      dir,
+      "scoped",
+      "name: scoped\ndescription: Only for the sre persona.\npersona_scope: [sre]",
+    );
     await writeSkill(dir, "open", "name: open\ndescription: Every persona may use this one.");
-    await writeSkill(dir, "webby", "name: webby\ndescription: Needs network egress to work at all.\ntools: [web.fetch]");
-    const registry = new FakeRegistry([{ name: "web.fetch", capabilities: ["net.egress"] as Array<"net.egress"> }]);
+    await writeSkill(
+      dir,
+      "webby",
+      "name: webby\ndescription: Needs network egress to work at all.\ntools: [web.fetch]",
+    );
+    const registry = new FakeRegistry([
+      { name: "web.fetch", capabilities: ["net.egress"] as Array<"net.egress"> },
+    ]);
 
     const provider = new SkillsProvider(
       { dirs: [dir] },
@@ -222,7 +232,12 @@ describe("catalog pipeline", () => {
 describe("load_skill tool contracts", () => {
   async function setup(opts: { persona?: string; engagement?: boolean } = {}) {
     const dir = await tmpDir("nyx-skills-tool-");
-    await writeSkill(dir, "alpha", "name: alpha\ndescription: The alpha skill for testing.", "ALPHA BODY\n");
+    await writeSkill(
+      dir,
+      "alpha",
+      "name: alpha\ndescription: The alpha skill for testing.",
+      "ALPHA BODY\n",
+    );
     await writeSkill(
       dir,
       "sre-only",
@@ -264,7 +279,13 @@ describe("load_skill tool contracts", () => {
     );
     expect(out).toEqual({ kind: "text", text: "ALPHA BODY" });
     expect(events).toEqual([
-      { type: "skill.loaded", session_id: ctx.session_id, name: "alpha", version: null, ts: expect.any(Number) },
+      {
+        type: "skill.loaded",
+        session_id: ctx.session_id,
+        name: "alpha",
+        version: null,
+        ts: expect.any(Number),
+      },
     ]);
   });
 
@@ -275,10 +296,16 @@ describe("load_skill tool contracts", () => {
       ctx,
     );
     await expect(
-      tool.handler.execute({ call_id: "c2", name: LOAD_SKILL_TOOL, input: { name: "alpha" } } as never, ctx),
+      tool.handler.execute(
+        { call_id: "c2", name: LOAD_SKILL_TOOL, input: { name: "alpha" } } as never,
+        ctx,
+      ),
     ).rejects.toMatchObject({ code: "already_loaded" });
     await expect(
-      tool.handler.execute({ call_id: "c3", name: LOAD_SKILL_TOOL, input: { name: "nope" } } as never, ctx),
+      tool.handler.execute(
+        { call_id: "c3", name: LOAD_SKILL_TOOL, input: { name: "nope" } } as never,
+        ctx,
+      ),
     ).rejects.toMatchObject({ code: "not_found" });
     expect(events).toHaveLength(1); // only the first load
   });
@@ -286,7 +313,10 @@ describe("load_skill tool contracts", () => {
   it("a persona-scope mismatch → scope_mismatch (the skill EXISTS but is not for us)", async () => {
     const { tool, ctx } = await setup();
     await expect(
-      tool.handler.execute({ call_id: "c1", name: LOAD_SKILL_TOOL, input: { name: "sre-only" } } as never, ctx),
+      tool.handler.execute(
+        { call_id: "c1", name: LOAD_SKILL_TOOL, input: { name: "sre-only" } } as never,
+        ctx,
+      ),
     ).rejects.toMatchObject({ code: "scope_mismatch" });
   });
 
@@ -316,8 +346,18 @@ describe("golden-file prompt test (§5 acceptance)", () => {
     );
 
     const skillsDir = await tmpDir("nyx-skills-golden-");
-    await writeSkill(skillsDir, "deploy", "name: deploy\ndescription: Production deploy runbook steps.\nwhen_to_use: deploying to prod\nversion: 1.0.0\ntools: [shell.exec]", "DEPLOY BODY");
-    await writeSkill(skillsDir, "review", "name: review\ndescription: Code review checklist for this repo.", "REVIEW BODY");
+    await writeSkill(
+      skillsDir,
+      "deploy",
+      "name: deploy\ndescription: Production deploy runbook steps.\nwhen_to_use: deploying to prod\nversion: 1.0.0\ntools: [shell.exec]",
+      "DEPLOY BODY",
+    );
+    await writeSkill(
+      skillsDir,
+      "review",
+      "name: review\ndescription: Code review checklist for this repo.",
+      "REVIEW BODY",
+    );
     await writeSkill(
       skillsDir,
       "sre-only",

@@ -29,8 +29,14 @@ const SUBMIT_INPUT_SCHEMA = {
   type: "object",
   properties: {
     finding_id: { type: "string", description: "The finding being submitted." },
-    package_dir: { type: "string", description: "The disclosures/<finding-id> directory from security.prepare-disclosure." },
-    researcher_contact: { type: "string", description: "The researcher contact for the CVE request form." },
+    package_dir: {
+      type: "string",
+      description: "The disclosures/<finding-id> directory from security.prepare-disclosure.",
+    },
+    researcher_contact: {
+      type: "string",
+      description: "The researcher contact for the CVE request form.",
+    },
   },
   required: ["finding_id", "package_dir", "researcher_contact"],
   additionalProperties: false,
@@ -137,7 +143,9 @@ export function submitCveHandler(deps: SecurityToolDeps & { store: FindingStore 
           content = await ctx.sandbox.readFile(`${dir}/${entry.name}`);
         } catch {
           throw Object.assign(
-            new Error(`package file ${dir}/${entry.name} is missing (manifest lists it) — tampered package`),
+            new Error(
+              `package file ${dir}/${entry.name} is missing (manifest lists it) — tampered package`,
+            ),
             { name: "SecurityToolError", code: "skill.error" as const },
           );
         }
@@ -210,4 +218,3 @@ export function submitCveHandler(deps: SecurityToolDeps & { store: FindingStore 
     },
   };
 }
-

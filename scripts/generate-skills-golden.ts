@@ -11,14 +11,22 @@ import { SkillsProvider } from "../packages/skills/dist/index.js";
 const skillsDir = await fsp.mkdtemp(path.join(os.tmpdir(), "nyx-golden-gen-"));
 const writeSkill = async (name: string, fm: string, body: string): Promise<void> => {
   await fsp.mkdir(path.join(skillsDir, name), { recursive: true });
-  await fsp.writeFile(path.join(skillsDir, name, "SKILL.md"), `---\n${fm}\n---\n\n${body}\n`, "utf8");
+  await fsp.writeFile(
+    path.join(skillsDir, name, "SKILL.md"),
+    `---\n${fm}\n---\n\n${body}\n`,
+    "utf8",
+  );
 };
 await writeSkill(
   "deploy",
   "name: deploy\ndescription: Production deploy runbook steps.\nwhen_to_use: deploying to prod\nversion: 1.0.0\ntools: [shell.exec]",
   "DEPLOY BODY",
 );
-await writeSkill("review", "name: review\ndescription: Code review checklist for this repo.", "REVIEW BODY");
+await writeSkill(
+  "review",
+  "name: review\ndescription: Code review checklist for this repo.",
+  "REVIEW BODY",
+);
 await writeSkill(
   "sre-only",
   "name: sre-only\ndescription: Scoped away from the default persona.\npersona_scope: [sre]",

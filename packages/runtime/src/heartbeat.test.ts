@@ -166,7 +166,12 @@ describe("HeartbeatScheduler", () => {
   it("register/unregister/list manage the spec set; invalid cron is a hard error", () => {
     const h = makeScheduler({});
     h.scheduler.register(spec({ id: "extra", schedule: "0 3 * * *" }));
-    expect(h.scheduler.list().map((s) => s.id).sort()).toEqual(["extra", "hb-test"]);
+    expect(
+      h.scheduler
+        .list()
+        .map((s) => s.id)
+        .sort(),
+    ).toEqual(["extra", "hb-test"]);
     h.scheduler.unregister("extra");
     expect(h.scheduler.list().map((s) => s.id)).toEqual(["hb-test"]);
     expect(() => h.scheduler.register(spec({ schedule: "not cron" }))).toThrow(/5 fields/);
@@ -204,12 +209,13 @@ describe("HeartbeatScheduler timezone (2.0.3)", () => {
   });
 
   it("registering a spec with an unknown timezone is a hard error", () => {
-    expect(() =>
-      new HeartbeatScheduler({
-        specs: [spec({ id: "hb-bad", timezone: "Mars/Olympus" })],
-        store: new HeartbeatStore(freshDb()),
-        sink: { fire: () => undefined },
-      }),
+    expect(
+      () =>
+        new HeartbeatScheduler({
+          specs: [spec({ id: "hb-bad", timezone: "Mars/Olympus" })],
+          store: new HeartbeatStore(freshDb()),
+          sink: { fire: () => undefined },
+        }),
     ).toThrow(/unknown IANA timezone/);
   });
 

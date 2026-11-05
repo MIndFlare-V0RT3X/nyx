@@ -18,20 +18,10 @@ export type {
 } from "./approvals.js";
 export { appendAudit, ensureAuditTable, verifyAuditChain } from "./audit.js";
 export type { AuditEntry, AuditVerifyResult } from "./audit.js";
-export {
-  appendEventAudit,
-  isAuditableEvent,
-  reconcileEventAudit,
-} from "./event-audit.js";
+export { appendEventAudit, isAuditableEvent, reconcileEventAudit } from "./event-audit.js";
 export type { AuditableEvent, AuditableEventType } from "./event-audit.js";
-export {
-  EngagementOwnershipError,
-  assertEngagementOwnership,
-} from "./ownership.js";
-export {
-  auditEngagementCreated,
-  isDomainOnlyEngagement,
-} from "./engagement-audit.js";
+export { EngagementOwnershipError, assertEngagementOwnership } from "./ownership.js";
+export { auditEngagementCreated, isDomainOnlyEngagement } from "./engagement-audit.js";
 export type {
   DnsResolver,
   EngagementAuditDeps,

@@ -42,7 +42,8 @@ describe("engagement ownership binding", () => {
 
   it("a matched pair passes (both directions of the check agree)", () => {
     expect(() => assertEngagementOwnership(engagementFor("owner"), "owner")).not.toThrow();
-    expect(() => assertEngagementOwnership(engagementFor("telegram:123456"), "telegram:123456"))
-      .not.toThrow();
+    expect(() =>
+      assertEngagementOwnership(engagementFor("telegram:123456"), "telegram:123456"),
+    ).not.toThrow();
   });
 });

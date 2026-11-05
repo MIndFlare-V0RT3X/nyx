@@ -113,8 +113,10 @@ async function bootRig(
 ): Promise<Rig> {
   const dataDir = await tmpdir();
   // allow-r3 in the default rig: the credential-file probe runs shell.exec.
-  const policy = ["    - { id: allow-r3, match: { risk: R3 }, decision: allow }",
-                  ...(extra.policy ?? [])];
+  const policy = [
+    "    - { id: allow-r3, match: { risk: R3 }, decision: allow }",
+    ...(extra.policy ?? []),
+  ];
   const configPath = await writeConfig(dataDir, { policy });
   const stack = await launchSplitStack({
     repoRoot: REPO_ROOT,
@@ -213,7 +215,13 @@ function toolTurnScript(
 ): unknown[] {
   return [
     [
-      { type: "tool_call.delta", index: 0, id: "c1", name: call.name, arguments_delta: JSON.stringify(call.input) },
+      {
+        type: "tool_call.delta",
+        index: 0,
+        id: "c1",
+        name: call.name,
+        arguments_delta: JSON.stringify(call.input),
+      },
       { type: "usage", usage: { input_tokens: 10, output_tokens: 5 } },
       { type: "done", finish_reason: "tool_calls" },
     ],
@@ -595,7 +603,10 @@ describe("process split — the fan-out regression proofs (7.6)", () => {
         target_env: "NYX_EVAL_SECRET_KEY",
       }),
     ).rejects.toMatchObject({
-      ipc: { code: "auth", message: expect.stringContaining("not a configured provider api_key_env") },
+      ipc: {
+        code: "auth",
+        message: expect.stringContaining("not a configured provider api_key_env"),
+      },
     });
     await expect(
       rig.kernelClient.request({
@@ -636,7 +647,9 @@ describe("process split — the fan-out regression proofs (7.6)", () => {
         workdir_root: "",
       },
     } as never;
-    const result = await rig.toolsClient.request<{ events: Array<{ type: string; reason?: string }> }>({
+    const result = await rig.toolsClient.request<{
+      events: Array<{ type: string; reason?: string }>;
+    }>({
       type: "tool.execute",
       ...(forged as object),
     });

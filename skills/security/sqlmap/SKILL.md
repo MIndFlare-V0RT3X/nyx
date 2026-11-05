@@ -26,11 +26,13 @@ Never auto-record extraction output as a finding — disclosure of extracted
 data is the operator's call.
 
 ## Reading the output
+
 Scan: `{ injectable, dbms, injection_points: [{ parameter, method, types: [{ type, title, payload }] }], total_requests, finding_id?, evidence }`.
 Exploit: `{ action, tables: [{ database, table, entries, rows, raw }], evidence }`.
 A clean `injectable: false` is a RESULT, not an error.
 
 ## Gotchas
+
 - sqlmap has its own rate bucket (the example exploitation engagement sets
   2 rps) — and through the Phase 6.1 egress proxy every request is also
   charged the per-host default. Blocks, never drops.

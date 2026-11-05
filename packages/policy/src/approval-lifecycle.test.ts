@@ -36,9 +36,7 @@ function verdict(digest: string): PolicyVerdict {
 async function pendingRowFor(db: DB, digest: string): Promise<{ id: string }> {
   for (let i = 0; i < 50; i += 1) {
     const row = db
-      .prepare(
-        "SELECT id FROM policy_approvals WHERE action_digest = ? AND decision = 'pending'",
-      )
+      .prepare("SELECT id FROM policy_approvals WHERE action_digest = ? AND decision = 'pending'")
       .get(digest) as { id: string } | undefined;
     if (row !== undefined) return row;
     await new Promise((r) => setTimeout(r, 5));

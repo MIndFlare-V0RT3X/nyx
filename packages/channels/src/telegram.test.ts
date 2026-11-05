@@ -40,18 +40,26 @@ class StubTelegramClient implements TelegramClient {
     for (const wake of this.blocked.splice(0)) wake([]);
   }
 
-  async getUpdates(offset: number, _timeout_s: number, signal: AbortSignal): Promise<TelegramUpdate[]> {
+  async getUpdates(
+    offset: number,
+    _timeout_s: number,
+    signal: AbortSignal,
+  ): Promise<TelegramUpdate[]> {
     if (this.pending.length > 0) return this.pending.splice(0);
     if (signal.aborted || this.closed) return [];
     return new Promise<TelegramUpdate[]>((resolve) => {
       this.blocked.push(resolve);
-      signal.addEventListener("abort", () => {
-        const i = this.blocked.indexOf(resolve);
-        if (i >= 0) {
-          this.blocked.splice(i, 1);
-          resolve([]);
-        }
-      }, { once: true });
+      signal.addEventListener(
+        "abort",
+        () => {
+          const i = this.blocked.indexOf(resolve);
+          if (i >= 0) {
+            this.blocked.splice(i, 1);
+            resolve([]);
+          }
+        },
+        { once: true },
+      );
     });
   }
 
@@ -82,7 +90,10 @@ class StubTelegramClient implements TelegramClient {
   }
 }
 
-function fakeRunner(replyEvents: SessionEvent[] = [], replyText = "TG-REPLY"): {
+function fakeRunner(
+  replyEvents: SessionEvent[] = [],
+  replyText = "TG-REPLY",
+): {
   runner: ChannelTurnRunner;
   created: string[];
   forked: string[];
@@ -194,19 +205,23 @@ describe("TelegramChannel", () => {
       { type: "text.delta", session_id: sid, turn_id: "turn-1", text: "RE", ts: 2 },
       { type: "text.delta", session_id: sid, turn_id: "turn-1", text: "PLY", ts: 3 },
     ];
-    await withTg(async (h) => {
-      h.client.push(message(1, 123456789, "hello"));
-      await sleep(150);
-      expect(h.turnInputs).toEqual([{ session_id: "sess-1", text: "hello" }]);
-      // One message was sent, then edited with the accumulated deltas.
-      const sends = h.client.sent.filter((s) => s.kind === "send");
-      const edits = h.client.sent.filter((s) => s.kind === "edit");
-      expect(sends.length).toBe(1);
-      expect(edits.length).toBeGreaterThanOrEqual(1);
-      // The final text is the completed reply.
-      const last = h.client.sent[h.client.sent.length - 1]!;
-      expect(last.text).toBe("TG-REPLY");
-    }, events, "TG-REPLY");
+    await withTg(
+      async (h) => {
+        h.client.push(message(1, 123456789, "hello"));
+        await sleep(150);
+        expect(h.turnInputs).toEqual([{ session_id: "sess-1", text: "hello" }]);
+        // One message was sent, then edited with the accumulated deltas.
+        const sends = h.client.sent.filter((s) => s.kind === "send");
+        const edits = h.client.sent.filter((s) => s.kind === "edit");
+        expect(sends.length).toBe(1);
+        expect(edits.length).toBeGreaterThanOrEqual(1);
+        // The final text is the completed reply.
+        const last = h.client.sent[h.client.sent.length - 1]!;
+        expect(last.text).toBe("TG-REPLY");
+      },
+      events,
+      "TG-REPLY",
+    );
   });
 
   it("a message from a disallowed user id is ignored: no turn, no reply, audited", async () => {
@@ -243,7 +258,10 @@ describe("TelegramChannel", () => {
   it("non-text updates and updates without a sender are ignored", async () => {
     await withTg(async (h) => {
       h.client.push({ update_id: 6 });
-      h.client.push({ update_id: 7, message: { message_id: 1, chat: { id: 42 }, text: "no sender" } });
+      h.client.push({
+        update_id: 7,
+        message: { message_id: 1, chat: { id: 42 }, text: "no sender" },
+      });
       await sleep(60);
       expect(h.turnInputs).toHaveLength(0);
       expect(h.created).toHaveLength(0);

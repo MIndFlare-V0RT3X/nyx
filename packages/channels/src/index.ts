@@ -14,22 +14,11 @@ export type {
   TelegramChannelConfig,
   WebhookChannelConfig,
 } from "./types.js";
-export {
-  ChannelManager,
-  inboundText,
-  replyTextFromEvents,
-} from "./manager.js";
+export { ChannelManager, inboundText, replyTextFromEvents } from "./manager.js";
 export type { ChannelManagerDeps, HandleResult } from "./manager.js";
-export {
-  ChannelSessionStore,
-  channelKey,
-  ensureChannelSessionsTable,
-} from "./sessions-store.js";
+export { ChannelSessionStore, channelKey, ensureChannelSessionsTable } from "./sessions-store.js";
 export { WebhookChannel, textContent } from "./webhook.js";
-export {
-  createHttpTelegramClient,
-  TelegramChannel,
-} from "./telegram.js";
+export { createHttpTelegramClient, TelegramChannel } from "./telegram.js";
 export type { TelegramAdapterOptions, TelegramClient, TelegramUpdate } from "./telegram.js";
 
 // ── 2.1: channel approval presenters ──

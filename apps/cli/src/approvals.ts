@@ -10,12 +10,7 @@ import { join } from "node:path";
 import { openApprovalEngine } from "@nyx/policy";
 import { openUnifiedDatabase } from "@nyx/db";
 import { openSessionStore } from "@nyx/session";
-import type {
-  ApprovalEngine,
-  ApprovalRecord,
-  SessionStore,
-  StoredEvent,
-} from "@nyx/protocol";
+import type { ApprovalEngine, ApprovalRecord, SessionStore, StoredEvent } from "@nyx/protocol";
 import { toSerializedError } from "@nyx/protocol";
 import { CliError } from "./errors.js";
 import { formatDuration, truncate } from "./format.js";

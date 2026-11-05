@@ -52,7 +52,12 @@ export const msfSearchInput = z
   .object({
     command: z.enum(["search", "info"]),
     /** search: free-text query. */
-    query: z.string().min(1).max(256).regex(/^[A-Za-z0-9 _\-:.]+$/).optional(),
+    query: z
+      .string()
+      .min(1)
+      .max(256)
+      .regex(/^[A-Za-z0-9 _\-:.]+$/)
+      .optional(),
     /** info: full module path. */
     module: z.string().min(3).max(256).regex(MODULE_PATH).optional(),
   })
@@ -71,7 +76,10 @@ const SEARCH_INPUT_SCHEMA = {
   properties: {
     command: { type: "string", enum: ["search", "info"], description: "The local console query." },
     query: { type: "string", description: "search: module search terms." },
-    module: { type: "string", description: "info: full module path (e.g. auxiliary/scanner/http/dir_scanner)." },
+    module: {
+      type: "string",
+      description: "info: full module path (e.g. auxiliary/scanner/http/dir_scanner).",
+    },
   },
   required: ["command"],
   additionalProperties: false,
@@ -156,7 +164,9 @@ export function msfSearchHandler(deps: SecurityToolDeps): ToolHandler {
       // R2-4: the resource file must resolve where msfconsole READS it —
       // the ffuf/R3-12 rule, applied here too.
       const resolvedScriptPath = await resolveForExecutor(ctx, deps, scriptPath, "resource file");
-      const result = await executor.run("msfconsole", ["-q", "-r", resolvedScriptPath], { timeout_ms: 600_000 });
+      const result = await executor.run("msfconsole", ["-q", "-r", resolvedScriptPath], {
+        timeout_ms: 600_000,
+      });
       if (result.exit_code !== 0) {
         throw Object.assign(
           new Error(`msfconsole exited ${result.exit_code}: ${result.stderr.slice(0, 2000)}`),
@@ -165,7 +175,10 @@ export function msfSearchHandler(deps: SecurityToolDeps): ToolHandler {
       }
       if (input.command === "search") {
         const rows = parseMsfSearch(result.stdout);
-        return { kind: "json", json: { command: "search", query: input.query, modules: rows, count: rows.length } };
+        return {
+          kind: "json",
+          json: { command: "search", query: input.query, modules: rows, count: rows.length },
+        };
       }
       return { kind: "text", text: result.stdout };
     },
@@ -189,7 +202,8 @@ export const msfRunInput = z
       .record(z.string().min(1).max(64), z.string().min(1).max(256).regex(OPTION_VALUE))
       .refine((o) => Object.keys(o).length <= 16, "at most 16 options")
       .refine(
-        (o) => !Object.keys(o).some((k) => k.toUpperCase() === "RHOSTS" || k.toUpperCase() === "RHOST"),
+        (o) =>
+          !Object.keys(o).some((k) => k.toUpperCase() === "RHOSTS" || k.toUpperCase() === "RHOST"),
         "RHOSTS/RHOST cannot be set via options — use the (scope-checked) rhosts input",
       )
       .optional(),
@@ -199,9 +213,18 @@ export const msfRunInput = z
 const RUN_INPUT_SCHEMA = {
   type: "object",
   properties: {
-    module: { type: "string", description: "Full module path, e.g. auxiliary/scanner/http/dir_scanner." },
-    rhosts: { type: "string", description: "The target — must be in engagement scope (set as RHOSTS)." },
-    options: { type: "object", description: "Additional module options; RHOSTS is set from rhosts." },
+    module: {
+      type: "string",
+      description: "Full module path, e.g. auxiliary/scanner/http/dir_scanner.",
+    },
+    rhosts: {
+      type: "string",
+      description: "The target — must be in engagement scope (set as RHOSTS).",
+    },
+    options: {
+      type: "object",
+      description: "Additional module options; RHOSTS is set from rhosts.",
+    },
   },
   required: ["module", "rhosts"],
   additionalProperties: false,
@@ -234,9 +257,15 @@ export function msfRunHandler(deps: SecurityToolDeps): ToolHandler {
         port = Number(authority[2]);
       }
       const host = normalizeHost(rhosts);
-      if (port !== undefined && input.options?.RPORT !== undefined && input.options.RPORT !== String(port)) {
+      if (
+        port !== undefined &&
+        input.options?.RPORT !== undefined &&
+        input.options.RPORT !== String(port)
+      ) {
         throw Object.assign(
-          new Error(`conflicting ports: rhosts says ${port}, options.RPORT says ${input.options.RPORT}`),
+          new Error(
+            `conflicting ports: rhosts says ${port}, options.RPORT says ${input.options.RPORT}`,
+          ),
           { name: "SecurityToolError", code: "skill.error" as const },
         );
       }

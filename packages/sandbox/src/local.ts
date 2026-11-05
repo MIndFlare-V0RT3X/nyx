@@ -78,7 +78,9 @@ class LocalSandbox implements ForkableSandbox {
     // tool clock is the outer bound; this is the inner one.
     const CP_TIMEOUT_MS = 300_000;
     const exitCode = await new Promise<number | null>((resolveP, rejectP) => {
-      const cp = spawn("cp", ["-a", this.workdir, childDir], { stdio: ["ignore", "ignore", "ignore"] });
+      const cp = spawn("cp", ["-a", this.workdir, childDir], {
+        stdio: ["ignore", "ignore", "ignore"],
+      });
       const killer = setTimeout(() => {
         cp.kill("SIGKILL");
         resolveP(-1);

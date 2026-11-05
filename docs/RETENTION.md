@@ -72,11 +72,11 @@ task's own session log is the run record). `verifyAuditChain` still passes.
 
 ```yaml
 subagents:
-  retention_enabled: false     # SHIPS DISABLED — opt in
-  retention_days: 7            # 0 = never archive
-  retention_scope: subagent    # subagent | subagent+failed | all | none
-  delete_after_days: 0         # 0 = off; only ever deletes ARCHIVED sessions
-  retention_schedule: "30 3 * * *"  # daily 03:30 UTC
+  retention_enabled: false # SHIPS DISABLED — opt in
+  retention_days: 7 # 0 = never archive
+  retention_scope: subagent # subagent | subagent+failed | all | none
+  delete_after_days: 0 # 0 = off; only ever deletes ARCHIVED sessions
+  retention_schedule: "30 3 * * *" # daily 03:30 UTC
 ```
 
 The server ATTACHes `<data_dir>/nyx-archive.db` on the unified handle at

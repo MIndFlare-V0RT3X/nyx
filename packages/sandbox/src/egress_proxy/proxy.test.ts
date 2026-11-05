@@ -8,11 +8,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as net from "node:net";
-import {
-  EgressProxyServer,
-  parseConnectAuthority,
-  DEFAULT_MAX_CONNECTIONS,
-} from "./proxy.js";
+import { EgressProxyServer, parseConnectAuthority, DEFAULT_MAX_CONNECTIONS } from "./proxy.js";
 import type {
   EgressDecision,
   EgressDecisionProvider,
@@ -48,9 +44,7 @@ function listenerContext(overrides: Partial<EgressListenerContext> = {}): Egress
 class ScriptedPolicy implements EgressDecisionProvider {
   calls: Array<EgressListenerContext & { request: EgressConnectRequest }> = [];
   private next: (ctx: EgressListenerContext, req: EgressConnectRequest) => EgressDecision;
-  constructor(
-    next: (ctx: EgressListenerContext, req: EgressConnectRequest) => EgressDecision,
-  ) {
+  constructor(next: (ctx: EgressListenerContext, req: EgressConnectRequest) => EgressDecision) {
     this.next = next;
   }
   async decide(context: EgressListenerContext, request: EgressConnectRequest) {
@@ -76,8 +70,7 @@ async function echoServer(): Promise<{
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   return {
     port: (server.address() as net.AddressInfo).port,
-    close: () =>
-      new Promise<void>((resolve) => server.close(() => resolve())),
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
     seen,
   };
 }
@@ -339,11 +332,7 @@ describe("EgressProxyServer — the wire behavior", () => {
         pinned_ips: ["127.0.0.1"],
       })),
     });
-    const port = await p3.bindListener(
-      "127.0.0.1",
-      0,
-      listenerContext({ sandbox_id: "sbx-3" }),
-    );
+    const port = await p3.bindListener("127.0.0.1", 0, listenerContext({ sandbox_id: "sbx-3" }));
     expect(p3.listenerCount).toBe(1);
     await p3.unbindNetwork("sbx-3");
     expect(p3.listenerCount).toBe(0);

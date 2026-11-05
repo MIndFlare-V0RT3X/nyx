@@ -127,7 +127,9 @@ const REREAD_TURN_WINDOW = 20;
 const REREAD_TOOLS = new Set(["fs.read", "fs.write", "fs.edit"]);
 
 /** The protocol CompactionStrategy for a tier (frozen vocabulary). */
-function strategyOf(tier: CompactionTier): "rule-elision" | "session-memory" | "llm-summary" | "emergency-degrade" {
+function strategyOf(
+  tier: CompactionTier,
+): "rule-elision" | "session-memory" | "llm-summary" | "emergency-degrade" {
   switch (tier) {
     case "elision":
       return "rule-elision";
@@ -239,7 +241,10 @@ class ElisionCompactor implements Compactor {
     // or we are over budget at all, in which case every elidable token counts
     // (this is exactly the Phase 0/1 trigger, preserved).
     if (elidable === 0) return null;
-    if (elidable <= this.config.elision_threshold_tokens && ctx.current_tokens <= ctx.budget_tokens) {
+    if (
+      elidable <= this.config.elision_threshold_tokens &&
+      ctx.current_tokens <= ctx.budget_tokens
+    ) {
       return null;
     }
     const target = Math.floor(ctx.budget_tokens * 0.8);
@@ -353,7 +358,8 @@ function renderTranscript(messages: Message[]): string {
   for (const m of messages) {
     for (const block of m.content) {
       if (block.type === "text") lines.push(`${m.role}: ${block.text}`);
-      else if (block.type === "tool_use") lines.push(`${m.role}: [tool ${block.name}] ${JSON.stringify(block.input)}`);
+      else if (block.type === "tool_use")
+        lines.push(`${m.role}: [tool ${block.name}] ${JSON.stringify(block.input)}`);
       else if (block.type === "tool_result")
         lines.push(`tool: ${block.output.kind === "text" ? block.output.text : block.output.kind}`);
       else if (block.type === "reasoning") lines.push(`${m.role}: (reasoning) ${block.text}`);
@@ -511,10 +517,12 @@ export function emergencyTruncate(messages: Message[]): Message[] {
 // ---------------------------------------------------------------------------
 
 /** File paths referenced by recent fs.read/fs.write/fs.edit calls, newest first. */
-export function recentlyReferencedPaths(messages: Message[], turnWindow = REREAD_TURN_WINDOW): string[] {
+export function recentlyReferencedPaths(
+  messages: Message[],
+  turnWindow = REREAD_TURN_WINDOW,
+): string[] {
   const anchors = userMessageIndices(messages);
-  const windowStart =
-    anchors.length > turnWindow ? anchors[anchors.length - turnWindow]! : 0;
+  const windowStart = anchors.length > turnWindow ? anchors[anchors.length - turnWindow]! : 0;
   const paths: string[] = [];
   for (let i = messages.length - 1; i >= windowStart; i--) {
     for (const block of messages[i]!.content) {
@@ -594,7 +602,11 @@ export class CompactionPipelineImpl implements Pipeline {
     let freed = 0;
 
     for (const [compactor] of tiers) {
-      const plan = await compactor.plan({ ...ctx, messages, current_tokens: estimateTokens(messages) });
+      const plan = await compactor.plan({
+        ...ctx,
+        messages,
+        current_tokens: estimateTokens(messages),
+      });
       if (plan === null) continue;
       ctx.emit({
         type: "compaction.started",
@@ -620,7 +632,11 @@ export class CompactionPipelineImpl implements Pipeline {
 
     // Tier 4: the safety valve — re-check AFTER Tiers 1–3 (§3.5).
     const emergency = new EmergencyCompactor(this.config);
-    const emergencyCtx: CompactionContext = { ...ctx, messages, current_tokens: estimateTokens(messages) };
+    const emergencyCtx: CompactionContext = {
+      ...ctx,
+      messages,
+      current_tokens: estimateTokens(messages),
+    };
     const emergencyPlan = await emergency.plan(emergencyCtx);
     if (emergencyPlan !== null) {
       ctx.emit({

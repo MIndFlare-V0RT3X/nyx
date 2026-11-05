@@ -107,4 +107,3 @@ export function CVE_FIXTURES_BY_HOST(host: string, query: string): unknown {
 }
 
 export { NVD_EMPTY, OSV_EMPTY, GHSA_EMPTY };
-

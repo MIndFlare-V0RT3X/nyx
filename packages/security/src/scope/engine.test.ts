@@ -76,7 +76,10 @@ describe("createScopeEngine — the action-time check (§1.3 layer 3)", () => {
   it("an out-of-scope target → deny with the matcher's reason", () => {
     const { rows, audit } = sink();
     const engine = createScopeEngine(engagement(), { now: () => NOW, audit });
-    const out = engine.check({ tool: "security.probe-web", targets: [{ host: "evil.example.net" }] });
+    const out = engine.check({
+      tool: "security.probe-web",
+      targets: [{ host: "evil.example.net" }],
+    });
     expect(out.decision).toBe("deny");
     expect(out.reason).toContain("not in engagement scope");
     expect(rows[0]!.action).toBe("security.scope.denied");
@@ -110,10 +113,7 @@ describe("createScopeEngine — the action-time check (§1.3 layer 3)", () => {
   });
 
   it("a not-yet-active engagement denies with engagement_not_yet_active", () => {
-    const engine = createScopeEngine(
-      engagement({ starts_at: NOW + 60_000 }),
-      { now: () => NOW },
-    );
+    const engine = createScopeEngine(engagement({ starts_at: NOW + 60_000 }), { now: () => NOW });
     const out = engine.check({ tool: "security.probe-web", targets: [{ host: "example.com" }] });
     expect(out.decision).toBe("deny");
     expect(out.reason).toContain("engagement_not_yet_active");

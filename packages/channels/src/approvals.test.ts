@@ -141,13 +141,15 @@ describe("TelegramApprovalBridge (2.1.2)", () => {
 
     await bridge.handleCallbackQuery(query());
     expect(resolutions).toEqual([{ id: "appr_x1", decision: "allow", actor: "telegram:42" }]);
-    expect(sent.some((s) => s.method === "answerCallbackQuery" && s.args.text === "approved ✅")).toBe(
-      true,
-    );
+    expect(
+      sent.some((s) => s.method === "answerCallbackQuery" && s.args.text === "approved ✅"),
+    ).toBe(true);
     // The keyboard message got its resolution edit.
-    expect(sent.some((s) => s.method === "editMessageText" && s.args.text === "✅ approved by telegram:42")).toBe(
-      true,
-    );
+    expect(
+      sent.some(
+        (s) => s.method === "editMessageText" && s.args.text === "✅ approved by telegram:42",
+      ),
+    ).toBe(true);
   });
 
   it("an unrecognized user is rejected without resolving", async () => {
@@ -179,7 +181,9 @@ describe("TelegramApprovalBridge (2.1.2)", () => {
 
     await bridge.handleCallbackQuery(query({ data: "deny:appr_x1" }));
     expect(
-      sent.some((s) => s.method === "answerCallbackQuery" && String(s.args.text).startsWith("failed:")),
+      sent.some(
+        (s) => s.method === "answerCallbackQuery" && String(s.args.text).startsWith("failed:"),
+      ),
     ).toBe(true);
   });
 });

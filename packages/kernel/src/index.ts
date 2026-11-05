@@ -30,17 +30,9 @@ export {
   ToolOwnershipError,
   UnknownPluginError,
 } from "./errors.js";
-export {
-  pluginManifestSchema,
-  v1MigrationHints,
-  manifestIssues,
-  HOOK_NAMES,
-} from "./manifest.js";
+export { pluginManifestSchema, v1MigrationHints, manifestIssues, HOOK_NAMES } from "./manifest.js";
 export type { ParsedPluginManifest } from "./manifest.js";
-export {
-  loadPluginDirectory,
-  resolveSignatureMode,
-} from "./loader.js";
+export { loadPluginDirectory, resolveSignatureMode } from "./loader.js";
 export type { SignatureMode, LoadPluginOptions, LoadedPluginModule } from "./loader.js";
 export {
   checkManifestSignature,

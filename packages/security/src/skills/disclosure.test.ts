@@ -180,7 +180,16 @@ function makeRig(
       engagement: e,
     } as never;
   };
-  return { store, registry, kernel: tooling.kernel, tools: tooling.tools, files, auditRows, ctx, approvals };
+  return {
+    store,
+    registry,
+    kernel: tooling.kernel,
+    tools: tooling.tools,
+    files,
+    auditRows,
+    ctx,
+    approvals,
+  };
 }
 
 async function call(rig: Rig, name: string, input: unknown) {
@@ -200,25 +209,22 @@ function fixtureFetch(overrides: Record<string, unknown> = {}): JsonFetch {
 }
 
 async function seedFinding(rig: Rig, overrides: Record<string, unknown> = {}) {
-  return rig.store.createInSession(
-    { session_id: "sess-1", engagement: engagement() },
-    {
-      title: "Path traversal in static file serving",
-      description:
-        "The web server maps URLs to files outside the document root via a path normalization flaw.",
-      severity: "high",
-      cvss_3_1: 7.5,
-      target: { host: "app.example.com", path: "/icons/" },
-      evidence: [{ path: "artifacts/poc.txt", hash: "a".repeat(64), mime: "text/plain" }],
-      reproduction:
-        "GET /icons/../../../etc/passwd HTTP/1.1\nHost: app.example.com\nAccept: */*\nUser-Agent: nyx\nConnection: close\n",
-      remediation: "Upgrade the affected server; normalize paths before file mapping.",
-      status: "open",
-      discovered_by: "test",
-      notes: "",
-      ...overrides,
-    } as never,
-  );
+  return rig.store.createInSession({ session_id: "sess-1", engagement: engagement() }, {
+    title: "Path traversal in static file serving",
+    description:
+      "The web server maps URLs to files outside the document root via a path normalization flaw.",
+    severity: "high",
+    cvss_3_1: 7.5,
+    target: { host: "app.example.com", path: "/icons/" },
+    evidence: [{ path: "artifacts/poc.txt", hash: "a".repeat(64), mime: "text/plain" }],
+    reproduction:
+      "GET /icons/../../../etc/passwd HTTP/1.1\nHost: app.example.com\nAccept: */*\nUser-Agent: nyx\nConnection: close\n",
+    remediation: "Upgrade the affected server; normalize paths before file mapping.",
+    status: "open",
+    discovered_by: "test",
+    notes: "",
+    ...overrides,
+  } as never);
 }
 
 // ---------------------------------------------------------------------------
@@ -254,7 +260,8 @@ describe("correlate-cve — the acceptance cases", () => {
     const eng = engagement();
     const rig = makeRig(eng, {
       fetchImpl: fixtureFetch({
-        "https://nvd.nist.gov/rest/json/cves/2.0?keywordSearch=Acme%20Portal%20xml%20injection": NVD_EMPTY,
+        "https://nvd.nist.gov/rest/json/cves/2.0?keywordSearch=Acme%20Portal%20xml%20injection":
+          NVD_EMPTY,
         "https://api.osv.dev/v1/query": OSV_EMPTY,
         "https://api.github.com/advisories?cve_id=": [],
       }),
@@ -302,7 +309,7 @@ describe("correlate-cve — the acceptance cases", () => {
       finding_id: otherFinding.id,
       product: "Apache httpd",
     });
-    expect(((out as { text?: string }).text ?? "")).toContain("engagement");
+    expect((out as { text?: string }).text ?? "").toContain("engagement");
   });
 });
 
@@ -334,7 +341,16 @@ describe("minimize-poc — subset-only reduction", () => {
       finding_id: finding.id,
       required_tokens: ["/icons/../../../etc/passwd", "Host:"],
     });
-    const json = (out as { json: { result: string; original_lines: number; minimized_lines: number; minimized_poc: string } }).json;
+    const json = (
+      out as {
+        json: {
+          result: string;
+          original_lines: number;
+          minimized_lines: number;
+          minimized_poc: string;
+        };
+      }
+    ).json;
     expect(json.result).toBe("minimized");
     expect(json.original_lines).toBe(12);
     expect(json.minimized_lines!).toBeLessThan(12);
@@ -367,14 +383,16 @@ describe("minimize-poc — subset-only reduction", () => {
     const rig = makeRig(eng);
     const finding = await seedFinding(rig);
     const out = await call(rig, "security.minimize-poc", { finding_id: finding.id });
-    expect(((out as { text?: string }).text ?? "")).toContain("required_tokens");
+    expect((out as { text?: string }).text ?? "").toContain("required_tokens");
   });
 
   it("the reducer unit: payload lines survive, unrelated lines go, verbatim", () => {
     const poc = "GET /x HTTP/1.1\nHost: h\nJunk: 1\nPayload: <script>alert(1)</script>\n";
     const result = minimizePocLines(poc, ["<script>alert(1)</script>"]);
     expect(result.result).toBe("minimized");
-    expect(result.minimized_poc).toBe("GET /x HTTP/1.1\nHost: h\nPayload: <script>alert(1)</script>\n");
+    expect(result.minimized_poc).toBe(
+      "GET /x HTTP/1.1\nHost: h\nPayload: <script>alert(1)</script>\n",
+    );
     expect(result.removed).toEqual(["Junk: 1"]);
   });
 });
@@ -394,7 +412,16 @@ describe("prepare-disclosure — the package", () => {
       vendor_contact: "security@vendor.example",
       impact: "An unauthenticated attacker reads files outside the document root.",
     });
-    const json = (out as { json: { directory: string; manifest: string; sha256: string; files: Array<{ name: string; sha256: string }> } }).json;
+    const json = (
+      out as {
+        json: {
+          directory: string;
+          manifest: string;
+          sha256: string;
+          files: Array<{ name: string; sha256: string }>;
+        };
+      }
+    ).json;
     expect(json.directory).toBe(`disclosures/${finding.id}`);
     const names = json.files.map((f) => f.name);
     expect(names).toContain("reproduction.md");
@@ -481,7 +508,7 @@ describe("submit-cve — R4, content only, never an automatic submission", () =>
       package_dir: "disclosures/does-not-exist",
       researcher_contact: "r@example.com",
     });
-    expect(((out as { text?: string }).text ?? "")).toContain("prepare-disclosure");
+    expect((out as { text?: string }).text ?? "").toContain("prepare-disclosure");
   });
 });
 
@@ -577,21 +604,24 @@ describe("R2-5 / R2-8 regressions", () => {
   it("R2-8: the MARKDOWN report HTML-escapes finding-controlled text", async () => {
     const eng = engagement();
     const rig = makeRig(eng);
-    await rig.store.createInSession(
-      { session_id: "sess-1", engagement: engagement() },
-      {
-        title: "<script>alert('xss')</script> in the portal",
-        description: "The <img src=x onerror=alert(1)> parameter is echoed.",
-        severity: "medium",
-        target: { host: "app.example.com" },
-        evidence: [{ path: "x.txt", hash: createHash("sha256").update("evidence bytes").digest("hex"), mime: "text/plain" }],
-        reproduction: "GET /?<script> HTTP/1.1",
-        remediation: "Encode on output.",
-        status: "open",
-        discovered_by: "test",
-        notes: "",
-      } as never,
-    );
+    await rig.store.createInSession({ session_id: "sess-1", engagement: engagement() }, {
+      title: "<script>alert('xss')</script> in the portal",
+      description: "The <img src=x onerror=alert(1)> parameter is echoed.",
+      severity: "medium",
+      target: { host: "app.example.com" },
+      evidence: [
+        {
+          path: "x.txt",
+          hash: createHash("sha256").update("evidence bytes").digest("hex"),
+          mime: "text/plain",
+        },
+      ],
+      reproduction: "GET /?<script> HTTP/1.1",
+      remediation: "Encode on output.",
+      status: "open",
+      discovered_by: "test",
+      notes: "",
+    } as never);
     const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
@@ -658,7 +688,7 @@ describe("R3-1 — submit-cve verifies the package against the recorded hash cha
       package_dir: dir1,
       researcher_contact: "r@example.com",
     });
-    expect(((cross as { text?: string }).text ?? "")).toContain("belongs to finding");
+    expect((cross as { text?: string }).text ?? "").toContain("belongs to finding");
 
     // A tampered manifest (rewritten affected_versions).
     const manifestRaw = rig.files.get(`${dir1}/package.json`)!;
@@ -670,7 +700,7 @@ describe("R3-1 — submit-cve verifies the package against the recorded hash cha
       package_dir: dir1,
       researcher_contact: "r@example.com",
     });
-    expect(((out as { text?: string }).text ?? "")).toContain("hash mismatch");
+    expect((out as { text?: string }).text ?? "").toContain("hash mismatch");
   });
 
   it("an untampered package produces the form with the correlated PRODUCT (never the target host)", async () => {

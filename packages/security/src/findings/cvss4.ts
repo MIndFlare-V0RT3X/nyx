@@ -277,8 +277,12 @@ export class Cvss4Vector {
       eq1: distances["AV"]! + distances["PR"]! + distances["UI"]!,
       eq2: distances["AC"]! + distances["AT"]!,
       eq3eq6:
-        distances["VC"]! + distances["VI"]! + distances["VA"]! +
-        distances["CR"]! + distances["IR"]! + distances["AR"]!,
+        distances["VC"]! +
+        distances["VI"]! +
+        distances["VA"]! +
+        distances["CR"]! +
+        distances["IR"]! +
+        distances["AR"]!,
       eq4: distances["SC"]! + distances["SI"]! + distances["SA"]!,
     };
 

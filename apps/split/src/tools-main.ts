@@ -94,6 +94,8 @@ export async function main(argv: string[] = process.argv): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  process.stderr.write(`nyx-tools: fatal: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`);
+  process.stderr.write(
+    `nyx-tools: fatal: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`,
+  );
   process.exit(1);
 });

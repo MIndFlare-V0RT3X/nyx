@@ -329,7 +329,16 @@ describe("Phase 1 sections: lanes, channels, heartbeat (optional)", () => {
     expect(
       configSchema.safeParse({
         ...MINIMAL,
-        channels: { webhook: { enabled: true, path: "no-slash", bind: "127.0.0.1", port: 1, allowed_owners: [], reply_timeout_ms: 1 } },
+        channels: {
+          webhook: {
+            enabled: true,
+            path: "no-slash",
+            bind: "127.0.0.1",
+            port: 1,
+            allowed_owners: [],
+            reply_timeout_ms: 1,
+          },
+        },
       }).success,
     ).toBe(false);
     // Note: cron SYNTAX is validated by @nyx/runtime's parseCron when the
@@ -338,12 +347,13 @@ describe("Phase 1 sections: lanes, channels, heartbeat (optional)", () => {
     expect(
       configSchema.safeParse({
         ...MINIMAL,
-        heartbeat: { enabled: true, specs: [{ id: "x", schedule: "0 3 * * *", priority: "heartbeat", enabled: true }] },
+        heartbeat: {
+          enabled: true,
+          specs: [{ id: "x", schedule: "0 3 * * *", priority: "heartbeat", enabled: true }],
+        },
       }).success,
     ).toBe(false); // missing prompt
-    expect(
-      configSchema.safeParse({ ...MINIMAL, unknown_section: {} }).success,
-    ).toBe(false);
+    expect(configSchema.safeParse({ ...MINIMAL, unknown_section: {} }).success).toBe(false);
   });
 
   it("heartbeat spec timezone must be a valid IANA name (2.0.3)", () => {
@@ -472,25 +482,23 @@ describe("subagents section (Phase 3)", () => {
   });
 
   it("rejects retention_days < 0 and an unknown retention_scope", () => {
-    expect(
-      configSchema.safeParse({ ...MINIMAL, subagents: { retention_days: -1 } }).success,
-    ).toBe(false);
+    expect(configSchema.safeParse({ ...MINIMAL, subagents: { retention_days: -1 } }).success).toBe(
+      false,
+    );
     expect(
       configSchema.safeParse({ ...MINIMAL, subagents: { retention_scope: "some" } }).success,
     ).toBe(false);
     // 0 is legal: retention disabled entirely.
-    expect(
-      configSchema.safeParse({ ...MINIMAL, subagents: { retention_days: 0 } }).success,
-    ).toBe(true);
+    expect(configSchema.safeParse({ ...MINIMAL, subagents: { retention_days: 0 } }).success).toBe(
+      true,
+    );
   });
 
   it("accepts max_depth 0 (spawning disabled) and rejects 11", () => {
-    expect(
-      configSchema.safeParse({ ...MINIMAL, subagents: { max_depth: 0 } }).success,
-    ).toBe(true);
-    expect(
-      configSchema.safeParse({ ...MINIMAL, subagents: { max_depth: 11 } }).success,
-    ).toBe(false);
+    expect(configSchema.safeParse({ ...MINIMAL, subagents: { max_depth: 0 } }).success).toBe(true);
+    expect(configSchema.safeParse({ ...MINIMAL, subagents: { max_depth: 11 } }).success).toBe(
+      false,
+    );
   });
 
   it("rejects an unknown key inside subagents", () => {

@@ -64,7 +64,12 @@ describe("RemoteToolRuntime — untrusted event validation (R1-6)", () => {
       stubClient({
         events: [
           event({ type: "tool.call", name: "fs.read", input: {} }),
-          event({ type: "approval.resolved", approval_id: "x", decision: "allow", decided_by: "cli:owner" }),
+          event({
+            type: "approval.resolved",
+            approval_id: "x",
+            decision: "allow",
+            decided_by: "cli:owner",
+          }),
         ],
         output: { kind: "text", text: "ok" },
       }),
@@ -80,7 +85,11 @@ describe("RemoteToolRuntime — untrusted event validation (R1-6)", () => {
       stubClient({
         events: [
           event({ type: "tool.call", name: "fs.read", input: {} }),
-          event({ type: "tool.result", output: { kind: "text", text: "x" }, call_id: "OTHER-CALL" }),
+          event({
+            type: "tool.result",
+            output: { kind: "text", text: "x" },
+            call_id: "OTHER-CALL",
+          }),
         ],
         output: { kind: "text", text: "ok" },
       }),
@@ -94,7 +103,11 @@ describe("RemoteToolRuntime — untrusted event validation (R1-6)", () => {
     const runtime = new RemoteToolRuntime(
       stubClient({
         events: [
-          event({ type: "tool.result", output: { kind: "text", text: "x" }, turn_id: "turn-OTHER" }),
+          event({
+            type: "tool.result",
+            output: { kind: "text", text: "x" },
+            turn_id: "turn-OTHER",
+          }),
         ],
         output: { kind: "text", text: "ok" },
       }),

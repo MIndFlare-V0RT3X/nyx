@@ -33,18 +33,18 @@ Three claims must all hold before the plugin's code is ever imported:
    default `~/.nyx/plugins/trusted-keys.json`, **empty by default — nothing
    is trusted until the operator says so**).
 
-A plugin signed by a key that is *not* in the trust file is rejected in
+A plugin signed by a key that is _not_ in the trust file is rejected in
 **every** mode, including `warn`: a signature from an unanchored key implies
 a trust relationship that does not exist, and that is worse than an honest
 unsigned plugin (which at least surfaces as "unsigned" in warn mode).
 
 ## Signature modes
 
-| mode | unsigned plugin | signed + trusted + valid | signed but untrusted/invalid |
-|---|---|---|---|
-| `strict` (production default) | rejected | loads | rejected |
-| `warn` (development default) | loads with a warning | loads | rejected |
-| `off` | loads | loads | loads — **requires `NYX_ENV=development` AND the `--allow-unsigned-plugins` CLI flag**; any other combination fails config validation |
+| mode                          | unsigned plugin      | signed + trusted + valid | signed but untrusted/invalid                                                                                                          |
+| ----------------------------- | -------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `strict` (production default) | rejected             | loads                    | rejected                                                                                                                              |
+| `warn` (development default)  | loads with a warning | loads                    | rejected                                                                                                                              |
+| `off`                         | loads                | loads                    | loads — **requires `NYX_ENV=development` AND the `--allow-unsigned-plugins` CLI flag**; any other combination fails config validation |
 
 ## Build a plugin
 

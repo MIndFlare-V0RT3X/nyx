@@ -212,47 +212,60 @@ describe("DockerSandboxProvider (docker daemon)", () => {
 });
 
 describe("DockerSandboxProvider fork (docker daemon)", () => {
-  dIt("fork commits the parent to a temp image, runs an isolated child, cleans the tag", async () => {
-    const parentDir = await freshHostDir();
-    const parent = await provider.provision(spec(parentDir));
-    try {
-      await parent.writeFile("seed.txt", "parent state");
-      const before = await execFileP("docker", ["images", "--format", "{{.Repository}}", "nyx-fork-*"]).then(
-        (r) => r.stdout.split("\n").filter((l) => l !== ""),
-        () => [] as string[],
-      );
-
-      if (!isForkable(parent)) throw new Error("provisioned sandbox is not forkable");
-      const child = await parent.fork();
+  dIt(
+    "fork commits the parent to a temp image, runs an isolated child, cleans the tag",
+    async () => {
+      const parentDir = await freshHostDir();
+      const parent = await provider.provision(spec(parentDir));
       try {
-        // The fork carries the parent's workspace (bind content, host-copied)…
-        expect((await child.readFile("seed.txt")).toString("utf8")).toBe("parent state");
-        // …and shares nothing after: child writes stay in the child.
-        await child.writeFile("child-only.txt", "c");
-        await expect(parent.readFile("child-only.txt")).rejects.toThrow();
-        await parent.writeFile("parent-only.txt", "p");
-        await expect(child.readFile("parent-only.txt")).rejects.toThrow();
-        // The child is a live container of its own.
-        const res = await child.exec("echo forked");
-        expect(res.exit_code).toBe(0);
-        expect(res.stdout).toBe("forked\n");
-      } finally {
-        await child.destroy();
-        // The temp image tag is cleaned up (best-effort rmi fired at fork
-        // time; give the daemon a beat, then check).
-        await new Promise((r) => setTimeout(r, 1500));
-        const after = await execFileP("docker", ["images", "--format", "{{.Repository}}", "nyx-fork-*"]).then(
+        await parent.writeFile("seed.txt", "parent state");
+        const before = await execFileP("docker", [
+          "images",
+          "--format",
+          "{{.Repository}}",
+          "nyx-fork-*",
+        ]).then(
           (r) => r.stdout.split("\n").filter((l) => l !== ""),
           () => [] as string[],
         );
-        expect(after.filter((t) => !before.includes(t))).toEqual([]);
+
+        if (!isForkable(parent)) throw new Error("provisioned sandbox is not forkable");
+        const child = await parent.fork();
+        try {
+          // The fork carries the parent's workspace (bind content, host-copied)…
+          expect((await child.readFile("seed.txt")).toString("utf8")).toBe("parent state");
+          // …and shares nothing after: child writes stay in the child.
+          await child.writeFile("child-only.txt", "c");
+          await expect(parent.readFile("child-only.txt")).rejects.toThrow();
+          await parent.writeFile("parent-only.txt", "p");
+          await expect(child.readFile("parent-only.txt")).rejects.toThrow();
+          // The child is a live container of its own.
+          const res = await child.exec("echo forked");
+          expect(res.exit_code).toBe(0);
+          expect(res.stdout).toBe("forked\n");
+        } finally {
+          await child.destroy();
+          // The temp image tag is cleaned up (best-effort rmi fired at fork
+          // time; give the daemon a beat, then check).
+          await new Promise((r) => setTimeout(r, 1500));
+          const after = await execFileP("docker", [
+            "images",
+            "--format",
+            "{{.Repository}}",
+            "nyx-fork-*",
+          ]).then(
+            (r) => r.stdout.split("\n").filter((l) => l !== ""),
+            () => [] as string[],
+          );
+          expect(after.filter((t) => !before.includes(t))).toEqual([]);
+        }
+        // The parent survived the child's destruction.
+        expect((await parent.readFile("seed.txt")).toString("utf8")).toBe("parent state");
+      } finally {
+        await parent.destroy();
       }
-      // The parent survived the child's destruction.
-      expect((await parent.readFile("seed.txt")).toString("utf8")).toBe("parent state");
-    } finally {
-      await parent.destroy();
-    }
-  });
+    },
+  );
 });
 
 // ── Phase 6.1: the egress-proxy arg vectors (no daemon required) ────────────
@@ -332,7 +345,10 @@ describe("egress network + run arg builders (Phase 6.1)", () => {
           egress: { session_id: "s1", engagement: fakeEngagement() },
         }),
       )
-      .then(() => undefined, (e: unknown) => e);
+      .then(
+        () => undefined,
+        (e: unknown) => e,
+      );
     expect((err as Error).message).toContain("no proxy, no tools");
   });
 
@@ -346,18 +362,20 @@ describe("egress network + run arg builders (Phase 6.1)", () => {
         unbindNetwork: async () => undefined,
       },
     });
-    const err = await binder
-      .provision(spec(hostDir, { network: "allowlist" }))
-      .then(() => undefined, (e: unknown) => e);
+    const err = await binder.provision(spec(hostDir, { network: "allowlist" })).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
     expect((err as Error).message).toContain("spec.egress");
   });
 
   it("local provider refuses allowlist (no container boundary)", async () => {
     const { LocalSandboxProvider: Local } = await import("./local.js");
     const local = new Local({ root: await freshHostDir() });
-    const err = await local
-      .provision(spec("/tmp/unused", { network: "allowlist" }))
-      .then(() => undefined, (e: unknown) => e);
+    const err = await local.provision(spec("/tmp/unused", { network: "allowlist" })).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
     expect((err as Error).message).toContain("container boundary");
   });
 });

@@ -194,7 +194,7 @@ sandbox:
   # refuses the config outright.
   egress_proxy:
     enabled: true
-    port: 3128        # base port on each sandbox bridge gateway
+    port: 3128 # base port on each sandbox bridge gateway
   # — Local (no Docker) alternative: runs commands directly on this machine.
   #   Development only — the local sandbox refuses to run when NYX_ENV=production.
   # provider: local

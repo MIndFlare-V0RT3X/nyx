@@ -87,8 +87,7 @@ export function createScopeEngine(
       const digest = actionDigest(action);
 
       if (engagement === null) {
-        const reason =
-          "no engagement declared for this session; security actions are denied";
+        const reason = "no engagement declared for this session; security actions are denied";
         auditRow(false, action, digest, { allowed: false, reason });
         return { decision: "deny", reason, action_digest: digest };
       }

@@ -24,13 +24,16 @@ afterAll(async () => {
 
 function openEngine(opts: { now?: () => number } = {}): ApprovalEngineImpl {
   const db = new Database(join(dir, `engine-${Math.random().toString(36).slice(2)}.db`));
-  return new ApprovalEngineImpl(db, { poll_ms: 5, ...(opts.now !== undefined ? { now: opts.now } : {}) });
+  return new ApprovalEngineImpl(db, {
+    poll_ms: 5,
+    ...(opts.now !== undefined ? { now: opts.now } : {}),
+  });
 }
 
 const VERDICT: PolicyVerdict = {
   decision: "ask",
   rule_id: "ask-r2",
-  summary: 'web.fetch on http://example.com [risk R2]',
+  summary: "web.fetch on http://example.com [risk R2]",
   action_digest: "digest-abc",
 };
 
@@ -65,7 +68,11 @@ describe("ApprovalEngineImpl presenters (2.1.1)", () => {
     engine.registerPresenter("sess-1", presenter);
 
     let decision: "allow" | "deny" | undefined;
-    const request = engine.request(VERDICT, { session_id: "sess-1", turn_id: "t1", actor_id: "agent" });
+    const request = engine.request(VERDICT, {
+      session_id: "sess-1",
+      turn_id: "t1",
+      actor_id: "agent",
+    });
     void request.then((d) => {
       decision = d;
     });
@@ -95,7 +102,11 @@ describe("ApprovalEngineImpl presenters (2.1.1)", () => {
     const engine = openEngine();
     const presenter = new RecordingPresenter("webhook");
     engine.registerPresenter("sess-2", presenter, { ttl_ms: 1_000 });
-    const request = engine.request(VERDICT, { session_id: "sess-2", turn_id: "t2", actor_id: "agent" });
+    const request = engine.request(VERDICT, {
+      session_id: "sess-2",
+      turn_id: "t2",
+      actor_id: "agent",
+    });
     await settle();
     expect(presenter.presented[0]!.expires_at - Date.now()).toBeLessThanOrEqual(1_000);
     await engine.resolve(presenter.presented[0]!.approval_id, "deny", "operator");
@@ -106,7 +117,11 @@ describe("ApprovalEngineImpl presenters (2.1.1)", () => {
     const engine = openEngine();
     const presenter = new RecordingPresenter("telegram:9");
     engine.registerPresenter("sess-3", presenter, { ttl_ms: 30 });
-    const request = engine.request(VERDICT, { session_id: "sess-3", turn_id: "t3", actor_id: "agent" });
+    const request = engine.request(VERDICT, {
+      session_id: "sess-3",
+      turn_id: "t3",
+      actor_id: "agent",
+    });
     await settle();
     const approvalId = presenter.presented[0]!.approval_id;
     await new Promise((r) => setTimeout(r, 80));
@@ -121,13 +136,19 @@ describe("ApprovalEngineImpl presenters (2.1.1)", () => {
     const engine = openEngine();
     const presenter = new RecordingPresenter("telegram:10");
     engine.registerPresenter("sess-4", presenter, { ttl_ms: 600_000 });
-    const request = engine.request(VERDICT, { session_id: "sess-4", turn_id: "t4", actor_id: "agent" });
+    const request = engine.request(VERDICT, {
+      session_id: "sess-4",
+      turn_id: "t4",
+      actor_id: "agent",
+    });
     await settle();
     const approvalId = presenter.presented[0]!.approval_id;
 
     engine.unregisterPresenter("sess-4");
     expect(await request).toBe("deny");
-    expect(presenter.withdrawn).toEqual([{ approval_id: approvalId, reason: "presenter unregistered" }]);
+    expect(presenter.withdrawn).toEqual([
+      { approval_id: approvalId, reason: "presenter unregistered" },
+    ]);
     const record = await engine.get(approvalId);
     expect(record?.decision).toBe("deny");
     expect(record?.decided_by).toBe("system:withdrawn");
@@ -160,7 +181,11 @@ describe("ApprovalEngineImpl presenters (2.1.1)", () => {
     const presenter = new RecordingPresenter("broken");
     presenter.failPresent = true;
     engine.registerPresenter("sess-5", presenter, { ttl_ms: 600_000 });
-    const request = engine.request(VERDICT, { session_id: "sess-5", turn_id: "t5", actor_id: "agent" });
+    const request = engine.request(VERDICT, {
+      session_id: "sess-5",
+      turn_id: "t5",
+      actor_id: "agent",
+    });
     await settle();
     // The approval row exists even though present() threw; the operator can
     // still resolve it out-of-band.

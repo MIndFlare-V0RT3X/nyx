@@ -35,13 +35,11 @@ describe("e2e 2.0.1 unified-db migration", () => {
     const dataDir = await mkdtemp(join(tmpdir(), "nyx-e2e-migrate-"));
     const sandboxRoot = await mkdtemp(join(tmpdir(), "nyx-e2e-migrate-sbx-"));
     const memoryRoot = await mkdtemp(join(tmpdir(), "nyx-e2e-migrate-mem-"));
-    cleanups.push(
-      async () => {
-        await rm(dataDir, { recursive: true, force: true });
-        await rm(sandboxRoot, { recursive: true, force: true });
-        await rm(memoryRoot, { recursive: true, force: true });
-      },
-    );
+    cleanups.push(async () => {
+      await rm(dataDir, { recursive: true, force: true });
+      await rm(sandboxRoot, { recursive: true, force: true });
+      await rm(memoryRoot, { recursive: true, force: true });
+    });
 
     // ── Phase-1 layout: four files with live rows ──
     const store = openSessionStore(join(dataDir, "nyx.db"));

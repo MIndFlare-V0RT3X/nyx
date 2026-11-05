@@ -40,7 +40,10 @@ function fakeRunner(replyText = "THE-REPLY"): { runner: ChannelTurnRunner; log: 
     startTurn: (input) => {
       turnN += 1;
       const turn_id = `turn-${turnN}`;
-      log.turns.push({ session_id: input.session_id, text: (input.content[0] as { text: string }).text });
+      log.turns.push({
+        session_id: input.session_id,
+        text: (input.content[0] as { text: string }).text,
+      });
       const handlers = new Set<(event: SessionEvent) => void>();
       const events: SessionEvent[] = [
         { type: "turn.started", session_id: input.session_id, turn_id, ts: 1 },
@@ -53,7 +56,13 @@ function fakeRunner(replyText = "THE-REPLY"): { runner: ChannelTurnRunner; log: 
           content: [{ type: "text", text: replyText }],
           ts: 4,
         },
-        { type: "turn.completed", session_id: input.session_id, turn_id, usage: { input_tokens: 1, output_tokens: 1 }, ts: 5 },
+        {
+          type: "turn.completed",
+          session_id: input.session_id,
+          turn_id,
+          usage: { input_tokens: 1, output_tokens: 1 },
+          ts: 5,
+        },
       ];
       void (async () => {
         for (const e of events) {
@@ -139,7 +148,10 @@ describe("ChannelManager", () => {
     expect(log.created).toHaveLength(1); // and never created a session
     expect(auditEntries).toHaveLength(1);
     expect(auditEntries[0]!.action).toBe("channel.identity.rejected");
-    expect(auditEntries[0]!.payload).toMatchObject({ channel: "webhook", channel_user_id: "owner:attacker" });
+    expect(auditEntries[0]!.payload).toMatchObject({
+      channel: "webhook",
+      channel_user_id: "owner:attacker",
+    });
   });
 
   it("telegram: an allowed user id maps to telegram:<id>; others are rejected", async () => {
@@ -205,7 +217,9 @@ describe("ChannelManager", () => {
     expect(log.forked).toEqual([first.session_id]);
 
     // No prior mapping → graceful fresh start.
-    const fresh = await manager.handleInbound(inbound("webhook", "owner:primary", "/fork", "never-seen"));
+    const fresh = await manager.handleInbound(
+      inbound("webhook", "owner:primary", "/fork", "never-seen"),
+    );
     expect(fresh.status).toBe("replied");
     if (fresh.status !== "replied") return;
     expect(fresh.text).toContain("no session to fork");

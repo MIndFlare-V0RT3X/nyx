@@ -54,7 +54,11 @@ import {
   childUserMessage,
 } from "./child-views.js";
 import { resolveSubagentsConfig, type SubagentsConfig } from "./config.js";
-import { requestSubagentAbort, listSubagentAbortRequests, deleteSubagentAbortRequest } from "./control.js";
+import {
+  requestSubagentAbort,
+  listSubagentAbortRequests,
+  deleteSubagentAbortRequest,
+} from "./control.js";
 import { SubagentError } from "./errors.js";
 
 /** The per-turn binding the spawn_subagent tool resolves its parent through. */
@@ -304,9 +308,12 @@ export class SubagentManagerImpl implements SubagentManager {
     let parentAborted = false;
     const onParentAbort = (): void => {
       parentAborted = true;
-      this.abortChild(runningChild, child.session_id, "parent turn aborted", (
-        new SubagentError("aborted", "parent turn aborted")
-      ));
+      this.abortChild(
+        runningChild,
+        child.session_id,
+        "parent turn aborted",
+        new SubagentError("aborted", "parent turn aborted"),
+      );
     };
     let summary = "";
     let tokensUsed = 0;
@@ -360,9 +367,12 @@ export class SubagentManagerImpl implements SubagentManager {
       );
       budgetRouter = new BudgetTrackingRouter(parent_ctx.model, budget, () => {
         budgetExceeded = true;
-        this.abortChild(runningChild, child.session_id, "subagent budget exceeded", (
-          new SubagentError("budget_exceeded", "subagent budget exceeded")
-        ));
+        this.abortChild(
+          runningChild,
+          child.session_id,
+          "subagent budget exceeded",
+          new SubagentError("budget_exceeded", "subagent budget exceeded"),
+        );
       });
       if (parent_ctx.signal.aborted) onParentAbort();
       else parent_ctx.signal.addEventListener("abort", onParentAbort, { once: true });

@@ -277,7 +277,10 @@ export class IpcServer {
         frame.request as { type: string; [k: string]: unknown },
         { role: connection.role },
       );
-      response = JSON.stringify({ id: frame.id, response: { ok: true, result } } satisfies ResponseFrame);
+      response = JSON.stringify({
+        id: frame.id,
+        response: { ok: true, result },
+      } satisfies ResponseFrame);
     } catch (err) {
       if (err instanceof IpcError_) {
         response = JSON.stringify({

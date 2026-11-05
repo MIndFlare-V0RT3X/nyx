@@ -88,7 +88,11 @@ export class ChannelManager {
     if (channel === "telegram") {
       const cfg = this.telegram;
       const numeric = Number(channel_user_id);
-      if (cfg === undefined || !Number.isInteger(numeric) || !cfg.allowed_user_ids.includes(numeric)) {
+      if (
+        cfg === undefined ||
+        !Number.isInteger(numeric) ||
+        !cfg.allowed_user_ids.includes(numeric)
+      ) {
         return null;
       }
       return `telegram:${numeric}`;
@@ -126,27 +130,67 @@ export class ChannelManager {
         owner_id: owner,
         title: `${msg.channel} ${new Date(msg.received_at).toISOString()}`,
       });
-      this.sessions.put(msg.channel, msg.channel_user_id, msg.channel_thread_id, created.session_id, this.now());
-      return { status: "replied", text: `new session started (${created.session_id})`, session_id: created.session_id };
+      this.sessions.put(
+        msg.channel,
+        msg.channel_user_id,
+        msg.channel_thread_id,
+        created.session_id,
+        this.now(),
+      );
+      return {
+        status: "replied",
+        text: `new session started (${created.session_id})`,
+        session_id: created.session_id,
+      };
     }
     if (text === "/fork") {
       const existing = this.sessions.get(msg.channel, msg.channel_user_id, msg.channel_thread_id);
       if (existing === null) {
         const created = await this.runner.createSession({ owner_id: owner });
-        this.sessions.put(msg.channel, msg.channel_user_id, msg.channel_thread_id, created.session_id, this.now());
-        return { status: "replied", text: `no session to fork — started a new one (${created.session_id})`, session_id: created.session_id };
+        this.sessions.put(
+          msg.channel,
+          msg.channel_user_id,
+          msg.channel_thread_id,
+          created.session_id,
+          this.now(),
+        );
+        return {
+          status: "replied",
+          text: `no session to fork — started a new one (${created.session_id})`,
+          session_id: created.session_id,
+        };
       }
       const child = await this.runner.forkSession(existing.session_id);
-      this.sessions.put(msg.channel, msg.channel_user_id, msg.channel_thread_id, child.session_id, this.now());
-      return { status: "replied", text: `forked at the last event (${child.session_id})`, session_id: child.session_id };
+      this.sessions.put(
+        msg.channel,
+        msg.channel_user_id,
+        msg.channel_thread_id,
+        child.session_id,
+        this.now(),
+      );
+      return {
+        status: "replied",
+        text: `forked at the last event (${child.session_id})`,
+        session_id: child.session_id,
+      };
     }
 
     // Attach (or create) the session for this conversation.
-    let session_id = this.sessions.get(msg.channel, msg.channel_user_id, msg.channel_thread_id)?.session_id;
+    let session_id = this.sessions.get(
+      msg.channel,
+      msg.channel_user_id,
+      msg.channel_thread_id,
+    )?.session_id;
     if (session_id === undefined) {
       const created = await this.runner.createSession({ owner_id: owner });
       session_id = created.session_id;
-      this.sessions.put(msg.channel, msg.channel_user_id, msg.channel_thread_id, session_id, this.now());
+      this.sessions.put(
+        msg.channel,
+        msg.channel_user_id,
+        msg.channel_thread_id,
+        session_id,
+        this.now(),
+      );
     }
 
     const content: ContentBlock[] = [{ type: "text", text }];

@@ -6,9 +6,9 @@ applies this once after the first push of `.github/workflows/ci.yml`.
 
 ## The two lanes
 
-| Check | Runs on | Required for |
-|---|---|---|
-| `test-fast (hermetic)` | every push, every PR | **every PR merge** |
+| Check                                         | Runs on                                                                                  | Required for                                                                             |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `test-fast (hermetic)`                        | every push, every PR                                                                     | **every PR merge**                                                                       |
 | `test-docker (bypass suite + security image)` | push to `main`, tags `v*`, PRs that touch the docker surface or carry the `docker` label | **every merge to `main`**; PRs outside the docker surface may merge on `test-fast` alone |
 
 The docker surface (the `changes` job's path filter):
@@ -56,7 +56,7 @@ that is a strictly weaker posture and should be resisted.
   the docker lane, including the five live bypass proofs in
   `packages/security/src/scope/egress_docker.test.ts`.
 - `docker build -f Dockerfile.security -t nyx-security:ci --build-arg
-  TARGETARCH="$(dpkg --print-architecture)" .` — the security-image rebuild
+TARGETARCH="$(dpkg --print-architecture)" .` — the security-image rebuild
   verification (the build fails on any tool-version drift).
 
 ## Cache discipline

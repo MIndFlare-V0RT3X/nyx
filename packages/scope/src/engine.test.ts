@@ -361,7 +361,11 @@ describe("checkTarget — URL targets (Phase 5 §1.4)", () => {
 
   it("prefix-then-pattern: matches the subtree on segment boundaries", () => {
     expect(
-      checkTarget(eng, { host: "app.example.com", url: "https://app.example.com/portal/login" }, NOW),
+      checkTarget(
+        eng,
+        { host: "app.example.com", url: "https://app.example.com/portal/login" },
+        NOW,
+      ),
     ).toEqual({
       allowed: true,
       reason: "url in engagement scope",
@@ -401,8 +405,11 @@ describe("checkTarget — URL targets (Phase 5 §1.4)", () => {
       ).allowed,
     ).toBe(false);
     expect(
-      checkTarget(eng, { host: "evilapp.example.com", url: "https://evilapp.example.com/portal/login" }, NOW)
-        .allowed,
+      checkTarget(
+        eng,
+        { host: "evilapp.example.com", url: "https://evilapp.example.com/portal/login" },
+        NOW,
+      ).allowed,
     ).toBe(false);
   });
 
@@ -432,7 +439,11 @@ describe("checkTarget — URL targets (Phase 5 §1.4)", () => {
       },
     });
     expect(
-      checkTarget(eng2, { host: "app.example.com", url: "https://app.example.com/portal/login" }, NOW),
+      checkTarget(
+        eng2,
+        { host: "app.example.com", url: "https://app.example.com/portal/login" },
+        NOW,
+      ),
     ).toEqual({ allowed: false, reason: "target excluded by engagement" });
   });
 
@@ -446,12 +457,18 @@ describe("checkTarget — URL targets (Phase 5 §1.4)", () => {
       },
     });
     expect(
-      checkTarget(eng2, { host: "app.example.com", url: "https://app.example.com:8443/portal/login" }, NOW)
-        .allowed,
+      checkTarget(
+        eng2,
+        { host: "app.example.com", url: "https://app.example.com:8443/portal/login" },
+        NOW,
+      ).allowed,
     ).toBe(false);
     expect(
-      checkTarget(eng2, { host: "app.example.com", url: "https://app.example.com/portal/login" }, NOW)
-        .allowed,
+      checkTarget(
+        eng2,
+        { host: "app.example.com", url: "https://app.example.com/portal/login" },
+        NOW,
+      ).allowed,
     ).toBe(true);
   });
 });

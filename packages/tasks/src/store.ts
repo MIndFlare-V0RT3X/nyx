@@ -111,9 +111,7 @@ export class TaskSqlStore {
   }
 
   get(id: string): TaskRecord | null {
-    const row = this.db
-      .prepare("SELECT * FROM tasks WHERE id = ?")
-      .get(id) as TaskRow | undefined;
+    const row = this.db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | undefined;
     return row === undefined ? null : rowToRecord(row);
   }
 
@@ -303,7 +301,13 @@ export class TaskSqlStore {
       .run(
         to,
         patch.attempts ?? before.attempts,
-        patch.result === undefined ? (before.result === null ? null : canonicalJson(before.result)) : (patch.result === null ? null : canonicalJson(patch.result)),
+        patch.result === undefined
+          ? before.result === null
+            ? null
+            : canonicalJson(before.result)
+          : patch.result === null
+            ? null
+            : canonicalJson(patch.result),
         patch.last_error === undefined
           ? before.last_error === null
             ? null
@@ -411,10 +415,7 @@ export class TaskSqlStore {
 
 export function rowToRecord(row: TaskRow): TaskRecord {
   if (!isTaskState(row.state)) {
-    throw new TaskError(
-      "validation_failed",
-      `task row ${row.id} has unknown state "${row.state}"`,
-    );
+    throw new TaskError("validation_failed", `task row ${row.id} has unknown state "${row.state}"`);
   }
   return {
     id: row.id,
@@ -425,7 +426,8 @@ export function rowToRecord(row: TaskRow): TaskRecord {
     lease_owner: row.lease_owner,
     lease_expires_at: row.lease_expires_at,
     subagent_session_id: row.subagent_session_id,
-    last_error: row.last_error_json === null ? null : (JSON.parse(row.last_error_json) as SerializedError),
+    last_error:
+      row.last_error_json === null ? null : (JSON.parse(row.last_error_json) as SerializedError),
     result: row.result_json === null ? null : (JSON.parse(row.result_json) as SubagentResult),
     created_at: row.created_at,
     updated_at: row.updated_at,

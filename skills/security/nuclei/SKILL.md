@@ -22,12 +22,14 @@ with `security.nuclei-template`
 `security.nuclei` with `{ "targets": ["..."], "template": "artifacts/nuclei-templates/<finding-id>.yaml" }`.
 
 ## Reading the output
+
 `{ artifact, sha256, findings: [{ id, title, severity, target }], count }`.
 Every match is written to the findings database bound to this session's
 engagement, with severity, CVSS (when the template classifies one), and the
 run's raw JSONL output stored as the hash-recorded evidence artifact.
 
 ## Gotchas
+
 - A template MATCH is not a confirmed vulnerability — verify before
   remediating; update finding status once confirmed or marked false positive.
 - Findings can never carry a foreign engagement id — they inherit this
@@ -35,6 +37,7 @@ run's raw JSONL output stored as the hash-recorded evidence artifact.
 - Rate limits block rather than drop; large scans take time.
 
 ## Preserving output
+
 Findings and their raw-output artifact are recorded AUTOMATICALLY (the
 evidence artifact and its sha256 come back in the tool result). For any
 manually-recorded finding, cite that artifact path + hash as evidence.

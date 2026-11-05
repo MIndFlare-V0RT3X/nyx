@@ -23,7 +23,11 @@ import {
   emergencyTruncate,
   recentlyReferencedPaths,
 } from "./compaction-pipeline.js";
-import type { CompactionConfig, CompactionContext, CompactionModel } from "./compaction-pipeline.js";
+import type {
+  CompactionConfig,
+  CompactionContext,
+  CompactionModel,
+} from "./compaction-pipeline.js";
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -67,7 +71,11 @@ class FakeMemory implements MemoryStore {
     return this.entries.find((e) => e.id === id) ?? null;
   }
 
-  async list(opts?: { scope?: MemoryEntry["scope"][]; kind?: MemoryEntry["kind"]; limit?: number }) {
+  async list(opts?: {
+    scope?: MemoryEntry["scope"][];
+    kind?: MemoryEntry["kind"];
+    limit?: number;
+  }) {
     let out = this.entries;
     if (opts?.scope !== undefined) out = out.filter((e) => opts.scope!.includes(e.scope));
     if (opts?.kind !== undefined) out = out.filter((e) => e.kind === opts.kind);
@@ -227,7 +235,11 @@ describe("tier 1 — elision (§3.2)", () => {
       ...turn(1, { toolResultChars: 8_000 }),
       { role: "user", content: [{ type: "text", text: "now" }] },
     ];
-    const ctx = makeContext({ messages, current_tokens: estimateOf(messages), budget_tokens: 1_000 });
+    const ctx = makeContext({
+      messages,
+      current_tokens: estimateOf(messages),
+      budget_tokens: 1_000,
+    });
     const pipeline = createCompactionPipeline();
     // Snapshot the observable result shape (deterministic).
     const result = await pipeline.compact(ctx);
@@ -250,7 +262,9 @@ describe("tier 1 — elision (§3.2)", () => {
 describe("tier 2 — session memory (§3.3)", () => {
   it("a 25-turn session at 65% triggers session-memory compaction, writes the memory entry, compresses", async () => {
     const memory = new FakeMemory();
-    const model = new RecordingModel(["FACTS: did stuff. DECISIONS: ship it. STATE: mid-task. QUESTIONS: none."]);
+    const model = new RecordingModel([
+      "FACTS: did stuff. DECISIONS: ship it. STATE: mid-task. QUESTIONS: none.",
+    ]);
     const events: SessionEvent[] = [];
     const messages: Message[] = [
       ...PREAMBLE,
@@ -423,7 +437,9 @@ describe("tier 4 — emergency degrade (§3.5)", () => {
     const result = await createCompactionPipeline(config).compact(ctx);
 
     expect(result.tier).toBe("emergency");
-    const strategies = events.filter((e) => e.type === "compaction.started").map((e) => (e as { strategy: string }).strategy);
+    const strategies = events
+      .filter((e) => e.type === "compaction.started")
+      .map((e) => (e as { strategy: string }).strategy);
     expect(strategies).toEqual(["emergency-degrade"]);
     // Dropped roughly half; at least 10 retained; the current ask survives.
     expect(result.messages.length).toBeLessThan(messages.length - 5);
@@ -479,19 +495,32 @@ describe("post-compaction re-read (§3.6)", () => {
       { role: "user", content: [{ type: "text", text: "read big" }] },
       {
         role: "assistant",
-        content: [{ type: "tool_use", call_id: "c1", name: "fs.read", input: { path: "big-output.txt" } }],
+        content: [
+          { type: "tool_use", call_id: "c1", name: "fs.read", input: { path: "big-output.txt" } },
+        ],
       },
       {
         role: "assistant",
         content: [
-          { type: "tool_result", call_id: "c1", output: { kind: "text", text: "z".repeat(30_000) } },
+          {
+            type: "tool_result",
+            call_id: "c1",
+            output: { kind: "text", text: "z".repeat(30_000) },
+          },
         ],
       },
       { role: "assistant", content: [{ type: "text", text: "got it" }] },
       { role: "user", content: [{ type: "text", text: "now edit editing.txt" }] },
       {
         role: "assistant",
-        content: [{ type: "tool_use", call_id: "c2", name: "fs.write", input: { path: "editing.txt", content: "draft" } }],
+        content: [
+          {
+            type: "tool_use",
+            call_id: "c2",
+            name: "fs.write",
+            input: { path: "editing.txt", content: "draft" },
+          },
+        ],
       },
       { role: "user", content: [{ type: "text", text: "continue the edit" }] },
     ];
@@ -508,7 +537,9 @@ describe("post-compaction re-read (§3.6)", () => {
     expect(result.tier).toBe("elision");
     // editing.txt is back in context after the compaction dropped content.
     const reread = result.messages.find((m) =>
-      m.content.some((b) => b.type === "text" && b.text.includes("[context re-read after compaction")),
+      m.content.some(
+        (b) => b.type === "text" && b.text.includes("[context re-read after compaction"),
+      ),
     );
     expect(reread).toBeDefined();
     const text = JSON.stringify(reread);
@@ -530,7 +561,12 @@ describe("post-compaction re-read (§3.6)", () => {
       {
         role: "assistant",
         content: [
-          { type: "tool_use", call_id: "b", name: "fs.write", input: { path: "b.txt", content: "x" } },
+          {
+            type: "tool_use",
+            call_id: "b",
+            name: "fs.write",
+            input: { path: "b.txt", content: "x" },
+          },
           { type: "tool_use", call_id: "c", name: "web.fetch", input: { url: "http://x" } },
         ],
       },

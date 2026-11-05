@@ -68,8 +68,14 @@ function finding(overrides: Partial<Finding> = {}): Finding {
 
 async function evidenceDir(): Promise<{ root: string; artifact: Finding["evidence"] }> {
   const root = await tmpDir("nyx-report-ev-");
-  await writeFile(path.join(root, "xss-poc.txt"), "GET /portal/login?q=<script>alert(1)</script>", "utf8");
-  const hash = createHash("sha256").update(readFileSync(path.join(root, "xss-poc.txt"))).digest("hex");
+  await writeFile(
+    path.join(root, "xss-poc.txt"),
+    "GET /portal/login?q=<script>alert(1)</script>",
+    "utf8",
+  );
+  const hash = createHash("sha256")
+    .update(readFileSync(path.join(root, "xss-poc.txt")))
+    .digest("hex");
   return {
     root,
     artifact: [{ path: "xss-poc.txt", hash, mime: "text/plain" }],
@@ -86,7 +92,9 @@ async function evidencedFindings(
   for (const [i, o] of overrides.entries()) {
     const name = `ev-${i}-${Math.random().toString(36).slice(2, 8)}.txt`;
     await writeFile(path.join(root, name), `evidence for ${o.id ?? i}\n`, "utf8");
-    const hash = createHash("sha256").update(readFileSync(path.join(root, name))).digest("hex");
+    const hash = createHash("sha256")
+      .update(readFileSync(path.join(root, name)))
+      .digest("hex");
     out.push(finding({ ...o, evidence: [{ path: name, hash, mime: "text/plain" }] }));
   }
   return out;
@@ -101,7 +109,14 @@ describe("generateReport — the scope gate (§2.4)", () => {
       finding({ id: "f-evil", title: "Hostile finding", target: { host: "evilcorp.example.net" } }),
     ];
     await expect(
-      generateReport({ engagement: engagement(), findings, evidence_root: root, format: "markdown", out_path: out, now: () => NOW }),
+      generateReport({
+        engagement: engagement(),
+        findings,
+        evidence_root: root,
+        format: "markdown",
+        out_path: out,
+        now: () => NOW,
+      }),
     ).rejects.toBeInstanceOf(OutOfScopeFindingError);
     expect(existsSync(out)).toBe(false);
   });
@@ -141,7 +156,10 @@ describe("generateReport — the scope gate (§2.4)", () => {
       { id: "in", target: { host: "app.example.com", path: "/portal/login" } },
     ]);
     const ok = await generateReport({
-      engagement: { ...engagement(), targets: { domains: [], cidrs: [], urls: ["https://app.example.com/portal/*"] } },
+      engagement: {
+        ...engagement(),
+        targets: { domains: [], cidrs: [], urls: ["https://app.example.com/portal/*"] },
+      },
       findings,
       evidence_root: root,
       format: "markdown",
@@ -150,7 +168,10 @@ describe("generateReport — the scope gate (§2.4)", () => {
     expect(ok.findings_included).toBe(1);
     await expect(
       generateReport({
-        engagement: { ...engagement(), targets: { domains: [], cidrs: [], urls: ["https://app.example.com/portal/*"] } },
+        engagement: {
+          ...engagement(),
+          targets: { domains: [], cidrs: [], urls: ["https://app.example.com/portal/*"] },
+        },
         findings: await evidencedFindings(root, [
           { id: "out", target: { host: "app.example.com", path: "/admin/login" } },
         ]),
@@ -199,7 +220,9 @@ describe("generateReport — the evidence gate (§2.4)", () => {
     await expect(
       generateReport({
         engagement: engagement(),
-        findings: [finding({ evidence: [{ path: "gone.txt", hash: "0".repeat(64), mime: "text/plain" }] })],
+        findings: [
+          finding({ evidence: [{ path: "gone.txt", hash: "0".repeat(64), mime: "text/plain" }] }),
+        ],
         evidence_root: root,
         format: "markdown",
         now: () => NOW,
@@ -210,7 +233,9 @@ describe("generateReport — the evidence gate (§2.4)", () => {
   it("a path escaping the workspace aborts the report", async () => {
     const root = await tmpDir("nyx-report-esc-");
     await expect(
-      verifyEvidence(root, [{ path: "../../etc/passwd", hash: "0".repeat(64), mime: "text/plain" }]),
+      verifyEvidence(root, [
+        { path: "../../etc/passwd", hash: "0".repeat(64), mime: "text/plain" },
+      ]),
     ).rejects.toMatchObject({ code: "escape" });
   });
 });
@@ -233,9 +258,7 @@ describe("report-gate regressions (the two-reviewer fan-out)", () => {
 
   it("R1-8 (the other edge): a finding discovered BEFORE the window opened is refused", async () => {
     const root = await tmpDir("nyx-report-early-");
-    const findings = await evidencedFindings(root, [
-      { discovered_at: Date.UTC(2026, 9, 1) },
-    ]);
+    const findings = await evidencedFindings(root, [{ discovered_at: Date.UTC(2026, 9, 1) }]);
     await expect(
       generateReport({
         engagement: engagement(),
@@ -267,7 +290,13 @@ describe("report-gate regressions (the two-reviewer fan-out)", () => {
       { id: "hostport", target: { host: "example.com:8080" } },
     ]);
     await expect(
-      generateReport({ engagement: eng, findings, evidence_root: root, format: "markdown", now: () => NOW }),
+      generateReport({
+        engagement: eng,
+        findings,
+        evidence_root: root,
+        format: "markdown",
+        now: () => NOW,
+      }),
     ).rejects.toMatchObject({ name: "OutOfScopeFindingError" });
   });
 
@@ -278,7 +307,10 @@ describe("report-gate regressions (the two-reviewer fan-out)", () => {
     ]);
     await expect(
       generateReport({
-        engagement: { ...engagement(), targets: { domains: [], cidrs: [], urls: ["https://example.com/portal/*"] } },
+        engagement: {
+          ...engagement(),
+          targets: { domains: [], cidrs: [], urls: ["https://example.com/portal/*"] },
+        },
         findings,
         evidence_root: root,
         format: "markdown",
@@ -321,7 +353,13 @@ describe("generateReport — markdown (§2.4)", () => {
       { id: "low", severity: "low", title: "Low finding" },
       { id: "crit", severity: "critical", title: "Critical finding", cvss_4_0: 9.4 },
       { id: "high", severity: "high", title: "High finding", cvss_3_1: 8.3 },
-      { id: "crit2", severity: "critical", title: "Older critical", cvss_4_0: 9.0, discovered_at: NOW - 7_200_000 },
+      {
+        id: "crit2",
+        severity: "critical",
+        title: "Older critical",
+        cvss_4_0: 9.0,
+        discovered_at: NOW - 7_200_000,
+      },
     ]);
     const report = await generateReport({
       engagement: engagement(),

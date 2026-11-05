@@ -53,7 +53,10 @@ function audit(
   checks.push({ name, status, detail });
 }
 
-export async function pluginAudit(dir: string, opts?: PluginAuditOptions): Promise<PluginAuditReport> {
+export async function pluginAudit(
+  dir: string,
+  opts?: PluginAuditOptions,
+): Promise<PluginAuditReport> {
   const checks: PluginAuditCheck[] = [];
   const env = opts?.env ?? process.env;
   const effectiveMode = resolveSignatureMode(opts?.configured_mode, env.NYX_ENV);
@@ -165,7 +168,12 @@ export async function pluginAudit(dir: string, opts?: PluginAuditOptions): Promi
       checks,
     );
   } else {
-    audit("signature", "ok", `valid, from trusted key ${manifest.signature?.public_key.slice(0, 16)}…`, checks);
+    audit(
+      "signature",
+      "ok",
+      `valid, from trusted key ${manifest.signature?.public_key.slice(0, 16)}…`,
+      checks,
+    );
   }
 
   // Capability surface (static half; the runtime half is kernel.list_plugins()).

@@ -88,7 +88,10 @@ interface GhsaResponse {
  */
 export function createPinnedJsonFetch(deps: CveServicesDeps = {}): JsonFetch {
   const resolver = deps.resolver;
-  return async (url: string, init?: { method?: "GET" | "POST"; body?: string }): Promise<unknown> => {
+  return async (
+    url: string,
+    init?: { method?: "GET" | "POST"; body?: string },
+  ): Promise<unknown> => {
     const u = new URL(url);
     const host = u.hostname;
     if (
@@ -110,8 +113,7 @@ export function createPinnedJsonFetch(deps: CveServicesDeps = {}): JsonFetch {
     }
     const headers: Record<string, string> = {
       host: host,
-      accept:
-        host === CVE_SERVICE_HOSTS.ghsa ? "application/vnd.github+json" : "application/json",
+      accept: host === CVE_SERVICE_HOSTS.ghsa ? "application/vnd.github+json" : "application/json",
       "user-agent": "nyx-cve-correlator/1",
     };
     const method = init?.method ?? "GET";
@@ -239,7 +241,9 @@ export async function queryCveServices(
   // 3. GHSA enrichment — capped at the first 5 unique CVEs (R3-5: the loop
   // is sequential with a 15 s per-request timeout; unbounded, a broad NVD
   // page would blow the tool's own 60 s budget and fire past its teardown).
-  const seen = [...new Set(candidates.map((c) => c.cve).filter((c): c is string => c !== null))].slice(0, 5);
+  const seen = [
+    ...new Set(candidates.map((c) => c.cve).filter((c): c is string => c !== null)),
+  ].slice(0, 5);
   let ghsaError = false;
   for (const cve of seen) {
     const ghsaUrl =
@@ -248,10 +252,7 @@ export async function queryCveServices(
     const ghsa = (await fetchImpl(ghsaUrl).catch(() => {
       ghsaError = true;
       return null;
-    })) as
-      | Array<GhsaResponse>
-      | { items?: Array<GhsaResponse> }
-      | null;
+    })) as Array<GhsaResponse> | { items?: Array<GhsaResponse> } | null;
     const items = Array.isArray(ghsa)
       ? ghsa
       : ghsa !== null && Array.isArray((ghsa as { items?: Array<GhsaResponse> }).items)

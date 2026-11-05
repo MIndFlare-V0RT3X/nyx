@@ -22,8 +22,18 @@ function makeStack(archivePath?: string): Stack {
   const db = new Database(":memory:");
   db.pragma("journal_mode = WAL");
   db.pragma("busy_timeout = 5000");
-  const store = openSessionStore(":memory:", { db, ...(archivePath !== undefined ? { archivePath } : {}) });
-  const stack: Stack = { db, store, close: () => { store.close(); db.close(); } };
+  const store = openSessionStore(":memory:", {
+    db,
+    ...(archivePath !== undefined ? { archivePath } : {}),
+  });
+  const stack: Stack = {
+    db,
+    store,
+    close: () => {
+      store.close();
+      db.close();
+    },
+  };
   stacks.push(stack);
   return stack;
 }
@@ -43,7 +53,9 @@ function archiveViaSql(s: Stack, session_id: string, now: number): void {
     .run(session_id);
   const txn = s.db.transaction(() => {
     s.db.prepare("DELETE FROM events WHERE session_id = ?").run(session_id);
-    s.db.prepare("UPDATE sessions SET archived = 1, archived_at = ? WHERE id = ?").run(now, session_id);
+    s.db
+      .prepare("UPDATE sessions SET archived = 1, archived_at = ? WHERE id = ?")
+      .run(now, session_id);
   });
   txn();
 }
@@ -93,7 +105,14 @@ describe("a store WITH the archive attached", () => {
     // Immutability: appends and forks are refused with the typed error.
     await expect(
       s.store.append(meta.session_id, [
-        { type: "subagent.aborted", session_id: meta.session_id, subagent_session_id: meta.session_id, parent_session_id: "none", reason: "late", ts: 2 },
+        {
+          type: "subagent.aborted",
+          session_id: meta.session_id,
+          subagent_session_id: meta.session_id,
+          parent_session_id: "none",
+          reason: "late",
+          ts: 2,
+        },
       ]),
     ).rejects.toMatchObject({ code: "archived" });
     await expect(s.store.fork(meta.session_id, 1)).rejects.toMatchObject({ code: "archived" });
@@ -106,7 +125,9 @@ describe("a store WITHOUT the archive attached", () => {
     const meta = await s.store.create({ owner_id: "o", persona_id: "p", kind: "subagent" });
     // The events were moved by ANOTHER process (its archive, its handle).
     s.db.prepare("DELETE FROM events WHERE session_id = ?").run(meta.session_id);
-    s.db.prepare("UPDATE sessions SET archived = 1, archived_at = 1 WHERE id = ?").run(meta.session_id);
+    s.db
+      .prepare("UPDATE sessions SET archived = 1, archived_at = 1 WHERE id = ?")
+      .run(meta.session_id);
 
     expect((await s.store.meta(meta.session_id))!.archived_at).toBe(1); // meta still fine
     await expect(s.store.read(meta.session_id)).rejects.toMatchObject({ code: "archived" });

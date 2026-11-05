@@ -54,8 +54,15 @@ export const burpInput = z
 const INPUT_SCHEMA = {
   type: "object",
   properties: {
-    action: { type: "string", enum: ["wiring", "capture"], description: "Get the upstream-proxy wiring, or capture a Burp XML history export." },
-    file: { type: "string", description: "capture: workspace-relative Burp 'Save items' XML export." },
+    action: {
+      type: "string",
+      enum: ["wiring", "capture"],
+      description: "Get the upstream-proxy wiring, or capture a Burp XML history export.",
+    },
+    file: {
+      type: "string",
+      description: "capture: workspace-relative Burp 'Save items' XML export.",
+    },
   },
   required: ["action"],
   additionalProperties: false,
@@ -105,7 +112,7 @@ export function parseBurpXml(xml: string): BurpHistoryItem[] {
     const body = block.split("</item>")[0] ?? "";
     const pick = (tag: string): string | null => {
       const m = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`).exec(body);
-      return m !== null ? m[1]?.trim() ?? null : null;
+      return m !== null ? (m[1]?.trim() ?? null) : null;
     };
     const hostTag = /<host\s+ip="([^"]*)"[^>]*>([\s\S]*?)<\/host>/.exec(body);
     const statusText = pick("status");
@@ -122,8 +129,7 @@ export function parseBurpXml(xml: string): BurpHistoryItem[] {
       method: pick("method"),
       path: pick("path") !== null ? decodeCdata(pick("path")!) : null,
       status: statusText !== null && /^\d+$/.test(statusText) ? Number(statusText) : null,
-      responselength:
-        lenText !== null && /^\d+$/.test(lenText) ? Number(lenText) : null,
+      responselength: lenText !== null && /^\d+$/.test(lenText) ? Number(lenText) : null,
       mimetype: pick("mimetype"),
     });
   }
@@ -180,8 +186,10 @@ export function burpHandler(deps: SecurityToolDeps): ToolHandler {
       const items = parseBurpXml(xml);
       if (items.length === 0) {
         throw Object.assign(
-          new Error(`no <item> entries parsed from ${input.file} — is it a Burp "Save items" XML export?`),
-          { name: "SecurityToolError", "code": "skill.error" as const },
+          new Error(
+            `no <item> entries parsed from ${input.file} — is it a Burp "Save items" XML export?`,
+          ),
+          { name: "SecurityToolError", code: "skill.error" as const },
         );
       }
       const engagement = ctx.engagement;
@@ -194,7 +202,10 @@ export function burpHandler(deps: SecurityToolDeps): ToolHandler {
         }
         const verdict = checkUrl(engagement, item.url);
         if (verdict.allowed) {
-          inScope.push({ ...item, ...(verdict.matched !== undefined ? { verdict_matched: verdict.matched } : {}) });
+          inScope.push({
+            ...item,
+            ...(verdict.matched !== undefined ? { verdict_matched: verdict.matched } : {}),
+          });
         } else {
           outOfScope.push({ url: item.url, reason: verdict.reason });
         }

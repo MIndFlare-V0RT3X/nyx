@@ -24,10 +24,10 @@ stop(): Promise<void>;
 ```ts
 interface HeartbeatSpec {
   id: string;
-  schedule: string;        // 5-field cron, UTC
-  persona_id?: string;     // default: the configured default persona
-  session_id?: string;     // default: a new session per fire
-  prompt: string;          // the user message of the generated turn
+  schedule: string; // 5-field cron, UTC
+  persona_id?: string; // default: the configured default persona
+  session_id?: string; // default: a new session per fire
+  prompt: string; // the user message of the generated turn
   priority: "heartbeat";
   enabled: boolean;
 }
@@ -94,7 +94,6 @@ Two recommendations live commented in `nyx.config.example.yaml`, both
 
 Both prompts are plain user messages to the persona — the harness adds no
 special authority to heartbeat turns.
-
 
 ## Timezones (Phase 2)
 

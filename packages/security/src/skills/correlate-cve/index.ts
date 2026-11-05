@@ -36,7 +36,11 @@ const CORRELATE_INPUT_SCHEMA = {
     finding_id: { type: "string", description: "The finding to correlate." },
     product: { type: "string", description: "Affected product name, e.g. 'Apache httpd'." },
     version: { type: "string", description: "Affected version, e.g. '2.4.49'." },
-    vuln_terms: { type: "array", items: { type: "string" }, description: "Vulnerability class terms, e.g. ['path traversal']." },
+    vuln_terms: {
+      type: "array",
+      items: { type: "string" },
+      description: "Vulnerability class terms, e.g. ['path traversal'].",
+    },
   },
   required: ["finding_id", "product"],
   additionalProperties: false,
@@ -126,12 +130,10 @@ export function correlateCveHandler(
       const { candidates, service_status } = outcome;
       // R3-8: CVE-less advisories still count — "match" is about evidence,
       // not the registry id.
-      const cves = [...new Set(candidates
-        .map((c) => c.cve)
-        .filter((c): c is string => c !== null))];
-      const advisories = [...new Set(candidates
-        .filter((c) => c.cve === null)
-        .map((c) => c.url))];
+      const cves = [
+        ...new Set(candidates.map((c) => c.cve).filter((c): c is string => c !== null)),
+      ];
+      const advisories = [...new Set(candidates.filter((c) => c.cve === null).map((c) => c.url))];
       const allServicesOk =
         service_status.nvd === "ok" && service_status.osv === "ok" && service_status.ghsa === "ok";
       const matched = cves.length > 0 || advisories.length > 0;

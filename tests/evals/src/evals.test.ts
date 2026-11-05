@@ -144,10 +144,31 @@ describe("behavioral evals (Phase 7.4)", () => {
         ],
       },
       [
-        { name: "kept", description: "", pass: true, failures: [], trajectory: ["a"], histogram: ["a×1"] },
+        {
+          name: "kept",
+          description: "",
+          pass: true,
+          failures: [],
+          trajectory: ["a"],
+          histogram: ["a×1"],
+        },
         { name: "added", description: "", pass: true, failures: [], trajectory: [], histogram: [] },
-        { name: "flipped", description: "", pass: false, failures: ["nope"], trajectory: [], histogram: [] },
-        { name: "drifted", description: "", pass: true, failures: [], trajectory: ["y"], histogram: ["y×1"] },
+        {
+          name: "flipped",
+          description: "",
+          pass: false,
+          failures: ["nope"],
+          trajectory: [],
+          histogram: [],
+        },
+        {
+          name: "drifted",
+          description: "",
+          pass: true,
+          failures: [],
+          trajectory: ["y"],
+          histogram: ["y×1"],
+        },
       ] as unknown as EvalOutcome[],
     );
     const text = diff.join("\n");

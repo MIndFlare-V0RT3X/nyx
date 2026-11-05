@@ -220,8 +220,7 @@ describe("subagents over the server API (Phase 3)", () => {
     expect(completed).toHaveLength(2);
     expect(
       parentEvents.filter(
-        (e) =>
-          e.type === "turn.started" || e.type === "message.user" || e.type === "text.delta",
+        (e) => e.type === "turn.started" || e.type === "message.user" || e.type === "text.delta",
       ).length,
     ).toBeGreaterThan(0);
     expect(parentEvents.filter((e) => e.type === "subagent.spawned").length).toBe(2);
@@ -246,7 +245,9 @@ describe("subagents over the server API (Phase 3)", () => {
     const spawns = body.projection.tool_calls.filter((t) => t.name === "spawn_subagent");
     expect(spawns).toHaveLength(2);
     expect(spawns.every((t) => t.status === "ok")).toBe(true);
-    const summaries = spawns.map((t) => ((t.output as { json: { summary: string } }).json).summary).sort();
+    const summaries = spawns
+      .map((t) => (t.output as { json: { summary: string } }).json.summary)
+      .sort();
     expect(summaries).toEqual(["apples are fruit", "bears are mammals"]);
 
     // Children ran in PARALLEL: their event windows overlap.
@@ -379,7 +380,9 @@ describe("subagents over the server API (Phase 3)", () => {
         }
       }
     }
-    const stream: ModelChunk[] = [{ type: "usage", usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } }];
+    const stream: ModelChunk[] = [
+      { type: "usage", usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } },
+    ];
     for (let i = 0; i < 30; i++) stream.push({ type: "text.delta", text: `c${i} ` });
     stream.push({ type: "done", finish_reason: "stop" });
     const provider = new SlowDispatchProvider();

@@ -80,7 +80,12 @@ describe("SqliteRateBucketStore", () => {
     // 6 interleaved acquires across the two "processes" on ONE host bucket.
     for (let i = 0; i < 6; i += 1) {
       const limiter = i % 2 === 0 ? a : b;
-      await limiter.acquire({ engagement: engagement(), tool_class: null, ...target, unit: "requests" });
+      await limiter.acquire({
+        engagement: engagement(),
+        tool_class: null,
+        ...target,
+        unit: "requests",
+      });
     }
     // The sleep is stubbed, but the SLOT the 6th acquire reserved must be
     // 6 intervals out (1.2 s at 5 rps): interleave two processes and the
@@ -103,11 +108,9 @@ describe("SqliteRateBucketStore", () => {
       host: "sql.example.com",
       unit: "requests",
     });
-    const keys = (
-      db
-        .prepare("SELECT key FROM rate_buckets")
-        .all() as Array<{ key: string }>
-    ).map((r) => r.key);
+    const keys = (db.prepare("SELECT key FROM rate_buckets").all() as Array<{ key: string }>).map(
+      (r) => r.key,
+    );
     expect(keys).toContain(`${engagement().id}|class:sqlmap|sql.example.com`);
     expect(keys).toContain(`${engagement().id}|host:sql.example.com`);
   });

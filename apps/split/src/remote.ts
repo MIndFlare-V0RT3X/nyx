@@ -240,7 +240,11 @@ export class RemoteToolRuntime implements ToolRuntimeService {
   ): Promise<ToolOutput> {
     const result = await this.tools.request<{ events: SessionEvent[]; output: ToolOutput | null }>({
       type: "tool.execute",
-      call: { call_id: call.call_id, name: call.name, input: call.input as Record<string, unknown> },
+      call: {
+        call_id: call.call_id,
+        name: call.name,
+        input: call.input as Record<string, unknown>,
+      },
       context: {
         session_id: ctx.session_id,
         turn_id: ctx.turn_id,

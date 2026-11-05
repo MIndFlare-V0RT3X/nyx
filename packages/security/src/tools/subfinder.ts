@@ -11,7 +11,11 @@ import type { SecurityToolDeps } from "./shared.js";
 
 export const subfinderInput = z
   .object({
-    domain: z.string().min(4).max(253).regex(/^[a-z0-9.-]+$/i, "domain name"),
+    domain: z
+      .string()
+      .min(4)
+      .max(253)
+      .regex(/^[a-z0-9.-]+$/i, "domain name"),
   })
   .strict();
 

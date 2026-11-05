@@ -18,22 +18,22 @@ wire truth for every shape is the Zod schemas in
 
 ## REST API
 
-| Method | Path                               | Request                                              | Response                                         |
-| ------ | ---------------------------------- | ---------------------------------------------------- | ------------------------------------------------ |
-| POST   | `/v1/sessions`                     | `{persona_id?, title?, engagement?}`                 | `201 SessionMeta`                                |
-| GET    | `/v1/sessions?limit=&owner_id=&include_subagents=` | —                              | `SessionMeta[]` (subagents hidden unless `include_subagents=true`) |
-| GET    | `/v1/sessions/:id`                 | —                                                    | `{session: SessionMeta, projection: Projection}` |
-| GET    | `/v1/sessions/:id/events?from_seq` | —                                                    | SSE stream (`text/event-stream`)                 |
-| POST   | `/v1/sessions/:id/turns`           | `{content: ContentBlock[] \| {text: string}, task?}` | `202 {turn_id, session_id}`                      |
-| POST   | `/v1/sessions/:id/fork`            | `{at_seq: number}`                                   | `201 SessionMeta`                                |
-| GET    | `/v1/sessions/:id/subagents`       | —                                                    | `SubagentInfo[]` (Phase 3)                       |
-| DELETE | `/v1/subagents/:id`                | —                                                    | `{aborted: id}` (owner-only, 403 otherwise)      |
-| DELETE | `/v1/sessions/:id`                 | —                                                    | `{archived, session}` (subagent sessions only)   |
-| GET    | `/v1/approvals?session_id=`        | —                                                    | `ApprovalRecord[]` (pending)                     |
-| POST   | `/v1/approvals/:id`                | `{decision: "allow" \| "deny"}`                      | `ApprovalRecord` (403 for non-owner on R4)       |
-| GET    | `/v1/models`                       | —                                                    | `ModelInfo[]`                                    |
-| GET    | `/v1/health`                       | —                                                    | `{status, version, sandbox, providers}`          |
-| WS     | `/v1/ws`                           | —                                                    | multiplexed subscription channel                 |
+| Method | Path                                               | Request                                              | Response                                                           |
+| ------ | -------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------ |
+| POST   | `/v1/sessions`                                     | `{persona_id?, title?, engagement?}`                 | `201 SessionMeta`                                                  |
+| GET    | `/v1/sessions?limit=&owner_id=&include_subagents=` | —                                                    | `SessionMeta[]` (subagents hidden unless `include_subagents=true`) |
+| GET    | `/v1/sessions/:id`                                 | —                                                    | `{session: SessionMeta, projection: Projection}`                   |
+| GET    | `/v1/sessions/:id/events?from_seq`                 | —                                                    | SSE stream (`text/event-stream`)                                   |
+| POST   | `/v1/sessions/:id/turns`                           | `{content: ContentBlock[] \| {text: string}, task?}` | `202 {turn_id, session_id}`                                        |
+| POST   | `/v1/sessions/:id/fork`                            | `{at_seq: number}`                                   | `201 SessionMeta`                                                  |
+| GET    | `/v1/sessions/:id/subagents`                       | —                                                    | `SubagentInfo[]` (Phase 3)                                         |
+| DELETE | `/v1/subagents/:id`                                | —                                                    | `{aborted: id}` (owner-only, 403 otherwise)                        |
+| DELETE | `/v1/sessions/:id`                                 | —                                                    | `{archived, session}` (subagent sessions only)                     |
+| GET    | `/v1/approvals?session_id=`                        | —                                                    | `ApprovalRecord[]` (pending)                                       |
+| POST   | `/v1/approvals/:id`                                | `{decision: "allow" \| "deny"}`                      | `ApprovalRecord` (403 for non-owner on R4)                         |
+| GET    | `/v1/models`                                       | —                                                    | `ModelInfo[]`                                                      |
+| GET    | `/v1/health`                                       | —                                                    | `{status, version, sandbox, providers}`                            |
+| WS     | `/v1/ws`                                           | —                                                    | multiplexed subscription channel                                   |
 
 Route notes:
 
@@ -154,29 +154,29 @@ server composing engines — approval events are appended via the approval
 engine's post-commit callbacks, because the engine itself has no route to the
 event log).
 
-| Event type             | Fields (beyond the common ones)                                              | Emitted when                                                                                | Emitter        |
-| ---------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | -------------- |
-| `session.created`      | `owner_id`, `persona_id`, `parent_id`, `engagement`                          | a session is created (fork children carry the parent's id)                                  | store          |
-| `turn.started`         | —                                                                            | a turn begins                                                                               | loop           |
-| `message.user`         | `content: ContentBlock[]`                                                    | the user message is recorded for the turn                                                   | loop           |
-| `message.assistant`    | `content: ContentBlock[]`                                                    | the final assistant message is recorded                                                     | loop           |
-| `text.delta`           | `text`                                                                       | a streaming text chunk from the model                                                       | loop           |
-| `reasoning.delta`      | `text`                                                                       | a streaming reasoning chunk from the model                                                  | loop           |
-| `tool.call`            | `call_id`, `name`, `input`                                                   | the model requests a tool call, before enforcement                                          | loop → runtime |
-| `tool.result`          | `call_id`, `output: ToolOutput`                                              | the handler returned                                                                        | runtime        |
-| `tool.error`           | `call_id`, `error: SerializedError`                                          | the handler threw or timed out                                                              | runtime        |
-| `action.denied`        | `call_id`, `reason: "policy" \| "approval" \| "scope"`, `detail`, `rule_id?` | enforcement refused the call                                                                | runtime        |
-| `approval.requested`   | `approval_id`, `action_digest`, `summary`, `risk`                            | a policy verdict returned `ask` and the pending approval row was created                    | surface        |
-| `approval.resolved`    | `approval_id`, `decision: "allow" \| "deny"`, `decided_by`                   | an operator resolved the approval, or expiry auto-denied it (`decided_by: "system:expiry"`) | surface        |
-| `compaction.started`   | `strategy`                                                                   | context compaction begins (Phase 0: `rule-elision`; the other strategies are seams)         | loop           |
-| `compaction.completed` | `strategy`, `freed_tokens`                                                   | compaction finished                                                                         | loop           |
-| `turn.completed`       | `usage: Usage`                                                               | the turn ended normally                                                                     | loop           |
-| `turn.failed`          | `error: SerializedError`                                                     | the turn ended in error (after one recovery attempt)                                        | loop           |
-| `session.forked`       | `new_session_id`, `at_seq`                                                   | the session was forked; recorded on the parent's log                                        | store          |
-| `subagent.spawned`     | `subagent_session_id`, `turn_id`, `parent_session_id`, `parent_turn_id`, `task`, `depth` | a subagent child was spawned; mirrored on BOTH logs (Phase 3)              | manager        |
-| `subagent.completed`   | `subagent_session_id`, `parent_session_id`, `summary`, `tokens_used`, `duration_ms` | the child's turn completed; the summary is the only thing that crosses back | manager        |
-| `subagent.failed`      | `subagent_session_id`, `parent_session_id`, `error`                          | the child's turn failed (incl. `budget_exceeded`)                                           | manager        |
-| `subagent.aborted`     | `subagent_session_id`, `parent_session_id`, `reason`                         | the child was aborted (parent abort, external request)                                      | manager        |
+| Event type             | Fields (beyond the common ones)                                                          | Emitted when                                                                                | Emitter        |
+| ---------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | -------------- |
+| `session.created`      | `owner_id`, `persona_id`, `parent_id`, `engagement`                                      | a session is created (fork children carry the parent's id)                                  | store          |
+| `turn.started`         | —                                                                                        | a turn begins                                                                               | loop           |
+| `message.user`         | `content: ContentBlock[]`                                                                | the user message is recorded for the turn                                                   | loop           |
+| `message.assistant`    | `content: ContentBlock[]`                                                                | the final assistant message is recorded                                                     | loop           |
+| `text.delta`           | `text`                                                                                   | a streaming text chunk from the model                                                       | loop           |
+| `reasoning.delta`      | `text`                                                                                   | a streaming reasoning chunk from the model                                                  | loop           |
+| `tool.call`            | `call_id`, `name`, `input`                                                               | the model requests a tool call, before enforcement                                          | loop → runtime |
+| `tool.result`          | `call_id`, `output: ToolOutput`                                                          | the handler returned                                                                        | runtime        |
+| `tool.error`           | `call_id`, `error: SerializedError`                                                      | the handler threw or timed out                                                              | runtime        |
+| `action.denied`        | `call_id`, `reason: "policy" \| "approval" \| "scope"`, `detail`, `rule_id?`             | enforcement refused the call                                                                | runtime        |
+| `approval.requested`   | `approval_id`, `action_digest`, `summary`, `risk`                                        | a policy verdict returned `ask` and the pending approval row was created                    | surface        |
+| `approval.resolved`    | `approval_id`, `decision: "allow" \| "deny"`, `decided_by`                               | an operator resolved the approval, or expiry auto-denied it (`decided_by: "system:expiry"`) | surface        |
+| `compaction.started`   | `strategy`                                                                               | context compaction begins (Phase 0: `rule-elision`; the other strategies are seams)         | loop           |
+| `compaction.completed` | `strategy`, `freed_tokens`                                                               | compaction finished                                                                         | loop           |
+| `turn.completed`       | `usage: Usage`                                                                           | the turn ended normally                                                                     | loop           |
+| `turn.failed`          | `error: SerializedError`                                                                 | the turn ended in error (after one recovery attempt)                                        | loop           |
+| `session.forked`       | `new_session_id`, `at_seq`                                                               | the session was forked; recorded on the parent's log                                        | store          |
+| `subagent.spawned`     | `subagent_session_id`, `turn_id`, `parent_session_id`, `parent_turn_id`, `task`, `depth` | a subagent child was spawned; mirrored on BOTH logs (Phase 3)                               | manager        |
+| `subagent.completed`   | `subagent_session_id`, `parent_session_id`, `summary`, `tokens_used`, `duration_ms`      | the child's turn completed; the summary is the only thing that crosses back                 | manager        |
+| `subagent.failed`      | `subagent_session_id`, `parent_session_id`, `error`                                      | the child's turn failed (incl. `budget_exceeded`)                                           | manager        |
+| `subagent.aborted`     | `subagent_session_id`, `parent_session_id`, `reason`                                     | the child was aborted (parent abort, external request)                                      | manager        |
 
 `ToolOutput` is one of `{kind: "text", text}`, `{kind: "json", json}`,
 `{kind: "file", path, bytes, mime}`, or `{kind: "artifact", artifact_id, path,

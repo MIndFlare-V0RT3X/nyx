@@ -368,11 +368,11 @@ class DockerSandbox implements ForkableSandbox {
       // NO window in which the child runs against an empty /workspace.
       // Permissions and symlinks preserved via cp -a.
       const cpExit = await new Promise<number | null>((resolveP, rejectP) => {
-        const cp = spawn("cp", [
-          "-a",
-          `${this.hostDir}${path.sep}.`,
-          `${childHostDir}${path.sep}`,
-        ], { stdio: ["ignore", "ignore", "ignore"] });
+        const cp = spawn(
+          "cp",
+          ["-a", `${this.hostDir}${path.sep}.`, `${childHostDir}${path.sep}`],
+          { stdio: ["ignore", "ignore", "ignore"] },
+        );
         cp.once("error", (e: Error) => rejectP(e));
         cp.once("close", (code) => resolveP(code));
       });
@@ -427,9 +427,7 @@ class DockerSandbox implements ForkableSandbox {
       // The child shares the parent's egress network and its listeners, but
       // NEVER unbinds them (R1-10: only the owner does); it best-effort
       // removes the network when it is the last endpoint out.
-      this.egressNet !== undefined
-        ? { ...this.egressNet, ownsListeners: false }
-        : undefined,
+      this.egressNet !== undefined ? { ...this.egressNet, ownsListeners: false } : undefined,
     );
   }
 
@@ -587,11 +585,9 @@ class DockerSandbox implements ForkableSandbox {
     const egress = this.egressNet;
     if (egress === undefined) return;
     try {
-      const r = await cliRun(
-        this.dockerBin,
-        egressNetworkConnectedContainersArgs(egress.network),
-        { timeout_ms: 30_000 },
-      );
+      const r = await cliRun(this.dockerBin, egressNetworkConnectedContainersArgs(egress.network), {
+        timeout_ms: 30_000,
+      });
       if (r.exit_code !== 0) return; // already removed, or daemon hiccup
       const remaining = r.stdout
         .split("\n")
@@ -739,9 +735,7 @@ export class DockerSandboxProvider implements SandboxProvider {
       void cliRun(this.dockerBin, ["rm", "-f", container]).catch(() => undefined);
       if (egressNet !== undefined) {
         void egressNet.binder.unbindNetwork(egressNet.listenerOwnerSandboxId);
-        void cliRun(this.dockerBin, egressNetworkRmArgs(egressNet.network)).catch(
-          () => undefined,
-        );
+        void cliRun(this.dockerBin, egressNetworkRmArgs(egressNet.network)).catch(() => undefined);
       }
       throw providerError(
         `docker run timed out after ${RUN_TIMEOUT_MS}ms (first run may be pulling ${image})`,
@@ -750,9 +744,7 @@ export class DockerSandboxProvider implements SandboxProvider {
     if (r.exit_code !== 0) {
       if (egressNet !== undefined) {
         await egressNet.binder.unbindNetwork(egressNet.listenerOwnerSandboxId);
-        await cliRun(this.dockerBin, egressNetworkRmArgs(egressNet.network)).catch(
-          () => undefined,
-        );
+        await cliRun(this.dockerBin, egressNetworkRmArgs(egressNet.network)).catch(() => undefined);
       }
       throwIfFailed("run", r);
     }

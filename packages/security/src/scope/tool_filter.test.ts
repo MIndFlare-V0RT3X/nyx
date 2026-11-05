@@ -11,10 +11,7 @@ import {
   EngagementToolRegistry,
   buildEngagementTooling,
 } from "./tool_filter.js";
-import {
-  createScopeEngine,
-  actionDigest,
-} from "./engine.js";
+import { createScopeEngine, actionDigest } from "./engine.js";
 import type { SessionEvent, ToolDefinition, ToolHandler, ToolRegistry } from "@nyx/protocol";
 import { ToolRegistryImpl } from "@nyx/tools";
 import type { ToolRuntime } from "@nyx/tools";
@@ -116,8 +113,16 @@ describe("EngagementToolRegistry — the read-through view", () => {
   }
 
   it("list() and get() hide unauthorized security tools; others pass through", () => {
-    const view = new EngagementToolRegistry(fixtureRegistry(), engagementToolAllowlist(engagement()));
-    expect(view.list().map((d) => d.name).sort()).toEqual(["fs.probe", "security.probe-web"]);
+    const view = new EngagementToolRegistry(
+      fixtureRegistry(),
+      engagementToolAllowlist(engagement()),
+    );
+    expect(
+      view
+        .list()
+        .map((d) => d.name)
+        .sort(),
+    ).toEqual(["fs.probe", "security.probe-web"]);
     expect(view.get("security.probe-ports")).toBeNull();
     expect(view.get("security.probe-web")?.def.name).toBe("security.probe-web");
     expect(view.get("fs.probe")?.def.name).toBe("fs.probe");
@@ -265,9 +270,9 @@ describe("actionDigest", () => {
     expect(actionDigest(a)).not.toBe(actionDigest(c));
     expect(actionDigest(a)).toMatch(/^[0-9a-f]{64}$/);
     // Canonical: key order does not matter.
-    expect(
-      actionDigest({ tool: "t", targets: [{ host: "h", port: 443 }] }),
-    ).toBe(actionDigest({ tool: "t", targets: [{ port: 443, host: "h" }] }));
+    expect(actionDigest({ tool: "t", targets: [{ host: "h", port: 443 }] })).toBe(
+      actionDigest({ tool: "t", targets: [{ port: 443, host: "h" }] }),
+    );
     expect(canonicalJson({ b: 1, a: 2 })).toBe(canonicalJson({ a: 2, b: 1 }));
   });
 });

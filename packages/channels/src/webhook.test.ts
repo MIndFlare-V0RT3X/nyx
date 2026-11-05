@@ -22,7 +22,11 @@ afterAll(() => {
   for (const db of dbs) db.close();
 });
 
-function fakeRunner(opts: { delayMs?: number } = {}): { runner: ChannelTurnRunner; created: string[]; turns: string[] } {
+function fakeRunner(opts: { delayMs?: number } = {}): {
+  runner: ChannelTurnRunner;
+  created: string[];
+  turns: string[];
+} {
   const created: string[] = [];
   const turns: string[] = [];
   const runner: ChannelTurnRunner = {
@@ -44,7 +48,11 @@ function fakeRunner(opts: { delayMs?: number } = {}): { runner: ChannelTurnRunne
           resolve({ ok: true, text: "WEBHOOK-REPLY" });
         })();
       });
-      return { turn_id, completion, onEvent: (cb) => (handlers.add(cb), () => handlers.delete(cb)) };
+      return {
+        turn_id,
+        completion,
+        onEvent: (cb) => (handlers.add(cb), () => handlers.delete(cb)),
+      };
     },
   };
   return { runner, created, turns };

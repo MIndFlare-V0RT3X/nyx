@@ -11,12 +11,7 @@ import { promises as fsp } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import Database from "better-sqlite3";
-import type {
-  Engagement,
-  PolicyEngine,
-  SessionEvent,
-  ToolContext,
-} from "@nyx/protocol";
+import type { Engagement, PolicyEngine, SessionEvent, ToolContext } from "@nyx/protocol";
 import { openSessionStore } from "@nyx/session";
 import { ToolRegistryImpl } from "@nyx/tools";
 import {
@@ -89,7 +84,10 @@ function makeSecurityRig(
   const tooling = buildEngagementTooling(
     {
       tools: registry,
-      kernel: { services: { get: () => undefined }, hooks: { on() {}, emit: async () => [] } } as never,
+      kernel: {
+        services: { get: () => undefined },
+        hooks: { on() {}, emit: async () => [] },
+      } as never,
       policy,
       approvals,
     },
@@ -222,9 +220,7 @@ export async function runCveCorrelationEval(
         finding_id: finding.id,
         product: setup.finding.product,
         version: setup.finding.version,
-        ...(setup.finding.vuln_terms !== undefined
-          ? { vuln_terms: setup.finding.vuln_terms }
-          : {}),
+        ...(setup.finding.vuln_terms !== undefined ? { vuln_terms: setup.finding.vuln_terms } : {}),
       },
     },
     rig.ctx,
@@ -331,9 +327,7 @@ export async function runDisclosureEval(setup: DisclosureSetup): Promise<Disclos
   const recomputed: Record<string, string> = {};
   const missing: string[] = [];
   for (const file of parsed.json.files) {
-    const bytes = await fsp
-      .readFile(path.join(baseDir, directory, file.name))
-      .catch(() => null);
+    const bytes = await fsp.readFile(path.join(baseDir, directory, file.name)).catch(() => null);
     if (bytes === null) {
       missing.push(file.name);
       continue;
@@ -406,9 +400,7 @@ export async function runOwnershipEval(setup: OwnershipSetup): Promise<Ownership
     } catch (err) {
       if (err instanceof EngagementOwnershipError) {
         // The refusal must have PREVENTED the session: zero rows.
-        const rows = db
-          .prepare("SELECT COUNT(*) AS n FROM sessions")
-          .get() as { n: number };
+        const rows = db.prepare("SELECT COUNT(*) AS n FROM sessions").get() as { n: number };
         return {
           refused: true,
           code: err.code,

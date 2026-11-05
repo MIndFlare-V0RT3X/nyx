@@ -56,8 +56,7 @@ export interface SkillEntry {
 }
 
 export type ParseResult =
-  | { ok: true; skill: SkillEntry }
-  | { ok: false; file: string; warning: string };
+  { ok: true; skill: SkillEntry } | { ok: false; file: string; warning: string };
 
 /** Split a SKILL.md into its frontmatter text and body. */
 function splitFrontmatter(text: string): { fm: string; body: string } | { error: string } {
@@ -108,7 +107,11 @@ export function parseSkillMd(text: string, file: string): ParseResult {
 
   const stripped = body.trim();
   if (stripped.length === 0) {
-    return { ok: false, file, warning: "body is empty — a skill with no instructions ships nothing" };
+    return {
+      ok: false,
+      file,
+      warning: "body is empty — a skill with no instructions ships nothing",
+    };
   }
   if (stripped.length > 512 * 1024) {
     return { ok: false, file, warning: `body is ${stripped.length} bytes — above the 512KiB cap` };

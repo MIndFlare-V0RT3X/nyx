@@ -261,9 +261,7 @@ export class TaskManagerImpl {
   async retry(id: string): Promise<void> {
     const record = this.sql.transition(id, ["failed", "cancelled"], "pending", {
       reset_attempts: true,
-      ...(this.recordOf(id).spec.schedule === undefined
-        ? { clear_next_attempt: true }
-        : {}),
+      ...(this.recordOf(id).spec.schedule === undefined ? { clear_next_attempt: true } : {}),
     });
     if (record.spec.schedule !== undefined) {
       // Re-anchor the cron: the schedule governs when a revived recurring
@@ -310,7 +308,11 @@ export class TaskManagerImpl {
 export interface TaskManager {
   /** The raw SQL layer — the worker's lease/candidate path. */
   readonly sql: TaskSqlStore;
-  create(spec: TaskSpec, owner_ctx: TaskOwnerContext, opts?: { system?: boolean }): Promise<TaskRecord>;
+  create(
+    spec: TaskSpec,
+    owner_ctx: TaskOwnerContext,
+    opts?: { system?: boolean },
+  ): Promise<TaskRecord>;
   get(id: string): Promise<TaskRecord | null>;
   list(opts?: TaskListOptions): Promise<TaskRecord[]>;
   pause(id: string): Promise<void>;

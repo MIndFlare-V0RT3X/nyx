@@ -135,9 +135,7 @@ describe("nextFire with timezone (2.0.3)", () => {
   it("default UTC behavior is unchanged", () => {
     const s = parseCron("0 3 * * *");
     expect(nextFire(s, Date.UTC(2026, 2, 15, 10, 0))).toBe(Date.UTC(2026, 2, 16, 3, 0));
-    expect(nextFire(s, Date.UTC(2026, 2, 15, 10, 0), "UTC")).toBe(
-      Date.UTC(2026, 2, 16, 3, 0),
-    );
+    expect(nextFire(s, Date.UTC(2026, 2, 15, 10, 0), "UTC")).toBe(Date.UTC(2026, 2, 16, 3, 0));
   });
 
   it("rejects unknown timezone names", () => {

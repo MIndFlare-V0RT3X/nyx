@@ -1,0 +1,17 @@
+# Format-frozen files: their layout is a test contract or belongs to a
+# generator, not a style preference.
+
+# The compaction goldens are compared byte-exactly by
+# packages/agent/src/compaction-pipeline.test.ts; reformatting them
+# (e.g. collapsing the arrays prettier wants to collapse) breaks the
+# comparison without changing any expected value.
+packages/agent/src/golden/
+
+# The evals baseline is written by the runner (--eval-update) as
+# JSON.stringify(..., null, 2) — expanded arrays by construction. Its
+# format belongs to the generator so a regenerated baseline diffs
+# cleanly against the recorded one.
+tests/evals/baseline.json
+
+# pnpm owns this file.
+pnpm-lock.yaml

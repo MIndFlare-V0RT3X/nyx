@@ -113,7 +113,12 @@ export class HeartbeatStore {
       .run(spec_id, last_fired_at, next_fire_at);
   }
 
-  record(spec_id: string, fired_at: number, status: "fired" | "missed", source: "schedule" | "manual" | "missed"): void {
+  record(
+    spec_id: string,
+    fired_at: number,
+    status: "fired" | "missed",
+    source: "schedule" | "manual" | "missed",
+  ): void {
     this.db
       .prepare(
         "INSERT INTO heartbeat_history (spec_id, fired_at, status, source) VALUES (?, ?, ?, ?)",
@@ -121,11 +126,16 @@ export class HeartbeatStore {
       .run(spec_id, fired_at, status, source);
   }
 
-  history(spec_id?: string): Array<{ spec_id: string; fired_at: number; status: string; source: string }> {
-    const sql = spec_id === undefined
-      ? "SELECT spec_id, fired_at, status, source FROM heartbeat_history ORDER BY id"
-      : "SELECT spec_id, fired_at, status, source FROM heartbeat_history WHERE spec_id = ? ORDER BY id";
-    return (spec_id === undefined ? this.db.prepare(sql).all() : this.db.prepare(sql).all(spec_id)) as Array<{
+  history(
+    spec_id?: string,
+  ): Array<{ spec_id: string; fired_at: number; status: string; source: string }> {
+    const sql =
+      spec_id === undefined
+        ? "SELECT spec_id, fired_at, status, source FROM heartbeat_history ORDER BY id"
+        : "SELECT spec_id, fired_at, status, source FROM heartbeat_history WHERE spec_id = ? ORDER BY id";
+    return (
+      spec_id === undefined ? this.db.prepare(sql).all() : this.db.prepare(sql).all(spec_id)
+    ) as Array<{
       spec_id: string;
       fired_at: number;
       status: string;
@@ -161,9 +171,7 @@ export class HeartbeatScheduler implements Scheduler {
     const schedule = parseCron(spec.schedule); // invalid specs are a hard error
     const tz = spec.timezone ?? "UTC";
     if (!isValidTimeZone(tz)) {
-      throw new RangeError(
-        `heartbeat spec "${spec.id}": unknown IANA timezone "${tz}"`,
-      );
+      throw new RangeError(`heartbeat spec "${spec.id}": unknown IANA timezone "${tz}"`);
     }
     this.specs.set(spec.id, spec);
     this.schedules.set(spec.id, schedule);
@@ -180,7 +188,11 @@ export class HeartbeatScheduler implements Scheduler {
 
   /** Next fire for a spec, in the spec's timezone (2.0.3). */
   private nextFireOf(specId: string, afterMs: number): number {
-    return nextFire(this.schedules.get(specId)!, afterMs, this.specs.get(specId)?.timezone ?? "UTC");
+    return nextFire(
+      this.schedules.get(specId)!,
+      afterMs,
+      this.specs.get(specId)?.timezone ?? "UTC",
+    );
   }
 
   async start(): Promise<void> {
@@ -201,11 +213,7 @@ export class HeartbeatScheduler implements Scheduler {
           spec_id: spec.id,
           scheduled_for: new Date(state.next_fire_at).toISOString(),
         });
-        this.store.saveState(
-          spec.id,
-          state.last_fired_at,
-          this.nextFireOf(spec.id, now),
-        );
+        this.store.saveState(spec.id, state.last_fired_at, this.nextFireOf(spec.id, now));
       }
     }
     this.timer = setInterval(() => {
@@ -235,11 +243,7 @@ export class HeartbeatScheduler implements Scheduler {
       if (state.next_fire_at > now) continue;
       // Advance the state BEFORE firing: a crash mid-fire must not re-fire.
       const scheduledFor = state.next_fire_at;
-      this.store.saveState(
-        spec.id,
-        scheduledFor,
-        this.nextFireOf(spec.id, scheduledFor),
-      );
+      this.store.saveState(spec.id, scheduledFor, this.nextFireOf(spec.id, scheduledFor));
       this.store.record(spec.id, scheduledFor, "fired", "schedule");
       this.log?.info("heartbeat.fired", {
         spec_id: spec.id,

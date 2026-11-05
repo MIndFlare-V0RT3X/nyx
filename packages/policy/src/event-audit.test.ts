@@ -180,7 +180,9 @@ describe("tool events in the hash-chained audit log", () => {
       const pending = engine.request(verdict, CTX);
       for (let spin = 0; spin < 200; spin++) {
         const row = db
-          .prepare("SELECT id FROM policy_approvals WHERE action_digest = ? AND decision = 'pending'")
+          .prepare(
+            "SELECT id FROM policy_approvals WHERE action_digest = ? AND decision = 'pending'",
+          )
           .get(verdict.action_digest) as { id: string } | undefined;
         if (row !== undefined) break;
         await new Promise((r) => setTimeout(r, 1));
@@ -194,10 +196,7 @@ describe("tool events in the hash-chained audit log", () => {
       // Four tool events around it, all audited with their seq.
       callN += 1;
       const callId = `call-${callN}`;
-      const batch = [
-        toolCall(seq++, callId, "fs.read"),
-        toolResult(seq++, callId),
-      ];
+      const batch = [toolCall(seq++, callId, "fs.read"), toolResult(seq++, callId)];
       callN += 1;
       const callId2 = `call-${callN}`;
       batch.push(toolCall(seq++, callId2, "web.fetch"), actionDenied(seq++, callId2));
@@ -250,9 +249,9 @@ describe("tool events in the hash-chained audit log", () => {
     const result = verifyAuditChain(db);
     expect(result.ok).toBe(true);
     expect(result.checked).toBe(2);
-    const row = db
-      .prepare("SELECT event_seq FROM audit WHERE action = 'tool.call'")
-      .get() as { event_seq: number };
+    const row = db.prepare("SELECT event_seq FROM audit WHERE action = 'tool.call'").get() as {
+      event_seq: number;
+    };
     expect(row.event_seq).toBe(9);
   });
 });
@@ -266,7 +265,15 @@ describe("appendEventAudit no-ops and payload shapes", () => {
     appendEventAudit(db, lifecycleEvent(1), 1);
     appendEventAudit(
       db,
-      { type: "session.created", session_id: SID, owner_id: "o", persona_id: "p", parent_id: null, engagement: null, ts: 1 },
+      {
+        type: "session.created",
+        session_id: SID,
+        owner_id: "o",
+        persona_id: "p",
+        parent_id: null,
+        engagement: null,
+        ts: 1,
+      },
       1,
     );
     expect((db.prepare("SELECT COUNT(*) AS n FROM audit").get() as { n: number }).n).toBe(0);
@@ -296,12 +303,21 @@ describe("emergency compaction audit (2.2)", () => {
       .prepare("SELECT actor, action, payload_json, event_seq FROM audit")
       .all() as Array<{ actor: string; action: string; payload_json: string; event_seq: number }>;
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ actor: "system:compaction", action: "compaction.completed", event_seq: 7 });
+    expect(rows[0]).toMatchObject({
+      actor: "system:compaction",
+      action: "compaction.completed",
+      event_seq: 7,
+    });
     const payload = JSON.parse(rows[0]!.payload_json) as {
       strategy: string;
       freed_tokens: number;
     };
-    expect(payload).toEqual({ session_id: SID, turn_id: "t1", strategy: "emergency-degrade", freed_tokens: 42 });
+    expect(payload).toEqual({
+      session_id: SID,
+      turn_id: "t1",
+      strategy: "emergency-degrade",
+      freed_tokens: 42,
+    });
     expect(verifyAuditChain(db).ok).toBe(true);
     // Reconcile is symmetric: the emergency event requires its row.
     expect(

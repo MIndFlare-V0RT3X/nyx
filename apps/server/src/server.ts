@@ -52,11 +52,7 @@ import {
   resolveSubagentsConfig,
   type SubagentManager,
 } from "@nyx/subagents";
-import {
-  SkillsProvider,
-  registerLoadSkillTool,
-  registerSkillsHook,
-} from "@nyx/skills";
+import { SkillsProvider, registerLoadSkillTool, registerSkillsHook } from "@nyx/skills";
 import { createLaneQueue, createHeartbeatScheduler, HeartbeatStore } from "@nyx/runtime";
 import type { LaneQueue, Scheduler } from "@nyx/runtime";
 import {
@@ -385,18 +381,16 @@ export function createServer(deps: ServerDeps): NyxServer {
   // engagement sessions get a per-sandbox --internal bridge whose only
   // egress is this proxy. `enabled: false` never reaches here in production
   // (loadConfig rejects it — dev-only escape hatch with the CLI flag).
-  const egressEnabled =
-    config.sandbox.egress_proxy.enabled && config.sandbox.provider === "docker";
-  const egressProxy =
-    egressEnabled
-      ? new EgressProxyServer({
-          policy: createEgressPolicy({
-            resolver: new DnsEgressResolver(),
-            limiter,
-            audit: (entry) => approvalEngineHandle.audit(entry),
-          }),
-        })
-      : undefined;
+  const egressEnabled = config.sandbox.egress_proxy.enabled && config.sandbox.provider === "docker";
+  const egressProxy = egressEnabled
+    ? new EgressProxyServer({
+        policy: createEgressPolicy({
+          resolver: new DnsEgressResolver(),
+          limiter,
+          audit: (entry) => approvalEngineHandle.audit(entry),
+        }),
+      })
+    : undefined;
   const egressBinder =
     egressProxy !== undefined
       ? createEgressBinder(egressProxy, { basePort: config.sandbox.egress_proxy.port })
@@ -450,10 +444,7 @@ export function createServer(deps: ServerDeps): NyxServer {
     db: unified.db,
     store: sink.wrapped,
   });
-  const taskContextFor = async (
-    task: TaskRecord,
-    signal: AbortSignal,
-  ): Promise<RunContext> => {
+  const taskContextFor = async (task: TaskRecord, signal: AbortSignal): Promise<RunContext> => {
     const meta = await store.meta(task.task_session_id);
     const log = logger.child({
       session_id: task.task_session_id,
@@ -626,7 +617,11 @@ export function createServer(deps: ServerDeps): NyxServer {
 
   const presenterFor = (channel: { id: string; thread_id?: string } | undefined) => {
     if (channel === undefined) return undefined;
-    if (channel.id === "telegram" && telegramBridge !== undefined && channel.thread_id !== undefined) {
+    if (
+      channel.id === "telegram" &&
+      telegramBridge !== undefined &&
+      channel.thread_id !== undefined
+    ) {
       return {
         presenter: telegramBridge.presenterFor(channel.thread_id),
         ttl: config.channels?.telegram?.approval_ttl_ms,
@@ -753,7 +748,12 @@ export function createServer(deps: ServerDeps): NyxServer {
           session_id,
           priority: "heartbeat",
           run: () =>
-            runTurn(session_id!, turn_id, [{ type: "text", text: spec.prompt }], new AbortController()),
+            runTurn(
+              session_id!,
+              turn_id,
+              [{ type: "text", text: spec.prompt }],
+              new AbortController(),
+            ),
         });
       },
     },
@@ -772,10 +772,7 @@ export function createServer(deps: ServerDeps): NyxServer {
     if (config.channels?.telegram?.enabled === true) {
       const token = process.env[config.channels.telegram.bot_token_env] ?? "";
       const client =
-        deps.telegram_client ??
-        (token !== ""
-          ? createHttpTelegramClient(token)
-          : undefined);
+        deps.telegram_client ?? (token !== "" ? createHttpTelegramClient(token) : undefined);
       if (client === undefined) {
         throw new Error(
           `channels.telegram is enabled but ${config.channels.telegram.bot_token_env} is not set`,
@@ -904,9 +901,7 @@ export function createServer(deps: ServerDeps): NyxServer {
         {
           audit: (entry) => approvalEngineHandle.audit(entry),
           logger,
-          ...(deps.engagement_resolver !== undefined
-            ? { resolve: deps.engagement_resolver }
-            : {}),
+          ...(deps.engagement_resolver !== undefined ? { resolve: deps.engagement_resolver } : {}),
         },
         { session_id: meta.session_id, engagement: body.engagement, owner_id: config.owner_id },
       );
@@ -1138,23 +1133,20 @@ export function createServer(deps: ServerDeps): NyxServer {
     if (!parsed.success) {
       return badRequest(
         "validation_failed",
-        parsed.error.issues
-          .map((i) => `${i.path.join(".") || "(root)"} ${i.message}`)
-          .join("; "),
+        parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"} ${i.message}`).join("; "),
       );
     }
     try {
-      const record = await tasks.create(
-        parsed.data,
-        {
-          owner_id: actor.is_owner ? config.owner_id : actor.id,
-          persona_id: config.persona.default_id,
-        },
-      );
+      const record = await tasks.create(parsed.data, {
+        owner_id: actor.is_owner ? config.owner_id : actor.id,
+        persona_id: config.persona.default_id,
+      });
       return c.json(record, 201);
     } catch (err) {
       const code =
-        err instanceof Error && "code" in err ? String((err as { code: unknown }).code) : "validation_failed";
+        err instanceof Error && "code" in err
+          ? String((err as { code: unknown }).code)
+          : "validation_failed";
       const status = code === "not_found" ? 404 : code === "illegal_transition" ? 409 : 400;
       return c.json(errorBody(code, err instanceof Error ? err.message : String(err)), status);
     }
@@ -1188,20 +1180,24 @@ export function createServer(deps: ServerDeps): NyxServer {
     return c.json(record);
   });
 
-  const taskAction = (action: "pause" | "resume" | "retry") => async (c: Context): Promise<Response> => {
-    const id = c.req.param("id") ?? "";
-    try {
-      await tasks[action](id);
-      const record = await tasks.get(id);
-      if (record === null) return c.json(errorBody("not_found", "task not found"), 404);
-      return c.json(record);
-    } catch (err) {
-      const code =
-        err instanceof Error && "code" in err ? String((err as { code: unknown }).code) : "illegal_transition";
-      const status = code === "not_found" ? 404 : 409;
-      return c.json(errorBody(code, err instanceof Error ? err.message : String(err)), status);
-    }
-  };
+  const taskAction =
+    (action: "pause" | "resume" | "retry") =>
+    async (c: Context): Promise<Response> => {
+      const id = c.req.param("id") ?? "";
+      try {
+        await tasks[action](id);
+        const record = await tasks.get(id);
+        if (record === null) return c.json(errorBody("not_found", "task not found"), 404);
+        return c.json(record);
+      } catch (err) {
+        const code =
+          err instanceof Error && "code" in err
+            ? String((err as { code: unknown }).code)
+            : "illegal_transition";
+        const status = code === "not_found" ? 404 : 409;
+        return c.json(errorBody(code, err instanceof Error ? err.message : String(err)), status);
+      }
+    };
   app.post("/v1/tasks/:id/pause", taskAction("pause"));
   app.post("/v1/tasks/:id/resume", taskAction("resume"));
   app.post("/v1/tasks/:id/retry", taskAction("retry"));
@@ -1216,7 +1212,9 @@ export function createServer(deps: ServerDeps): NyxServer {
       await tasks.cancel(id);
     } catch (err) {
       const code =
-        err instanceof Error && "code" in err ? String((err as { code: unknown }).code) : "illegal_transition";
+        err instanceof Error && "code" in err
+          ? String((err as { code: unknown }).code)
+          : "illegal_transition";
       return c.json(errorBody(code, err instanceof Error ? err.message : String(err)), 409);
     }
     // Cross-process abort insurance: if this process isn't running the
@@ -1275,7 +1273,10 @@ export function createServer(deps: ServerDeps): NyxServer {
       if (config.heartbeat?.enabled === true) {
         await heartbeatScheduler.start();
         logger.info("heartbeat.started", {
-          specs: heartbeatScheduler.list().filter((s) => s.enabled).map((s) => s.id),
+          specs: heartbeatScheduler
+            .list()
+            .filter((s) => s.enabled)
+            .map((s) => s.id),
         });
       }
       // Phase 4 §2.1.6: the worker pool starts with the process. Graceful
@@ -1323,7 +1324,10 @@ export function createServer(deps: ServerDeps): NyxServer {
       closing = true;
       for (const adapter of channelAdapters.splice(0)) {
         await adapter.stop().catch((err: unknown) => {
-          logger.warn("channel.stop_failed", { error: toSerializedError(err), channel: adapter.id });
+          logger.warn("channel.stop_failed", {
+            error: toSerializedError(err),
+            channel: adapter.id,
+          });
         });
       }
       await heartbeatScheduler.stop();

@@ -41,7 +41,8 @@ const INPUT_SCHEMA = {
     url: {
       type: "string",
       pattern: "^https?://[^\\s]+FUZZ[^\\s]*$",
-      description: "Absolute http(s) URL with the FUZZ keyword in place of the segment to fuzz, e.g. https://app.example.com/portal/FUZZ",
+      description:
+        "Absolute http(s) URL with the FUZZ keyword in place of the segment to fuzz, e.g. https://app.example.com/portal/FUZZ",
     },
     wordlist: {
       type: "string",
@@ -51,7 +52,8 @@ const INPUT_SCHEMA = {
     extensions: {
       type: "array",
       items: { type: "string", pattern: "^\\.?[a-z0-9]{1,10}$" },
-      description: "Optional extensions appended to each word (e.g. ['.php'] — the dot is added if missing).",
+      description:
+        "Optional extensions appended to each word (e.g. ['.php'] — the dot is added if missing).",
     },
   },
   required: ["url", "wordlist"],
@@ -113,7 +115,10 @@ export function ffufHandler(deps: SecurityToolDeps): ToolHandler {
           if (proxy !== undefined) args.push("-x", proxy);
           if (input.extensions !== undefined && input.extensions.length > 0) {
             // ffuf appends the extension verbatim — the DOT is required.
-            args.push("-e", input.extensions.map((e) => (e.startsWith(".") ? e : `.${e}`)).join(","));
+            args.push(
+              "-e",
+              input.extensions.map((e) => (e.startsWith(".") ? e : `.${e}`)).join(","),
+            );
           }
           // R3-12 (closed Phase 6.2; generalized as resolveForExecutor in
           // Phase 6.4/R2-4): the wordlist must resolve where ffuf reads it.
@@ -125,7 +130,12 @@ export function ffufHandler(deps: SecurityToolDeps): ToolHandler {
           // -json emits one JSON record per match (newline-delimited).
           // Quiet-mode matched-word lines are plain words, not JSON — only
           // lines starting with '{' are parsed as records (R3-6).
-          const hits: Array<{ url: string; status: number | null; length: number | null; words: number | null }> = [];
+          const hits: Array<{
+            url: string;
+            status: number | null;
+            length: number | null;
+            words: number | null;
+          }> = [];
           for (const line of stdout.split("\n")) {
             const trimmed = line.trim();
             if (trimmed.length === 0) continue;

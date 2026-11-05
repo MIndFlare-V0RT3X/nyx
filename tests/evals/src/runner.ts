@@ -118,8 +118,10 @@ function evaluateLoopAssertions(
     const label = `${assertion.assert}`;
     switch (assertion.assert) {
       case "event_present":
-        if (!types.includes(assertion.event ?? "" as never)) {
-          failures.push(`${label}: expected a "${assertion.event}" event; trajectory ${JSON.stringify(types)}`);
+        if (!types.includes(assertion.event ?? ("" as never))) {
+          failures.push(
+            `${label}: expected a "${assertion.event}" event; trajectory ${JSON.stringify(types)}`,
+          );
         }
         break;
       case "event_absent":
@@ -139,48 +141,63 @@ function evaluateLoopAssertions(
           }
           cursor = at;
         }
-        if (!ok) failures.push(`${label}: expected ${JSON.stringify(wanted)} in relative order; trajectory ${JSON.stringify(types)}`);
+        if (!ok)
+          failures.push(
+            `${label}: expected ${JSON.stringify(wanted)} in relative order; trajectory ${JSON.stringify(types)}`,
+          );
         break;
       }
       case "event_count": {
         const count = types.filter((t) => t === assertion.event).length;
         if (count !== (assertion.exactly ?? 0)) {
-          failures.push(`${label}: expected exactly ${assertion.exactly ?? 0} "${assertion.event}" events, saw ${count}`);
+          failures.push(
+            `${label}: expected exactly ${assertion.exactly ?? 0} "${assertion.event}" events, saw ${count}`,
+          );
         }
         break;
       }
       case "event_field": {
-        const event = events.find((e) => e.type === (assertion.event as SessionEvent["type"] | undefined));
+        const event = events.find(
+          (e) => e.type === (assertion.event as SessionEvent["type"] | undefined),
+        );
         if (event === undefined) {
           failures.push(`${label}: no "${assertion.event}" event to inspect`);
           break;
         }
         const raw = eventField(event, assertion.field ?? "");
-        const value =
-          raw !== null && typeof raw === "object" ? JSON.stringify(raw) : String(raw);
+        const value = raw !== null && typeof raw === "object" ? JSON.stringify(raw) : String(raw);
         if (assertion.equals !== undefined && value !== assertion.equals) {
-          failures.push(`${label}: ${assertion.event}.${assertion.field} expected "${assertion.equals}", saw "${value}"`);
+          failures.push(
+            `${label}: ${assertion.event}.${assertion.field} expected "${assertion.equals}", saw "${value}"`,
+          );
         }
         if (assertion.contains !== undefined && !value.includes(assertion.contains)) {
-          failures.push(`${label}: ${assertion.event}.${assertion.field} expected to contain "${assertion.contains}", saw "${value}"`);
+          failures.push(
+            `${label}: ${assertion.event}.${assertion.field} expected to contain "${assertion.contains}", saw "${value}"`,
+          );
         }
         if (
           assertion.at_least !== undefined &&
           !(typeof raw === "number" && raw >= assertion.at_least)
         ) {
-          failures.push(`${label}: ${assertion.event}.${assertion.field} expected >= ${assertion.at_least}, saw "${value}"`);
+          failures.push(
+            `${label}: ${assertion.event}.${assertion.field} expected >= ${assertion.at_least}, saw "${value}"`,
+          );
         }
         break;
       }
       case "final_event":
         if (types[types.length - 1] !== assertion.event) {
-          failures.push(`${label}: expected the final event to be "${assertion.event}", saw "${types[types.length - 1] ?? "none"}"`);
+          failures.push(
+            `${label}: expected the final event to be "${assertion.event}", saw "${types[types.length - 1] ?? "none"}"`,
+          );
         }
         break;
       case "no_error_events": {
         const banned = ["turn.failed", "tool.error"];
         const seen = types.filter((t) => banned.includes(t));
-        if (seen.length > 0) failures.push(`${label}: error events present: ${JSON.stringify(seen)}`);
+        if (seen.length > 0)
+          failures.push(`${label}: error events present: ${JSON.stringify(seen)}`);
         break;
       }
       case "memory_written": {
@@ -205,7 +222,9 @@ function evaluateLoopAssertions(
 function histogramOf(trajectory: string[]): string[] {
   const counts = new Map<string, number>();
   for (const type of trajectory) counts.set(type, (counts.get(type) ?? 0) + 1);
-  return [...counts.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([type, n]) => `${type}×${n}`);
+  return [...counts.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([type, n]) => `${type}×${n}`);
 }
 
 export async function runEval(spec: EvalSpec): Promise<EvalOutcome> {
@@ -231,8 +250,7 @@ export async function runEval(spec: EvalSpec): Promise<EvalOutcome> {
     // Cost ceiling (declared ceilings are part of the contract).
     if (spec.expected_cost_ceiling !== undefined) {
       const completed = result.events.find((e) => e.type === "turn.completed") as
-        | { usage?: { input_tokens: number; output_tokens: number } }
-        | undefined;
+        { usage?: { input_tokens: number; output_tokens: number } } | undefined;
       const inputTokens = completed?.usage?.input_tokens ?? 0;
       const outputTokens = completed?.usage?.output_tokens ?? 0;
       const within =
@@ -240,7 +258,11 @@ export async function runEval(spec: EvalSpec): Promise<EvalOutcome> {
           inputTokens <= spec.expected_cost_ceiling.input_tokens) &&
         (spec.expected_cost_ceiling.output_tokens === undefined ||
           outputTokens <= spec.expected_cost_ceiling.output_tokens);
-      base.cost = { input_tokens: inputTokens, output_tokens: outputTokens, within_ceiling: within };
+      base.cost = {
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        within_ceiling: within,
+      };
       if (!within) failures.push("cost ceiling exceeded");
     }
     return {
@@ -267,7 +289,9 @@ export async function runEval(spec: EvalSpec): Promise<EvalOutcome> {
         failures.push(`${assertion.assert}: not a rate_limit assertion`);
       }
     }
-    const trajectory = [`rate.paced:${result.elapsed_ms >= (spec.assertions[0]?.min_elapsed_ms ?? 0) ? "ok" : "short"}ms`];
+    const trajectory = [
+      `rate.paced:${result.elapsed_ms >= (spec.assertions[0]?.min_elapsed_ms ?? 0) ? "ok" : "short"}ms`,
+    ];
     return {
       ...base,
       trajectory,
@@ -285,17 +309,23 @@ export async function runEval(spec: EvalSpec): Promise<EvalOutcome> {
       switch (assertion.assert) {
         case "cves_include":
           if (!result.cves.includes(assertion.cve ?? "")) {
-            failures.push(`cves_include: expected ${assertion.cve} in ${JSON.stringify(result.cves)}`);
+            failures.push(
+              `cves_include: expected ${assertion.cve} in ${JSON.stringify(result.cves)}`,
+            );
           }
           break;
         case "confidence_is":
           if (result.confidence !== (assertion.confidence ?? "")) {
-            failures.push(`confidence_is: expected ${assertion.confidence}, saw ${result.confidence}`);
+            failures.push(
+              `confidence_is: expected ${assertion.confidence}, saw ${result.confidence}`,
+            );
           }
           break;
         case "finding_cve_updated":
           if (result.finding_cve === null || !result.finding_cve.includes(assertion.cve ?? "")) {
-            failures.push(`finding_cve_updated: the finding's CVE was not updated (${JSON.stringify(result.finding_cve)})`);
+            failures.push(
+              `finding_cve_updated: the finding's CVE was not updated (${JSON.stringify(result.finding_cve)})`,
+            );
           }
           break;
         case "audit_row":
@@ -326,7 +356,9 @@ export async function runEval(spec: EvalSpec): Promise<EvalOutcome> {
         for (const file of result.files) {
           const recomputed = result.recomputed[file.name];
           if (recomputed !== file.sha256) {
-            failures.push(`hashes_match: ${file.name} manifest ${file.sha256} != disk ${String(recomputed)}`);
+            failures.push(
+              `hashes_match: ${file.name} manifest ${file.sha256} != disk ${String(recomputed)}`,
+            );
           }
         }
         if (result.files.length === 0) {
@@ -422,10 +454,7 @@ export async function writeBaseline(outcomes: EvalOutcome[]): Promise<void> {
 }
 
 /** The diff between a recorded baseline and fresh outcomes (for --eval-update). */
-export function baselineDiff(
-  baseline: Baseline,
-  outcomes: EvalOutcome[],
-): string[] {
+export function baselineDiff(baseline: Baseline, outcomes: EvalOutcome[]): string[] {
   const lines: string[] = [];
   const before = new Map(baseline.outcomes.map((o) => [o.name, o]));
   const after = new Map(outcomes.map((o) => [o.name, o]));
@@ -441,7 +470,9 @@ export function baselineDiff(
       continue;
     }
     if (old.pass !== freshOutcome?.pass) {
-      lines.push(`~ ${name}: ${old.pass ? "pass" : "FAIL"} → ${freshOutcome?.pass ? "pass" : "FAIL"}`);
+      lines.push(
+        `~ ${name}: ${old.pass ? "pass" : "FAIL"} → ${freshOutcome?.pass ? "pass" : "FAIL"}`,
+      );
     }
     if (JSON.stringify(old.histogram) !== JSON.stringify(freshOutcome?.histogram)) {
       lines.push(`~ ${name}: event-type histogram changed`);

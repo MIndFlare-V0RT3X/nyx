@@ -88,7 +88,11 @@ export class TelegramApprovalPresenter implements ApprovalPresenter {
   }
 
   /** Edit the keyboard message to record the operator's decision. */
-  async markResolved(approval_id: string, decision: "allow" | "deny", decidedBy: string): Promise<void> {
+  async markResolved(
+    approval_id: string,
+    decision: "allow" | "deny",
+    decidedBy: string,
+  ): Promise<void> {
     const messageId = this.messageIds.get(approval_id);
     this.messageIds.delete(approval_id);
     if (messageId === undefined) return;
@@ -167,7 +171,10 @@ export class TelegramApprovalBridge {
       await answer(decision === "allow" ? "approved ✅" : "denied ❌");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.opts.logger?.warn("channel.telegram.resolve_failed", { approval_id: approvalId, error: message });
+      this.opts.logger?.warn("channel.telegram.resolve_failed", {
+        approval_id: approvalId,
+        error: message,
+      });
       await answer(`failed: ${message.slice(0, 180)}`);
     }
   }

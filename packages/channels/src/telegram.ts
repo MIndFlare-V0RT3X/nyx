@@ -283,7 +283,8 @@ export class TelegramChannel implements ChannelAdapter {
       try {
         const settled = await result.handle.completion;
         // Final render: the completed reply text exactly once.
-        const finalText = settled.text === "" ? (settled.ok ? "(no reply text)" : "turn failed") : settled.text;
+        const finalText =
+          settled.text === "" ? (settled.ok ? "(no reply text)" : "turn failed") : settled.text;
         if (messageId === undefined) {
           await this.opts.client.sendMessage(chatId, finalText.slice(0, TELEGRAM_MAX_LEN));
         } else if (finalText.slice(0, TELEGRAM_MAX_LEN) !== current.slice(0, TELEGRAM_MAX_LEN)) {

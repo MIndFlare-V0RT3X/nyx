@@ -53,7 +53,11 @@ class RemoteApprovalEngine implements ApprovalEngine {
       context: ctx,
     });
   }
-  async resolve(id: string, decision: "allow" | "deny", decided_by: string): Promise<ApprovalRecord> {
+  async resolve(
+    id: string,
+    decision: "allow" | "deny",
+    decided_by: string,
+  ): Promise<ApprovalRecord> {
     return await this.kernel.request<ApprovalRecord>({
       type: "approval.resolve",
       id,
@@ -66,7 +70,10 @@ class RemoteApprovalEngine implements ApprovalEngine {
     // Not in the split vocabulary (the agent surface resolves by id via the
     // kernel directly); present for interface completeness.
     void id;
-    throw new IpcError_({ code: "not_implemented", message: "approval.get is not exposed in split mode" });
+    throw new IpcError_({
+      code: "not_implemented",
+      message: "approval.get is not exposed in split mode",
+    });
   }
   async pending(session_id: string): Promise<ApprovalRecord[]> {
     return await this.kernel.request<ApprovalRecord[]>({

@@ -101,7 +101,10 @@ export function isUserMdPopulated(text: string): boolean {
     .split("\n")
     .find((line) => /^- Name:/.test(line.trim()) || /^Name:/.test(line.trim()));
   if (nameLine === undefined) return true; // custom shape — do not touch
-  const value = nameLine.replace(/^[^-]*-\s*Name:\s*/, "").replace(/^Name:\s*/, "").trim();
+  const value = nameLine
+    .replace(/^[^-]*-\s*Name:\s*/, "")
+    .replace(/^Name:\s*/, "")
+    .trim();
   return value !== "" && !value.startsWith("(fill in");
 }
 
@@ -193,7 +196,8 @@ export async function bootstrapUserMd(
     template = existing;
   } else {
     const source =
-      opts.repoPersonaSource ?? resolve(dirname(new URL(import.meta.url).pathname), "../../../personas/default");
+      opts.repoPersonaSource ??
+      resolve(dirname(new URL(import.meta.url).pathname), "../../../personas/default");
     if (existsSync(source)) {
       await cp(source, personaDir, { recursive: true });
       template = await readFile(userMdPath, "utf8");

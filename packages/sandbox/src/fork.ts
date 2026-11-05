@@ -41,7 +41,7 @@ export async function forkSandbox(parent: Sandbox): Promise<Sandbox> {
   if (!isForkable(parent)) {
     const err = new Error(
       `sandbox of type ${parent.constructor.name} does not support forking; ` +
-        "subagents.sandbox_sharing \"fork\" requires the local or docker provider",
+        'subagents.sandbox_sharing "fork" requires the local or docker provider',
     ) as Error & { code: string };
     err.code = "not_supported";
     throw err;

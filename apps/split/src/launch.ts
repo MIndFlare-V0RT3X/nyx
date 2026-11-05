@@ -71,7 +71,9 @@ async function spawnAndAwaitBoot(
 
   const boot = await new Promise<BootLine>((resolve, reject) => {
     const timer = setTimeout(() => {
-      reject(new Error(`${label} did not report boot within ${timeoutMs}ms\n${stderrChunks.join("")}`));
+      reject(
+        new Error(`${label} did not report boot within ${timeoutMs}ms\n${stderrChunks.join("")}`),
+      );
     }, timeoutMs);
     stdout.once("line", (line: string) => {
       clearTimeout(timer);
@@ -79,10 +81,9 @@ async function spawnAndAwaitBoot(
         resolve(JSON.parse(line) as BootLine);
       } catch (err) {
         reject(
-          new Error(
-            `${label} boot line is not JSON: ${line}\n${stderrChunks.join("")}`,
-            { cause: err },
-          ),
+          new Error(`${label} boot line is not JSON: ${line}\n${stderrChunks.join("")}`, {
+            cause: err,
+          }),
         );
       }
     });

@@ -130,8 +130,10 @@ describe("egress proxy — docker end-to-end (Phase 6.1 §2.5)", () => {
     if (tmpRoot !== undefined) await fsp.rm(tmpRoot, { recursive: true, force: true });
     try {
       await new Promise<void>((resolve, reject) => {
-        execFile("docker", ["network", "prune", "-f", "--filter", "label=org.nyx.egress=true"], (err) =>
-          err ? reject(err) : resolve(),
+        execFile(
+          "docker",
+          ["network", "prune", "-f", "--filter", "label=org.nyx.egress=true"],
+          (err) => (err ? reject(err) : resolve()),
         );
       });
     } catch {
@@ -173,30 +175,36 @@ describe("egress proxy — docker end-to-end (Phase 6.1 §2.5)", () => {
     expect(r.stdout).toContain("DENIED:");
   });
 
-  dIt("DoH THROUGH THE PROXY: a CONNECT to an out-of-scope IP literal (e.g. a DoH endpoint) is destroyed", async () => {
-    const gw = sandbox.egress?.gateway;
-    const port = sandbox.egress?.portFor(null);
-    if (gw === undefined || port === undefined) throw new Error("no egress wiring");
-    const r = await sandbox.exec(
-      `printf 'CONNECT 8.8.8.8:443 HTTP/1.1\\r\\nHost: 8.8.8.8\\r\\n\\r\\n' | nc -w 5 ${gw} ${port}; echo NC-DONE`,
-      { timeout_ms: 40_000 },
-    );
-    // The proxy must NOT establish the tunnel: no 200, connection destroyed.
-    expect(r.stdout).not.toContain("200");
-    expect(r.stdout).toContain("NC-DONE");
-  });
+  dIt(
+    "DoH THROUGH THE PROXY: a CONNECT to an out-of-scope IP literal (e.g. a DoH endpoint) is destroyed",
+    async () => {
+      const gw = sandbox.egress?.gateway;
+      const port = sandbox.egress?.portFor(null);
+      if (gw === undefined || port === undefined) throw new Error("no egress wiring");
+      const r = await sandbox.exec(
+        `printf 'CONNECT 8.8.8.8:443 HTTP/1.1\\r\\nHost: 8.8.8.8\\r\\n\\r\\n' | nc -w 5 ${gw} ${port}; echo NC-DONE`,
+        { timeout_ms: 40_000 },
+      );
+      // The proxy must NOT establish the tunnel: no 200, connection destroyed.
+      expect(r.stdout).not.toContain("200");
+      expect(r.stdout).toContain("NC-DONE");
+    },
+  );
 
-  dIt("RAW SOCKET INJECTION: garbage to the proxy listener is destroyed without a response", async () => {
-    const gw = sandbox.egress?.gateway;
-    const port = sandbox.egress?.portFor(null);
-    if (gw === undefined || port === undefined) throw new Error("no egress wiring");
-    const r = await sandbox.exec(
-      `head -c 64 /dev/urandom | nc -w 3 ${gw} ${port}; echo RAW-DONE`,
-      { timeout_ms: 30_000 },
-    );
-    expect(r.stdout).not.toContain("200");
-    expect(r.stdout).toContain("RAW-DONE");
-  });
+  dIt(
+    "RAW SOCKET INJECTION: garbage to the proxy listener is destroyed without a response",
+    async () => {
+      const gw = sandbox.egress?.gateway;
+      const port = sandbox.egress?.portFor(null);
+      if (gw === undefined || port === undefined) throw new Error("no egress wiring");
+      const r = await sandbox.exec(
+        `head -c 64 /dev/urandom | nc -w 3 ${gw} ${port}; echo RAW-DONE`,
+        { timeout_ms: 30_000 },
+      );
+      expect(r.stdout).not.toContain("200");
+      expect(r.stdout).toContain("RAW-DONE");
+    },
+  );
 
   dIt("FD LEAK: the container holds no host fd or socket to ride out on", async () => {
     // The attempt, made live: enumerate PID 1's descriptors, probe the docker

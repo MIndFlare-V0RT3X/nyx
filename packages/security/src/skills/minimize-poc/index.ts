@@ -30,8 +30,17 @@ const MINIMIZE_INPUT_SCHEMA = {
   type: "object",
   properties: {
     finding_id: { type: "string", description: "The finding the PoC reproduces." },
-    poc: { type: "string", description: "The raw PoC (an HTTP request or line-oriented text); defaults to the finding's reproduction field." },
-    required_tokens: { type: "array", items: { type: "string" }, minItems: 1, description: "Tokens whose containing lines must survive (the trigger payload etc.)." },
+    poc: {
+      type: "string",
+      description:
+        "The raw PoC (an HTTP request or line-oriented text); defaults to the finding's reproduction field.",
+    },
+    required_tokens: {
+      type: "array",
+      items: { type: "string" },
+      minItems: 1,
+      description: "Tokens whose containing lines must survive (the trigger payload etc.).",
+    },
   },
   required: ["finding_id", "required_tokens"],
   additionalProperties: false,
@@ -152,4 +161,3 @@ export function minimizePocHandler(deps: SecurityToolDeps & { store: FindingStor
     },
   };
 }
-

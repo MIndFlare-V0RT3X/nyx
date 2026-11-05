@@ -16,41 +16,41 @@ parent turn
 
 ## The contract
 
-| Boundary            | Enforcement                                                                 |
-| ------------------- | --------------------------------------------------------------------------- |
-| Context             | The child burns its own window; the parent sees only the summary.           |
-| Depth               | `subagents.max_depth` (default 3; 0 = no spawning). Counted over the `parent_id` chain. A spec's `max_depth_override` may only tighten. |
-| Budget              | Per subagent: `min(spec.budget_tokens ?? default, max_budget_tokens)` — a spec may request **less, never more**. Per parent turn: the sum of allocations ≤ `max_total_per_turn`. A running child that crosses its budget is aborted with `state="budget_exceeded"`. |
-| Tools               | The child's registry is a filtered view: `spawn_subagent` is **structurally absent** (hard rule, not config), `forbidden_tools` never pass, and only the spec's allowlist (intersected with the parent's registry) survives. The child's *tool runtime* is built over the filtered registry, so an attempted call is a clean `tool_unknown`. |
-| Memory              | The child's memory is a `SubagentMemory` view: `session`-scope writes map onto the `subagent` scope keyed by the child's session id; reads see only its own `subagent` entries plus `global`. The parent's session memory is unreachable — by API surface, not instruction. |
-| Sandbox             | **Forked per child** (`sandbox_sharing: "fork"` — the Phase 4 default): a filesystem COPY of the parent's sandbox (local: `cp -a`; docker: `commit` → temp image → run + host copy), sharing nothing after creation — no shared mounts, no live handles. The ONLY channel back is the artifact handoff (below). `sandbox_sharing: "inherit"` restores Phase 3's shared sandbox. Non-forkable sandboxes in fork mode are refused LOUDLY (`not_supported`) — never a silent fallback to sharing. |
-| Events              | `subagent.spawned/completed/failed/aborted` are mirrored on BOTH logs (the parent's copy carries `subagent_session_id`; the child's copy denormalizes `parent_session_id`). Child turn events **never** enter the parent's log. |
-| Approvals           | The child inherits the policy engine and approval engine. Surfaces copy the parent session's presenter onto the child (server), or surface child approvals through the engine callbacks (CLI) — an "ask" inside a child is interactive, not a TTL death. |
-| Persistence         | Subagent sessions live in `nyx.db` (`sessions.kind = 'subagent'`, lineage via the existing `parent_id`). GC is the Phase 4 retention durable task — see [RETENTION.md](RETENTION.md) (archive-not-delete, ships disabled). Deletion **archives**: `DELETE /v1/sessions/:id` marks `archived_at`, hides the session from lists, and keeps every row — the id stays resolvable and the log replayable. |
+| Boundary    | Enforcement                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Context     | The child burns its own window; the parent sees only the summary.                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Depth       | `subagents.max_depth` (default 3; 0 = no spawning). Counted over the `parent_id` chain. A spec's `max_depth_override` may only tighten.                                                                                                                                                                                                                                                                                                                                                        |
+| Budget      | Per subagent: `min(spec.budget_tokens ?? default, max_budget_tokens)` — a spec may request **less, never more**. Per parent turn: the sum of allocations ≤ `max_total_per_turn`. A running child that crosses its budget is aborted with `state="budget_exceeded"`.                                                                                                                                                                                                                            |
+| Tools       | The child's registry is a filtered view: `spawn_subagent` is **structurally absent** (hard rule, not config), `forbidden_tools` never pass, and only the spec's allowlist (intersected with the parent's registry) survives. The child's _tool runtime_ is built over the filtered registry, so an attempted call is a clean `tool_unknown`.                                                                                                                                                   |
+| Memory      | The child's memory is a `SubagentMemory` view: `session`-scope writes map onto the `subagent` scope keyed by the child's session id; reads see only its own `subagent` entries plus `global`. The parent's session memory is unreachable — by API surface, not instruction.                                                                                                                                                                                                                    |
+| Sandbox     | **Forked per child** (`sandbox_sharing: "fork"` — the Phase 4 default): a filesystem COPY of the parent's sandbox (local: `cp -a`; docker: `commit` → temp image → run + host copy), sharing nothing after creation — no shared mounts, no live handles. The ONLY channel back is the artifact handoff (below). `sandbox_sharing: "inherit"` restores Phase 3's shared sandbox. Non-forkable sandboxes in fork mode are refused LOUDLY (`not_supported`) — never a silent fallback to sharing. |
+| Events      | `subagent.spawned/completed/failed/aborted` are mirrored on BOTH logs (the parent's copy carries `subagent_session_id`; the child's copy denormalizes `parent_session_id`). Child turn events **never** enter the parent's log.                                                                                                                                                                                                                                                                |
+| Approvals   | The child inherits the policy engine and approval engine. Surfaces copy the parent session's presenter onto the child (server), or surface child approvals through the engine callbacks (CLI) — an "ask" inside a child is interactive, not a TTL death.                                                                                                                                                                                                                                       |
+| Persistence | Subagent sessions live in `nyx.db` (`sessions.kind = 'subagent'`, lineage via the existing `parent_id`). GC is the Phase 4 retention durable task — see [RETENTION.md](RETENTION.md) (archive-not-delete, ships disabled). Deletion **archives**: `DELETE /v1/sessions/:id` marks `archived_at`, hides the session from lists, and keeps every row — the id stays resolvable and the log replayable.                                                                                           |
 
 ## Configuration (`nyx.config.yaml`)
 
 ```yaml
 subagents:
-  max_depth: 3                       # 0 = no spawning at all (tool absent)
-  max_total_per_turn: 200000         # tokens across all subagents of one turn
-  default_budget_tokens: 32768       # per subagent
-  max_budget_tokens: 65536           # per-subagent ceiling (spec can only go lower)
-  default_allowed_tools:             # when a spec doesn't name tools
+  max_depth: 3 # 0 = no spawning at all (tool absent)
+  max_total_per_turn: 200000 # tokens across all subagents of one turn
+  default_budget_tokens: 32768 # per subagent
+  max_budget_tokens: 65536 # per-subagent ceiling (spec can only go lower)
+  default_allowed_tools: # when a spec doesn't name tools
     - fs.read
     - fs.write
     - fs.list
     - shell.exec
     - web.fetch
-  forbidden_tools:                   # always blocked, cannot be overridden
-    - spawn_subagent                 # no, subagents don't spawn subagents
+  forbidden_tools: # always blocked, cannot be overridden
+    - spawn_subagent # no, subagents don't spawn subagents
     - spawn_subagent_v2
-  sandbox_sharing: "fork"            # the Phase 4 default: fork per child
-  retention_enabled: false           # the retention task SHIPS DISABLED (see RETENTION.md)
-  retention_days: 7                  # archive window; 0 = never
-  retention_scope: subagent          # subagent | subagent+failed | all | none
-  delete_after_days: 0               # hard-delete archived sessions after N days; 0 = off
-  retention_schedule: "30 3 * * *"   # the retention task's cron (UTC)
+  sandbox_sharing: "fork" # the Phase 4 default: fork per child
+  retention_enabled: false # the retention task SHIPS DISABLED (see RETENTION.md)
+  retention_days: 7 # archive window; 0 = never
+  retention_scope: subagent # subagent | subagent+failed | all | none
+  delete_after_days: 0 # hard-delete archived sessions after N days; 0 = off
+  retention_schedule: "30 3 * * *" # the retention task's cron (UTC)
 ```
 
 The section is optional; every key has the default shown.
@@ -101,13 +101,13 @@ leaves the child hanging until the spawn tool's 10-minute wall clock.
 
 ## HTTP API
 
-| Route | Behavior |
-| --- | --- |
-| `GET /v1/sessions` | Excludes `kind='subagent'`; `?include_subagents=true` includes them. |
+| Route                            | Behavior                                                                            |
+| -------------------------------- | ----------------------------------------------------------------------------------- |
+| `GET /v1/sessions`               | Excludes `kind='subagent'`; `?include_subagents=true` includes them.                |
 | `GET /v1/sessions/:id/subagents` | The parent's children with states (restart-safe: reconstructed from the event log). |
-| `DELETE /v1/subagents/:id` | Owner-only abort (running children only; 400 for non-subagent sessions). |
-| `DELETE /v1/sessions/:id` | Subagent sessions only: abort if running + archive (never hard-delete). |
-| `GET /v1/sessions/:id/events` | A child's own SSE stream — same handler, no change. |
+| `DELETE /v1/subagents/:id`       | Owner-only abort (running children only; 400 for non-subagent sessions).            |
+| `DELETE /v1/sessions/:id`        | Subagent sessions only: abort if running + archive (never hard-delete).             |
+| `GET /v1/sessions/:id/events`    | A child's own SSE stream — same handler, no change.                                 |
 
 ## CLI
 

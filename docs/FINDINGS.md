@@ -61,6 +61,7 @@ finding lands unscored).
 ## Evidence
 
 Hard rule #5: a finding without a hash-verified artifact is not a finding.
+
 - nuclei records its raw JSONL output into the sandbox `artifacts/`
   directory and stamps the sha256 on every finding of the run.
 - The other tools return result data; their SKILL.md files document the
@@ -77,7 +78,7 @@ HTML (client-ready: one inline `<style>`, zero external fetches, every
 finding-controlled string escaped) from one gated pipeline:
 
 1. **Scope gate** — every finding's target is re-checked against the
-   engagement at the finding's *discovery* time, which must lie inside the
+   engagement at the finding's _discovery_ time, which must lie inside the
    window. One out-of-scope finding → `OutOfScopeFindingError`, no file
    written. A port embedded in the host string faces the port policy; a
    path-bearing host rides the URL fallback only if hostname-shaped.

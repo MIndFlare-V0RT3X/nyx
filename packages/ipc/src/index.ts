@@ -30,8 +30,4 @@ export {
   runtimeDirPaths,
   type TokenFile,
 } from "./token.js";
-export {
-  SCRUBBED_ENV_ALLOWLIST,
-  scrubEnvironment,
-  type ScrubOptions,
-} from "./env.js";
+export { SCRUBBED_ENV_ALLOWLIST, scrubEnvironment, type ScrubOptions } from "./env.js";

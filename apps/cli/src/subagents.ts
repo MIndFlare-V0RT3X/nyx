@@ -65,7 +65,9 @@ export async function abortSubagent(
     const events = await store.read(child_id);
     const settled = events.some(
       (e) =>
-        e.type === "subagent.completed" || e.type === "subagent.failed" || e.type === "subagent.aborted",
+        e.type === "subagent.completed" ||
+        e.type === "subagent.failed" ||
+        e.type === "subagent.aborted",
     );
     if (settled) {
       return {

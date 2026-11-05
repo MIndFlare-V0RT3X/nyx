@@ -5,7 +5,5 @@
   "nyx": ">=0.1.0",
   "capabilities": [],
   "integrity": "b6e7cde87a3606a6bd8f90a30a76cb96baeeb030c526273a4119641f797d3928",
-  "tools": [
-    "example-hello"
-  ]
+  "tools": ["example-hello"]
 }

@@ -16,12 +16,7 @@
 //
 // compact() is a no-op: a subagent never triggers store-wide compaction.
 
-import type {
-  MemoryEntry,
-  MemoryScope,
-  MemorySearchOptions,
-  MemoryStore,
-} from "@nyx/protocol";
+import type { MemoryEntry, MemoryScope, MemorySearchOptions, MemoryStore } from "@nyx/protocol";
 
 /** Scopes a subagent may read: its own (translated) session scope + global. */
 const READABLE: readonly MemoryScope[] = ["session", "subagent", "global"];

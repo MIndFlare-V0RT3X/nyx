@@ -36,10 +36,7 @@ interface WriteOpts {
   indexSource?: string;
 }
 
-async function writePlugin(
-  name: string,
-  opts: WriteOpts = {},
-): Promise<string> {
+async function writePlugin(name: string, opts: WriteOpts = {}): Promise<string> {
   const dir = path.join(await tmpdir(), name);
   await fsp.mkdir(dir, { recursive: true });
   const indexSource = opts.indexSource ?? INDEX_JS;
@@ -177,9 +174,15 @@ describe("pluginAudit", () => {
     const dir = await writePlugin("modecheck");
     const keysFile = path.join(await tmpdir(), "trusted-keys.json");
     await fsp.writeFile(keysFile, JSON.stringify({ keys: [] }));
-    const prod = await pluginAudit(dir, { trusted_keys_file: keysFile, env: { NYX_ENV: "production" } });
+    const prod = await pluginAudit(dir, {
+      trusted_keys_file: keysFile,
+      env: { NYX_ENV: "production" },
+    });
     expect(checkNamed(prod, "signature mode").detail).toContain('"strict"');
-    const dev = await pluginAudit(dir, { trusted_keys_file: keysFile, env: { NYX_ENV: "development" } });
+    const dev = await pluginAudit(dir, {
+      trusted_keys_file: keysFile,
+      env: { NYX_ENV: "development" },
+    });
     expect(checkNamed(dev, "signature mode").detail).toContain('"warn"');
   });
 });

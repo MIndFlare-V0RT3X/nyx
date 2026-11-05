@@ -4,7 +4,11 @@ import { createHash } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { loadEngagementYaml, ENGAGEMENT_LOADED_AUDIT_ACTION, EngagementFileError } from "./loader.js";
+import {
+  loadEngagementYaml,
+  ENGAGEMENT_LOADED_AUDIT_ACTION,
+  EngagementFileError,
+} from "./loader.js";
 
 const NOW = Date.UTC(2026, 10, 5, 12, 0, 0); // 2026-11-05T12:00:00Z
 
@@ -113,9 +117,7 @@ describe("loadEngagementYaml — the §1.2 fixture maps exactly onto the protoco
       nmap: { packets_per_second: 100 },
       ffuf: { requests_per_second: 20 },
     });
-    expect(loaded.content_hash).toBe(
-      createHash("sha256").update(FULL_YAML, "utf8").digest("hex"),
-    );
+    expect(loaded.content_hash).toBe(createHash("sha256").update(FULL_YAML, "utf8").digest("hex"));
     expect(loaded.warnings).toEqual([]);
     expect(loaded.file).toBe(file);
   });
@@ -192,11 +194,7 @@ describe("loadEngagementYaml — refusals", () => {
       targets: { domains: ["example.com"] },
     };
 
-    const unknown = await write(
-      dir,
-      "unknown.yaml",
-      JSON.stringify({ ...base, sneaky: true }),
-    );
+    const unknown = await write(dir, "unknown.yaml", JSON.stringify({ ...base, sneaky: true }));
     await expect(loadEngagementYaml(unknown)).rejects.toMatchObject({ code: "validation_failed" });
 
     const endBeforeStart = await write(

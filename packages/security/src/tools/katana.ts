@@ -26,7 +26,12 @@ const INPUT_SCHEMA = {
       maxItems: 20,
       description: "Absolute http(s) URLs to crawl (all must be in engagement scope).",
     },
-    depth: { type: "integer", minimum: 1, maximum: 5, description: "Maximum crawl depth (default 2)." },
+    depth: {
+      type: "integer",
+      minimum: 1,
+      maximum: 5,
+      description: "Maximum crawl depth (default 2).",
+    },
   },
   required: ["targets"],
   additionalProperties: false,
@@ -57,10 +62,10 @@ export function katanaHandler(deps: SecurityToolDeps): ToolHandler {
       const input = katanaInput.parse(call.input);
       const parsed = input.targets.map((t) => parseActionUrl(t));
       if (parsed.some((p) => p === null)) {
-        throw Object.assign(
-          new Error("targets must be absolute http(s) URLs without userinfo"),
-          { name: "SecurityToolError", code: "skill.error" },
-        );
+        throw Object.assign(new Error("targets must be absolute http(s) URLs without userinfo"), {
+          name: "SecurityToolError",
+          code: "skill.error",
+        });
       }
       const targets = parsed.map((p) => p!);
       return runSecurityTool({

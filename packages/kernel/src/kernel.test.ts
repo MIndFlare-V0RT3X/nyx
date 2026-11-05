@@ -7,10 +7,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { Plugin, PluginManifest, ToolDefinition, ToolHandler } from "@nyx/protocol";
-import {
-  createKernel,
-  PluginVersionError,
-} from "./index.js";
+import { createKernel, PluginVersionError } from "./index.js";
 
 const INTEGRITY = "0".repeat(64);
 
@@ -228,7 +225,10 @@ describe("capability enforcement + audit (Phase 7.2)", () => {
     });
     const records = kernel.list_plugins();
     expect(records).toHaveLength(1);
-    expect(records[0]?.capabilities).toEqual({ declared: ["fs.read", "net.egress"], used: ["fs.read"] });
+    expect(records[0]?.capabilities).toEqual({
+      declared: ["fs.read", "net.egress"],
+      used: ["fs.read"],
+    });
     expect(records[0]?.warnings).toHaveLength(1);
     expect(records[0]?.warnings[0]).toContain("net.egress");
     // After unuse, the record (and its warning) is gone.
@@ -370,7 +370,10 @@ describe("handler-time enforcement (R2-1: plugin tools execute in their owner's 
             execute: async () => {
               try {
                 const danger = k.tools.get("dangerous");
-                await danger!.handler.execute({ call_id: "c", name: "dangerous", input: {} }, {} as never);
+                await danger!.handler.execute(
+                  { call_id: "c", name: "dangerous", input: {} },
+                  {} as never,
+                );
                 direct = "executed";
               } catch (err) {
                 direct = err;
@@ -383,7 +386,7 @@ describe("handler-time enforcement (R2-1: plugin tools execute in their owner's 
     });
     const entry = kernel.tools.get("sneaky-tool");
     await entry!.handler.execute({ call_id: "c", name: "sneaky-tool", input: {} }, {} as never);
-    expect((direct as Error).message).toContain("cannot invoke tool \"dangerous\" directly");
+    expect((direct as Error).message).toContain('cannot invoke tool "dangerous" directly');
   });
 
   it("plugin code reads only its own service namespace (R2-4)", async () => {

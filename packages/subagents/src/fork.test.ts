@@ -31,7 +31,11 @@ const harnesses: SubagentHarness[] = [];
 
 afterAll(async () => {
   while (harnesses.length > 0) await harnesses.pop()!.close();
-  while (sandboxes.length > 0) await sandboxes.pop()!.destroy().catch(() => undefined);
+  while (sandboxes.length > 0)
+    await sandboxes
+      .pop()!
+      .destroy()
+      .catch(() => undefined);
   while (dbs.length > 0) dbs.pop()!.close();
 });
 
@@ -111,11 +115,10 @@ describe("fork-per-child (§4.4)", () => {
       mockTextTurn("wrote a file"),
     ]);
 
-    const result = await h.manager.spawn(
-      { task: "isolation-check" },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const result = await h.manager.spawn({ task: "isolation-check" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
     expect(result.state).toBe("completed");
     expect(result.artifacts).toEqual([]);
 
@@ -135,11 +138,10 @@ describe("fork-per-child (§4.4)", () => {
     const { h, db } = await makeForkHarness();
     h.provider.script("publish report", artifactTurn("report.md"));
 
-    const result = await h.manager.spawn(
-      { task: "publish report" },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const result = await h.manager.spawn({ task: "publish report" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
     expect(result.state).toBe("completed");
     // The artifact rides on the result with path + bytes.
     expect(result.artifacts).toEqual([{ path: "artifacts/report.md", bytes: SEED.length }]);
@@ -172,11 +174,10 @@ describe("fork-per-child (§4.4)", () => {
     const { h, parentSandbox, db } = await makeForkHarness();
     h.provider.script("handoff", artifactTurn("result.txt"));
 
-    const result = await h.manager.spawn(
-      { task: "handoff" },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const result = await h.manager.spawn({ task: "handoff" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
     h.manager.bindTurn(h.parent.session_id, "read-turn", h.parentCtx);
 
     const handler = h.toolRegistry.get(SUBAGENT_READ_ARTIFACT_TOOL)!.handler;
@@ -211,11 +212,10 @@ describe("fork-per-child (§4.4)", () => {
   it("a TAMPERED artifact fails the read (hash mismatch), loudly", async () => {
     const { h } = await makeForkHarness();
     h.provider.script("tamper-me", artifactTurn("shady.txt"));
-    const result = await h.manager.spawn(
-      { task: "tamper-me" },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const result = await h.manager.spawn({ task: "tamper-me" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
 
     // Something mutated the artifact inside the child sandbox AFTER the
     // audited write (operator error, disk corruption, an attacker with
@@ -240,11 +240,10 @@ describe("fork-per-child (§4.4)", () => {
   it("unknown children and unaudited artifacts are refused", async () => {
     const { h } = await makeForkHarness();
     h.provider.script("any", artifactTurn("ok.txt"));
-    const result = await h.manager.spawn(
-      { task: "any" },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const result = await h.manager.spawn({ task: "any" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
     h.manager.bindTurn(h.parent.session_id, "read-turn", h.parentCtx);
     const handler = h.toolRegistry.get(SUBAGENT_READ_ARTIFACT_TOOL)!.handler;
 
@@ -281,21 +280,19 @@ describe("fork-per-child (§4.4)", () => {
     // 32768 × 9 > the default 200000 cap).
     const { h } = await makeForkHarness(true, { max_total_per_turn: 2_000_000 });
     h.provider.script("cap-first", artifactTurn("first.txt"));
-    const first = await h.manager.spawn(
-      { task: "cap-first" },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const first = await h.manager.spawn({ task: "cap-first" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
     expect(first.artifacts).toEqual([{ path: "artifacts/first.txt", bytes: SEED.length }]);
 
     // 8 more spawns evict the first (cap 8, LRU).
     for (let i = 0; i < 8; i++) {
       h.provider.script(`cap-extra-${i}`, artifactTurn(`f${i}.txt`));
-      const r = await h.manager.spawn(
-        { task: `cap-extra-${i}` },
-        h.parentCtx,
-        { session_id: h.parent.session_id, turn_id: "t1" },
-      );
+      const r = await h.manager.spawn({ task: `cap-extra-${i}` }, h.parentCtx, {
+        session_id: h.parent.session_id,
+        turn_id: "t1",
+      });
       expect(r.state).toBe("completed");
     }
 
@@ -317,11 +314,10 @@ describe("fork-per-child (§4.4)", () => {
     // The harness default pins inherit semantics for the Phase 3 suites.
     const h = await makeSubagentHarness({});
     h.provider.script("inherit-mode", artifactTurn("whatever.txt"));
-    const result = await h.manager.spawn(
-      { task: "inherit-mode" },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const result = await h.manager.spawn({ task: "inherit-mode" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
     // The child shares the parent's sandbox object.
     const childCtx = h.capturedContexts.get(result.session_id)!;
     expect(childCtx.sandbox).toBe(h.parentCtx.sandbox);
@@ -339,11 +335,10 @@ describe("§6.2 fan-out hardening (fork isolation + artifact security)", () => {
     const { h } = await makeForkHarness(true, { max_total_per_turn: 2_000_000 });
     // Child #1 publishes, then HOLDS (a real duration) — it stays running.
     h.provider.script("slow-kid", artifactTurn("slow.txt"), 500);
-    const slow = h.manager.spawn(
-      { task: "slow-kid" },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const slow = h.manager.spawn({ task: "slow-kid" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
     // Wait until it is provably running (poll — a fixed sleep flakes under
     // parallel suite load), then bury the map with 8 settled siblings — the
     // oldest settled entry (not the running one) is evicted.
@@ -358,11 +353,10 @@ describe("§6.2 fan-out hardening (fork isolation + artifact security)", () => {
     }
     for (let i = 0; i < 8; i++) {
       h.provider.script(`fill-${i}`, artifactTurn(`fill-${i}.txt`));
-      const r = await h.manager.spawn(
-        { task: `fill-${i}` },
-        h.parentCtx,
-        { session_id: h.parent.session_id, turn_id: "t1" },
-      );
+      const r = await h.manager.spawn({ task: `fill-${i}` }, h.parentCtx, {
+        session_id: h.parent.session_id,
+        turn_id: "t1",
+      });
       expect(r.state).toBe("completed");
     }
     const settled = await slow; // the running child survives the storm
@@ -389,7 +383,13 @@ describe("§6.2 fan-out hardening (fork isolation + artifact security)", () => {
     const brokenChild: Sandbox = {
       id: "broken-fork",
       workdir: "/tmp/broken",
-      exec: async () => ({ exit_code: 1, stdout: "", stderr: "nope", duration_ms: 0, truncated: false }),
+      exec: async () => ({
+        exit_code: 1,
+        stdout: "",
+        stderr: "nope",
+        duration_ms: 0,
+        truncated: false,
+      }),
       readFile: async () => Buffer.alloc(0),
       writeFile: async () => undefined,
       list: async () => [],
@@ -402,7 +402,13 @@ describe("§6.2 fan-out hardening (fork isolation + artifact security)", () => {
     const fakeParent = {
       id: "fake-parent",
       workdir: "/tmp/fake",
-      exec: async () => ({ exit_code: 0, stdout: "", stderr: "", duration_ms: 0, truncated: false }),
+      exec: async () => ({
+        exit_code: 0,
+        stdout: "",
+        stderr: "",
+        duration_ms: 0,
+        truncated: false,
+      }),
       readFile: async () => Buffer.alloc(0),
       writeFile: async () => undefined,
       list: async () => [] as Array<{ name: string; type: "file" | "dir"; size: number }>,
@@ -424,26 +430,39 @@ describe("§6.2 fan-out hardening (fork isolation + artifact security)", () => {
     // allocation was rolled back — a subagent that never existed is never
     // charged.
     expect(brokenDestroyed).toBe(true);
-    expect((h.manager as SubagentManagerImpl).turnSpendOf(h.parent.session_id, turn)).toBe(budgetBefore);
+    expect((h.manager as SubagentManagerImpl).turnSpendOf(h.parent.session_id, turn)).toBe(
+      budgetBefore,
+    );
   });
 
   it("R5-1: a cross-session artifact read is refused (parentage check)", async () => {
     const { h } = await makeForkHarness();
     h.provider.script("parentage", artifactTurn("secret.txt"));
-    const result = await h.manager.spawn(
-      { task: "parentage" },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const result = await h.manager.spawn({ task: "parentage" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
     // A DIFFERENT session tries to read the child's artifact: refused even
     // though the reader has its own live bound turn.
     const otherCtx = h.makeParentCtx();
     await expect(
-      h.manager.readChildArtifact(result.session_id, "secret.txt", undefined, "someone-elses-session", otherCtx),
+      h.manager.readChildArtifact(
+        result.session_id,
+        "secret.txt",
+        undefined,
+        "someone-elses-session",
+        otherCtx,
+      ),
     ).rejects.toMatchObject({ code: "not_found" });
     // The legitimate parent still reads fine.
     await expect(
-      h.manager.readChildArtifact(result.session_id, "secret.txt", undefined, h.parent.session_id, h.parentCtx),
+      h.manager.readChildArtifact(
+        result.session_id,
+        "secret.txt",
+        undefined,
+        h.parent.session_id,
+        h.parentCtx,
+      ),
     ).resolves.toMatchObject({ bytes: SEED.length });
   });
 
@@ -452,11 +471,10 @@ describe("§6.2 fan-out hardening (fork isolation + artifact security)", () => {
     // One real tool action so the child's RunContext is captured; the bad
     // names are exercised through direct tool-handler invocations below.
     h.provider.script("bad-names", artifactTurn("ok.txt"));
-    const result = await h.manager.spawn(
-      { task: "bad-names" },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const result = await h.manager.spawn({ task: "bad-names" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
     const childCtx = h.capturedContexts.get(result.session_id)!;
     const artifact = subagentArtifactTool({
       sandbox: childCtx.sandbox,
@@ -479,16 +497,12 @@ describe("§6.2 fan-out hardening (fork isolation + artifact security)", () => {
     // A real tool action captures the child's RunContext (the huge file is
     // written into the captured sandbox below).
     h.provider.script("big-file", artifactTurn("small.txt"));
-    const result = await h.manager.spawn(
-      { task: "big-file" },
-      h.parentCtx,
-      { session_id: h.parent.session_id, turn_id: "t1" },
-    );
+    const result = await h.manager.spawn({ task: "big-file" }, h.parentCtx, {
+      session_id: h.parent.session_id,
+      turn_id: "t1",
+    });
     const childCtx = h.capturedContexts.get(result.session_id)!;
-    await childCtx.sandbox.writeFile(
-      "huge.bin",
-      Buffer.alloc(MAX_ARTIFACT_BYTES + 1),
-    );
+    await childCtx.sandbox.writeFile("huge.bin", Buffer.alloc(MAX_ARTIFACT_BYTES + 1));
     const artifact = subagentArtifactTool({
       sandbox: childCtx.sandbox,
       child_session_id: result.session_id,

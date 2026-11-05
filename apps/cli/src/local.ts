@@ -46,11 +46,7 @@ import {
   resolveSubagentsConfig,
   type SubagentManager,
 } from "@nyx/subagents";
-import {
-  SkillsProvider,
-  registerLoadSkillTool,
-  registerSkillsHook,
-} from "@nyx/skills";
+import { SkillsProvider, registerLoadSkillTool, registerSkillsHook } from "@nyx/skills";
 import {
   buildEngagementTooling,
   createEgressBinder,
@@ -350,18 +346,16 @@ export function createLocalRuntime(deps: LocalRuntimeDeps): LocalRuntime {
   };
 
   // ── egress proxy (Phase 6.1; docs/EGRESS-PROXY.md; mirrors apps/server) ──
-  const egressEnabled =
-    config.sandbox.egress_proxy.enabled && config.sandbox.provider === "docker";
-  const egressProxy =
-    egressEnabled
-      ? new EgressProxyServer({
-          policy: createEgressPolicy({
-            resolver: new DnsEgressResolver(),
-            limiter,
-            audit: (entry) => approvalHandle.audit(entry),
-          }),
-        })
-      : undefined;
+  const egressEnabled = config.sandbox.egress_proxy.enabled && config.sandbox.provider === "docker";
+  const egressProxy = egressEnabled
+    ? new EgressProxyServer({
+        policy: createEgressPolicy({
+          resolver: new DnsEgressResolver(),
+          limiter,
+          audit: (entry) => approvalHandle.audit(entry),
+        }),
+      })
+    : undefined;
   const egressBinder =
     egressProxy !== undefined
       ? createEgressBinder(egressProxy, { basePort: config.sandbox.egress_proxy.port })

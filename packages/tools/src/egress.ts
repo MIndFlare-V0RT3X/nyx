@@ -31,9 +31,7 @@ export interface EgressResolver {
 
 /** Strip exactly one trailing dot ("example.com." → "example.com"). */
 export function stripTrailingDot(hostname: string): string {
-  return hostname.length > 1 && hostname.endsWith(".")
-    ? hostname.slice(0, -1)
-    : hostname;
+  return hostname.length > 1 && hostname.endsWith(".") ? hostname.slice(0, -1) : hostname;
 }
 
 export interface DnsEgressResolverOptions {

@@ -33,10 +33,7 @@ export const nucleiInput = z
       .min(1)
       .max(512)
       .regex(/^[A-Za-z0-9._\-/]+$/, "workspace template path")
-      .refine(
-        (p) => !p.split("/").includes(".."),
-        "template must contain no .. segments",
-      )
+      .refine((p) => !p.split("/").includes(".."), "template must contain no .. segments")
       .optional(),
     severity: z
       .array(z.enum(["critical", "high", "medium", "low", "info"]))
@@ -45,7 +42,8 @@ export const nucleiInput = z
   })
   .strict()
   .refine((i) => i.templates === undefined || i.template === undefined, {
-    message: "templates (tags) and template (a file) are mutually exclusive — nuclei's -tags filter would silently filter out the custom template",
+    message:
+      "templates (tags) and template (a file) are mutually exclusive — nuclei's -tags filter would silently filter out the custom template",
     path: ["template"],
   });
 
@@ -67,7 +65,8 @@ const INPUT_SCHEMA = {
     template: {
       type: "string",
       pattern: "^[A-Za-z0-9._\\-/]+$",
-      description: "Optional ONE custom template file (workspace-relative, e.g. artifacts/nuclei-templates/finding-123.yaml) — the output of security.nuclei-template. Exclusive with 'templates'.",
+      description:
+        "Optional ONE custom template file (workspace-relative, e.g. artifacts/nuclei-templates/finding-123.yaml) — the output of security.nuclei-template. Exclusive with 'templates'.",
     },
     severity: {
       type: "array",
@@ -138,10 +137,10 @@ export function nucleiHandler(deps: SecurityToolDeps & { store: FindingStore }):
       const input = nucleiInput.parse(call.input);
       const parsed = input.targets.map((t) => parseActionUrl(t));
       if (parsed.some((p) => p === null)) {
-        throw Object.assign(
-          new Error("targets must be absolute http(s) URLs without userinfo"),
-          { name: "SecurityToolError", code: "skill.error" },
-        );
+        throw Object.assign(new Error("targets must be absolute http(s) URLs without userinfo"), {
+          name: "SecurityToolError",
+          code: "skill.error",
+        });
       }
       const targets = parsed.map((p) => p!);
       return runSecurityTool({
@@ -180,9 +179,12 @@ export function nucleiHandler(deps: SecurityToolDeps & { store: FindingStore }):
           const artifactPath = `artifacts/${artifactName}`;
           await ctx2.sandbox.writeFile(artifactPath, stdout);
           const artifactHash = createHash("sha256").update(stdout, "utf8").digest("hex");
-          const evidence = [{ path: artifactPath, hash: artifactHash, mime: "application/x-ndjson" }];
+          const evidence = [
+            { path: artifactPath, hash: artifactHash, mime: "application/x-ndjson" },
+          ];
 
-          const findings: Array<{ id: string; title: string; severity: string; target: unknown }> = [];
+          const findings: Array<{ id: string; title: string; severity: string; target: unknown }> =
+            [];
           for (const m of records) {
             const severity = SEVERITIES.includes(m.info?.severity as FindingSeverity)
               ? (m.info!.severity as FindingSeverity)
@@ -190,7 +192,9 @@ export function nucleiHandler(deps: SecurityToolDeps & { store: FindingStore }):
             const templateIdRaw = asId(pick(m["template-id"], m.template_id)) ?? "unknown-template";
             const templateId = templateIdRaw;
             const name =
-              typeof m.info?.name === "string" && m.info.name.length > 0 ? m.info.name : `nuclei ${templateId}`;
+              typeof m.info?.name === "string" && m.info.name.length > 0
+                ? m.info.name
+                : `nuclei ${templateId}`;
             const matchedAtRaw = pick(m["matched-at"], m.matched_at);
             const matchedAt =
               typeof matchedAtRaw === "string" && matchedAtRaw.length > 0
@@ -228,7 +232,12 @@ export function nucleiHandler(deps: SecurityToolDeps & { store: FindingStore }):
             const cweId = asId(pick(cls?.["cwe-id"], cls?.cwe_id));
             const cwe =
               cweId !== undefined
-                ? [`CWE-${cweId.replace(/^CWE-?/i, "").replace(/^\d+$/, (d) => d).toUpperCase()}`]
+                ? [
+                    `CWE-${cweId
+                      .replace(/^CWE-?/i, "")
+                      .replace(/^\d+$/, (d) => d)
+                      .toUpperCase()}`,
+                  ]
                 : undefined;
             const created = await deps.store.createInSession(
               { session_id: ctx2.session_id, engagement: ctx2.engagement },
@@ -242,7 +251,9 @@ export function nucleiHandler(deps: SecurityToolDeps & { store: FindingStore }):
                 ...(cvss3Vector !== undefined
                   ? { cvss_3_1: safeScore(() => scoreCvss3Vector(cvss3Vector)) }
                   : {}),
-                ...(cvss4Vector !== undefined ? { cvss_4_0: safeScore(() => scoreCvss4(cvss4Vector)) } : {}),
+                ...(cvss4Vector !== undefined
+                  ? { cvss_4_0: safeScore(() => scoreCvss4(cvss4Vector)) }
+                  : {}),
                 ...(cve !== undefined ? { cve } : {}),
                 ...(cwe !== undefined ? { cwe } : {}),
                 target,
@@ -255,9 +266,22 @@ export function nucleiHandler(deps: SecurityToolDeps & { store: FindingStore }):
                 notes: "",
               },
             );
-            findings.push({ id: created.id, title: created.title, severity: created.severity, target: created.target });
+            findings.push({
+              id: created.id,
+              title: created.title,
+              severity: created.severity,
+              target: created.target,
+            });
           }
-          return { kind: "json", json: { artifact: artifactPath, sha256: artifactHash, findings, count: findings.length } };
+          return {
+            kind: "json",
+            json: {
+              artifact: artifactPath,
+              sha256: artifactHash,
+              findings,
+              count: findings.length,
+            },
+          };
         },
       });
     },

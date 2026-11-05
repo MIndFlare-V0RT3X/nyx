@@ -150,9 +150,7 @@ export class WebhookChannel implements ChannelAdapter {
     }
     if (result.status === "replied") {
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(
-        JSON.stringify({ session_id: result.session_id ?? null, reply: result.text }),
-      );
+      res.end(JSON.stringify({ session_id: result.session_id ?? null, reply: result.text }));
       return;
     }
 

@@ -370,7 +370,8 @@ function makeWebFetchHandler(egress: { resolver: EgressResolver }): ToolHandler 
       const { body, truncated } = await readBodyCapped(exchange.msg, cap);
 
       if (isTextualContentType(contentType)) {
-        const text = body.toString("utf8") + (truncated ? `\n\n[truncated after ${cap} bytes]` : "");
+        const text =
+          body.toString("utf8") + (truncated ? `\n\n[truncated after ${cap} bytes]` : "");
         return {
           kind: "text",
           text: `fetched ${input.url} [${exchange.status} ${contentType}]\n\n${text}`,
@@ -400,10 +401,7 @@ export interface BuiltinToolsOptions {
 }
 
 /** Register the five builtin tools (fs.read, fs.list, fs.write, shell.exec, web.fetch). */
-export function registerBuiltinTools(
-  registry: ToolRegistry,
-  opts: BuiltinToolsOptions = {},
-): void {
+export function registerBuiltinTools(registry: ToolRegistry, opts: BuiltinToolsOptions = {}): void {
   const webFetch = makeWebFetchHandler(opts.egress ?? { resolver: new DnsEgressResolver() });
   registry.register(
     builtinDef(
@@ -444,7 +442,7 @@ export function registerBuiltinTools(
   registry.register(
     builtinDef(
       "web.fetch",
-      'Fetch an HTTP(S) URL. Only http/https with no embedded userinfo is accepted, the target host must be inside the session\'s engagement scope, the host\'s resolved addresses must fall inside the engagement\'s CIDR ranges (DNS-rebinding defense: the connection is pinned to the validated addresses), and every fetch passes the policy engine (an "ask" verdict pauses for operator approval). HTTP redirects are followed only when every hop stays inside the engagement scope (max 5). Text-like responses (text/*, JSON, XML, YAML) come back inline; binary responses are stored as an artifact file in the sandbox.',
+      "Fetch an HTTP(S) URL. Only http/https with no embedded userinfo is accepted, the target host must be inside the session's engagement scope, the host's resolved addresses must fall inside the engagement's CIDR ranges (DNS-rebinding defense: the connection is pinned to the validated addresses), and every fetch passes the policy engine (an \"ask\" verdict pauses for operator approval). HTTP redirects are followed only when every hop stays inside the engagement scope (max 5). Text-like responses (text/*, JSON, XML, YAML) come back inline; binary responses are stored as an artifact file in the sandbox.",
       "R2",
       ["net.egress"],
       WEB_FETCH_TIMEOUT_MS,

@@ -126,33 +126,33 @@ Full details: `docs/ARCHITECTURE.md`, `docs/SECURITY-MODEL.md`,
 
 ## Layout
 
-| Path                | What                                                                      |
-| ------------------- | ------------------------------------------------------------------------- |
-| `packages/protocol` | frozen shared contracts + boundary Zod schemas                            |
-| `packages/config`   | config schema/loader, `${VAR}` interpolation, BRAND                       |
-| `packages/kernel`   | plugins, priority hook bus, capability enforcement                        |
-| `packages/session`  | event log, projections, fork, replay (SQLite)                             |
-| `packages/model`    | providers (OpenAI-compatible / Anthropic / mock), router, redaction       |
-| `packages/scope`    | engagement scope engine (CIDR/domain/port matching)                       |
-| `packages/policy`   | deny-first rules, immutable invariants, approvals, hash-chained audit     |
-| `packages/sandbox`  | local (dev-only) + docker sandbox providers, path containment             |
-| `packages/tools`    | registry/router/runtime + `fs.read/write/list`, `shell.exec`, `web.fetch` |
-| `packages/memory`   | markdown store + SQLite FTS5 index, compaction                            |
-| `packages/persona`  | persona loader, deterministic 8-section prompt assembly                   |
-| `packages/agent`    | the single DI agent loop                                                  |
-| `packages/runtime`  | lane queue (per-session serial turns), cron, heartbeat scheduler          |
-| `packages/channels` | webhook + Telegram ingress, identity/session mapping, `/new` `/fork`      |
-| `packages/subagents`| the subagent system: spawn, fork, artifact handoff (`docs/SUBAGENTS.md`) |
-| `packages/tasks`   | durable tasks: SQL leases, state machine, retention (`docs/TASKS.md`, `docs/RETENTION.md`) |
-| `packages/skills`  | progressive-disclosure SKILL.md packages (`docs/SKILLS.md`) |
-| `packages/security`| engagement scope engine, findings DB + CVSS, reports (`docs/SECURITY-SUBSYSTEM.md`, `docs/ENGAGEMENT.md`, `docs/FINDINGS.md`) |
-| `apps/server`       | Hono: REST + SSE + WS, bearer auth, owner-bound R4, channels, heartbeats  |
-| `apps/cli`          | the `nyx` binary: run/chat/sessions/approvals/doctor                      |
-| `apps/web`          | minimal React client (64 KB gzipped)                                      |
-| `personas/default`  | Nyx — honest operator contract, scope discipline                          |
-| `personas/security` | the engagement posture: scope-bound, evidence-first, report-oriented      |
-| `skills/security`   | the six security skills (persona-scoped; add `./skills` to `skills.dirs`) |
-| `tests/e2e`         | smoke · approval · scope · replay · compaction · subagents · fan-out      |
+| Path                 | What                                                                                                                          |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `packages/protocol`  | frozen shared contracts + boundary Zod schemas                                                                                |
+| `packages/config`    | config schema/loader, `${VAR}` interpolation, BRAND                                                                           |
+| `packages/kernel`    | plugins, priority hook bus, capability enforcement                                                                            |
+| `packages/session`   | event log, projections, fork, replay (SQLite)                                                                                 |
+| `packages/model`     | providers (OpenAI-compatible / Anthropic / mock), router, redaction                                                           |
+| `packages/scope`     | engagement scope engine (CIDR/domain/port matching)                                                                           |
+| `packages/policy`    | deny-first rules, immutable invariants, approvals, hash-chained audit                                                         |
+| `packages/sandbox`   | local (dev-only) + docker sandbox providers, path containment                                                                 |
+| `packages/tools`     | registry/router/runtime + `fs.read/write/list`, `shell.exec`, `web.fetch`                                                     |
+| `packages/memory`    | markdown store + SQLite FTS5 index, compaction                                                                                |
+| `packages/persona`   | persona loader, deterministic 8-section prompt assembly                                                                       |
+| `packages/agent`     | the single DI agent loop                                                                                                      |
+| `packages/runtime`   | lane queue (per-session serial turns), cron, heartbeat scheduler                                                              |
+| `packages/channels`  | webhook + Telegram ingress, identity/session mapping, `/new` `/fork`                                                          |
+| `packages/subagents` | the subagent system: spawn, fork, artifact handoff (`docs/SUBAGENTS.md`)                                                      |
+| `packages/tasks`     | durable tasks: SQL leases, state machine, retention (`docs/TASKS.md`, `docs/RETENTION.md`)                                    |
+| `packages/skills`    | progressive-disclosure SKILL.md packages (`docs/SKILLS.md`)                                                                   |
+| `packages/security`  | engagement scope engine, findings DB + CVSS, reports (`docs/SECURITY-SUBSYSTEM.md`, `docs/ENGAGEMENT.md`, `docs/FINDINGS.md`) |
+| `apps/server`        | Hono: REST + SSE + WS, bearer auth, owner-bound R4, channels, heartbeats                                                      |
+| `apps/cli`           | the `nyx` binary: run/chat/sessions/approvals/doctor                                                                          |
+| `apps/web`           | minimal React client (64 KB gzipped)                                                                                          |
+| `personas/default`   | Nyx — honest operator contract, scope discipline                                                                              |
+| `personas/security`  | the engagement posture: scope-bound, evidence-first, report-oriented                                                          |
+| `skills/security`    | the six security skills (persona-scoped; add `./skills` to `skills.dirs`)                                                     |
+| `tests/e2e`          | smoke · approval · scope · replay · compaction · subagents · fan-out                                                          |
 
 ## Config reference
 
@@ -264,7 +264,7 @@ CONTENT — submission is a human step, by design). `docs/DISCLOSURE.md`.
 | 6     | egress proxy, exploitation tooling, disclosure workflow (shipped)  |
 | 7     | release readiness: two-lane CI, plugin trust, process split,       |
 |       | behavioral evals, v0.7.0 (shipped)                                 |
-| 8+    | split-mode soak (channels/tasks/subagents migrate, default flips),|
+| 8+    | split-mode soak (channels/tasks/subagents migrate, default flips), |
 |       | DOCKER-USER host hardening, real-model eval baselines, more        |
 |       | sandboxes (E2B, Daytona), computer-use                             |
 

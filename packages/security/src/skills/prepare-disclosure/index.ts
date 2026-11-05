@@ -37,9 +37,21 @@ const PREPARE_INPUT_SCHEMA = {
   type: "object",
   properties: {
     finding_id: { type: "string", description: "The finding being disclosed." },
-    affected_versions: { type: "array", items: { type: "string" }, description: "Affected versions, e.g. ['2.4.49', '2.4.50']." },
-    timeline_days: { type: "integer", minimum: 14, maximum: 365, description: "Coordinated disclosure window in days (default 90)." },
-    vendor_contact: { type: "string", description: "The vendor security contact for the notification email." },
+    affected_versions: {
+      type: "array",
+      items: { type: "string" },
+      description: "Affected versions, e.g. ['2.4.49', '2.4.50'].",
+    },
+    timeline_days: {
+      type: "integer",
+      minimum: 14,
+      maximum: 365,
+      description: "Coordinated disclosure window in days (default 90).",
+    },
+    vendor_contact: {
+      type: "string",
+      description: "The vendor security contact for the notification email.",
+    },
     impact: { type: "string", description: "Impact statement: what an attacker achieves." },
   },
   required: ["finding_id", "affected_versions", "vendor_contact", "impact"],
@@ -109,15 +121,15 @@ export function prepareDisclosureHandler(
         },
         {
           name: "impact.md",
-          content: `# Impact\n\n${input.impact}\n\nSeverity: ${finding.severity}` +
+          content:
+            `# Impact\n\n${input.impact}\n\nSeverity: ${finding.severity}` +
             (finding.cvss_3_1 !== undefined ? `\nCVSS 3.1 base score: ${finding.cvss_3_1}` : "") +
             (finding.cvss_4_0 !== undefined ? `\nCVSS 4.0 base score: ${finding.cvss_4_0}` : "") +
             "\n",
         },
         {
           name: "versions.md",
-          content:
-            `# Affected versions\n\n${input.affected_versions.map((v) => `- ${v}`).join("\n")}\n`,
+          content: `# Affected versions\n\n${input.affected_versions.map((v) => `- ${v}`).join("\n")}\n`,
         },
         {
           name: "timeline.md",
@@ -194,4 +206,3 @@ export function prepareDisclosureHandler(
     },
   };
 }
-

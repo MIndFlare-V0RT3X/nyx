@@ -36,7 +36,12 @@ describe("SecurityRateLimiter — the §1.5/§1.7 acceptance math (virtual clock
       ffuf: { requests_per_second: 20 },
     });
     for (let i = 0; i < 100; i++) {
-      await limiter.acquire({ engagement: eng, tool_class: "ffuf", host: "app.example.com", unit: "requests" });
+      await limiter.acquire({
+        engagement: eng,
+        tool_class: "ffuf",
+        host: "app.example.com",
+        unit: "requests",
+      });
     }
     expect(clock.now - NOW).toBeGreaterThanOrEqual(5_000);
     expect(clock.now - NOW).toBeLessThan(5_100); // and not grossly more
@@ -51,7 +56,12 @@ describe("SecurityRateLimiter — the §1.5/§1.7 acceptance math (virtual clock
     // Control first: ffuf ALONE at its own 20 rps would finish 10 requests
     // in 500 ms — but the shared default-10 host bucket holds it to 1000 ms.
     for (let i = 0; i < 10; i++) {
-      await limiter.acquire({ engagement: eng, tool_class: "ffuf", host: "app.example.com", unit: "requests" });
+      await limiter.acquire({
+        engagement: eng,
+        tool_class: "ffuf",
+        host: "app.example.com",
+        unit: "requests",
+      });
     }
     expect(clock.now - NOW).toBeGreaterThanOrEqual(1_000);
 
@@ -59,8 +69,18 @@ describe("SecurityRateLimiter — the §1.5/§1.7 acceptance math (virtual clock
     // 10 nuclei on the same host must take ≥2 s through the shared bucket.
     const start = clock.now;
     for (let i = 0; i < 10; i++) {
-      await limiter.acquire({ engagement: eng, tool_class: "ffuf", host: "app.example.com", unit: "requests" });
-      await limiter.acquire({ engagement: eng, tool_class: null, host: "app.example.com", unit: "requests" });
+      await limiter.acquire({
+        engagement: eng,
+        tool_class: "ffuf",
+        host: "app.example.com",
+        unit: "requests",
+      });
+      await limiter.acquire({
+        engagement: eng,
+        tool_class: null,
+        host: "app.example.com",
+        unit: "requests",
+      });
     }
     expect(clock.now - start).toBeGreaterThanOrEqual(2_000);
   });
@@ -69,8 +89,18 @@ describe("SecurityRateLimiter — the §1.5/§1.7 acceptance math (virtual clock
     const { limiter, clock } = virtualRig();
     const eng = engagement({ default: { requests_per_second: 10 } });
     for (let i = 0; i < 10; i++) {
-      await limiter.acquire({ engagement: eng, tool_class: null, host: "a.example.com", unit: "requests" });
-      await limiter.acquire({ engagement: eng, tool_class: null, host: "b.example.com", unit: "requests" });
+      await limiter.acquire({
+        engagement: eng,
+        tool_class: null,
+        host: "a.example.com",
+        unit: "requests",
+      });
+      await limiter.acquire({
+        engagement: eng,
+        tool_class: null,
+        host: "b.example.com",
+        unit: "requests",
+      });
     }
     // 10 requests per host at 10 rps = 1000 ms — NOT the 2000 ms a single
     // shared queue would impose.
@@ -81,10 +111,23 @@ describe("SecurityRateLimiter — the §1.5/§1.7 acceptance math (virtual clock
   it("different engagements get different buckets for the same host", async () => {
     const { limiter, clock } = virtualRig();
     const a = engagement({ default: { requests_per_second: 10 } });
-    const b: Engagement = { ...engagement({ default: { requests_per_second: 10 } }), id: "ENG-OTHER" };
+    const b: Engagement = {
+      ...engagement({ default: { requests_per_second: 10 } }),
+      id: "ENG-OTHER",
+    };
     for (let i = 0; i < 10; i++) {
-      await limiter.acquire({ engagement: a, tool_class: null, host: "app.example.com", unit: "requests" });
-      await limiter.acquire({ engagement: b, tool_class: null, host: "app.example.com", unit: "requests" });
+      await limiter.acquire({
+        engagement: a,
+        tool_class: null,
+        host: "app.example.com",
+        unit: "requests",
+      });
+      await limiter.acquire({
+        engagement: b,
+        tool_class: null,
+        host: "app.example.com",
+        unit: "requests",
+      });
     }
     expect(clock.now - NOW).toBeGreaterThanOrEqual(1_000);
     expect(clock.now - NOW).toBeLessThan(1_900);
@@ -98,7 +141,12 @@ describe("SecurityRateLimiter — the §1.5/§1.7 acceptance math (virtual clock
       nmap: { packets_per_second: 100 },
     });
     for (let i = 0; i < 100; i++) {
-      await limiter.acquire({ engagement: eng, tool_class: "nmap", host: "203.0.113.42", unit: "packets" });
+      await limiter.acquire({
+        engagement: eng,
+        tool_class: "nmap",
+        host: "203.0.113.42",
+        unit: "packets",
+      });
     }
     expect(clock.now - NOW).toBeGreaterThanOrEqual(1_000);
     expect(clock.now - NOW).toBeLessThan(1_100);
@@ -108,7 +156,12 @@ describe("SecurityRateLimiter — the §1.5/§1.7 acceptance math (virtual clock
     const { limiter, clock } = virtualRig();
     const eng = engagement();
     for (let i = 0; i < 1_000; i++) {
-      await limiter.acquire({ engagement: eng, tool_class: "ffuf", host: "app.example.com", unit: "requests" });
+      await limiter.acquire({
+        engagement: eng,
+        tool_class: "ffuf",
+        host: "app.example.com",
+        unit: "requests",
+      });
     }
     expect(clock.now).toBe(NOW);
     expect(limiter.bucketCount).toBe(0);
@@ -121,7 +174,12 @@ describe("SecurityRateLimiter — the §1.5/§1.7 acceptance math (virtual clock
       nmap: { packets_per_second: 100 }, // declares packets, not requests
     });
     for (let i = 0; i < 10; i++) {
-      await limiter.acquire({ engagement: eng, tool_class: "nmap", host: "h.example.com", unit: "requests" });
+      await limiter.acquire({
+        engagement: eng,
+        tool_class: "nmap",
+        host: "h.example.com",
+        unit: "requests",
+      });
     }
     expect(clock.now - NOW).toBeGreaterThanOrEqual(1_000); // default rps applies
   });
@@ -133,7 +191,12 @@ describe("SecurityRateLimiter — real-clock smoke (the reservation sleeps for r
     const eng = engagement({ default: { requests_per_second: 20 } });
     const t0 = Date.now();
     for (let i = 0; i < 5; i++) {
-      await limiter.acquire({ engagement: eng, tool_class: null, host: "app.example.com", unit: "requests" });
+      await limiter.acquire({
+        engagement: eng,
+        tool_class: null,
+        host: "app.example.com",
+        unit: "requests",
+      });
     }
     const elapsed = Date.now() - t0;
     expect(elapsed).toBeGreaterThanOrEqual(240); // 5 × 50 ms = 250, timer slack allowed

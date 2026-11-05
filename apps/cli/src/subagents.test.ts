@@ -5,12 +5,7 @@
 // visibility rules (--all with the ↳ prefix, show's lineage hint).
 
 import { describe, expect, it } from "vitest";
-import type {
-  CompletionRequest,
-  ModelChunk,
-  ModelInfo,
-  ModelProvider,
-} from "@nyx/protocol";
+import type { CompletionRequest, ModelChunk, ModelInfo, ModelProvider } from "@nyx/protocol";
 import type { MockTurn } from "@nyx/model";
 import { makeRig, until } from "./harness.test.js";
 import { listSessions, showSession, renderSessionList } from "./sessions.js";
@@ -80,7 +75,13 @@ class DispatchProvider implements ModelProvider {
 
 function spawnTurn(task: string, callId = "c1"): ModelChunk[] {
   return [
-    { type: "tool_call.delta", index: 0, id: callId, name: "spawn_subagent", arguments_delta: JSON.stringify({ task }) },
+    {
+      type: "tool_call.delta",
+      index: 0,
+      id: callId,
+      name: "spawn_subagent",
+      arguments_delta: JSON.stringify({ task }),
+    },
     { type: "usage", usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } },
     { type: "done", finish_reason: "tool_calls" },
   ];
@@ -98,7 +99,10 @@ function textTurn(text: string): ModelChunk[] {
 async function runSpawnTurn(
   rig: Awaited<ReturnType<typeof makeRig>>,
   provider: DispatchProvider,
-): Promise<{ runtime: ReturnType<Awaited<ReturnType<typeof makeRig>>["runtime"]>; session_id: string }> {
+): Promise<{
+  runtime: ReturnType<Awaited<ReturnType<typeof makeRig>>["runtime"]>;
+  session_id: string;
+}> {
   const runtime = await rig.runtime([provider]);
   const session = await runtime.createSession({ title: "cli subagent test" });
   const result = await runtime.runTurn({
@@ -205,9 +209,9 @@ describe("nyx subagents (CLI)", () => {
     expect(settled.note).toContain("not running");
 
     // Non-subagent sessions are rejected.
-    await expect(abortSubagent(rig.dirs.data, session.session_id, "cli:test")).rejects.toMatchObject(
-      { code: "validation_failed" },
-    );
+    await expect(
+      abortSubagent(rig.dirs.data, session.session_id, "cli:test"),
+    ).rejects.toMatchObject({ code: "validation_failed" });
     await runtime.close();
   });
 });

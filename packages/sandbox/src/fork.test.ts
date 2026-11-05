@@ -18,7 +18,10 @@ async function newSandbox(): Promise<Sandbox> {
 
 afterAll(async () => {
   while (created.length > 0) {
-    await created.pop()!.destroy().catch(() => undefined);
+    await created
+      .pop()!
+      .destroy()
+      .catch(() => undefined);
   }
 });
 
@@ -70,7 +73,13 @@ describe("fork (local provider)", () => {
     const fake: Sandbox = {
       id: "fake",
       workdir: "/tmp/fake",
-      exec: async () => ({ exit_code: 0, stdout: "", stderr: "", duration_ms: 0, truncated: false }),
+      exec: async () => ({
+        exit_code: 0,
+        stdout: "",
+        stderr: "",
+        duration_ms: 0,
+        truncated: false,
+      }),
       readFile: async () => Buffer.alloc(0),
       writeFile: async () => undefined,
       list: async () => [],

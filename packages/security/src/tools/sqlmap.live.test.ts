@@ -60,7 +60,10 @@ function vulnerableServer(): Promise<{ server: Server; port: number }> {
         .prepare("SELECT id, name, secret FROM users WHERE name = '" + q + "'")
         .all() as Array<{ id: number; name: string; secret: string }>;
       const body =
-        "found " + literal.length + " users\n" + literal.map((r) => `${r.name}:${r.secret}`).join("\n");
+        "found " +
+        literal.length +
+        " users\n" +
+        literal.map((r) => `${r.name}:${r.secret}`).join("\n");
       res.writeHead(200, { "content-type": "text/plain" });
       res.end(body);
     } catch (err) {
@@ -145,7 +148,13 @@ describe("sqlmap LIVE — the real binary end-to-end (hard rule 6)", () => {
     const sandbox: Sandbox = {
       id: "live-sbx",
       workdir: "/workspace",
-      exec: async () => ({ exit_code: 0, stdout: "", stderr: "", duration_ms: 0, truncated: false }),
+      exec: async () => ({
+        exit_code: 0,
+        stdout: "",
+        stderr: "",
+        duration_ms: 0,
+        truncated: false,
+      }),
       readFile: async (p) => Buffer.from(files.get(p) ?? "", "utf8"),
       writeFile: async (p, data) => {
         files.set(p, typeof data === "string" ? data : data.toString("utf8"));
@@ -180,7 +189,9 @@ describe("sqlmap LIVE — the real binary end-to-end (hard rule 6)", () => {
       },
       ctx as never,
     );
-    const json = (out as { json: { injectable: boolean; dbms: string | null; finding_id?: string } }).json;
+    const json = (
+      out as { json: { injectable: boolean; dbms: string | null; finding_id?: string } }
+    ).json;
     expect(json.injectable).toBe(true);
     expect(json.dbms).toBe("SQLite");
     expect(json.finding_id).toBeTruthy();
@@ -202,7 +213,11 @@ describe("sqlmap LIVE — the real binary end-to-end (hard rule 6)", () => {
       },
       ctx as never,
     );
-    const json = (out as { json: { tables: Array<{ table: string; entries: number | null; rows: string[][] }> } }).json;
+    const json = (
+      out as {
+        json: { tables: Array<{ table: string; entries: number | null; rows: string[][] }> };
+      }
+    ).json;
     const users = json.tables.find((t) => t.table === "users");
     expect(users).toBeDefined();
     expect(users!.entries).toBe(3);

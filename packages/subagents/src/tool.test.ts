@@ -19,7 +19,13 @@ function fakeCtx(over: Partial<ToolContext> = {}): ToolContext {
     sandbox: {
       id: "sbx",
       workdir: "/tmp/x",
-      exec: async () => ({ exit_code: 0, stdout: "", stderr: "", duration_ms: 0, truncated: false }),
+      exec: async () => ({
+        exit_code: 0,
+        stdout: "",
+        stderr: "",
+        duration_ms: 0,
+        truncated: false,
+      }),
       readFile: async () => Buffer.alloc(0),
       writeFile: async () => undefined,
       list: async () => [],
@@ -27,8 +33,13 @@ function fakeCtx(over: Partial<ToolContext> = {}): ToolContext {
     },
     signal: new AbortController().signal,
     logger: {
-      debug() {}, info() {}, warn() {}, error() {},
-      child() { return this; },
+      debug() {},
+      info() {},
+      warn() {},
+      error() {},
+      child() {
+        return this;
+      },
     },
     emit: () => undefined,
     engagement: null,
@@ -114,10 +125,12 @@ describe("spawn_subagent tool registration", () => {
       ).rejects.toMatchObject({ code: "validation_failed", name: "SubagentError" });
     }
     // The boundary itself is legal.
-    const ok = await handler.execute(
-      { call_id: "c1", name: SPAWN_SUBAGENT_TOOL, input: { task: "x", budget_tokens: 1024 } },
-      fakeCtx({ session_id: "s1", turn_id: "t1", emit: () => undefined }),
-    ).catch(() => undefined); // no bound turn → any error is fine; input passed validation
+    const ok = await handler
+      .execute(
+        { call_id: "c1", name: SPAWN_SUBAGENT_TOOL, input: { task: "x", budget_tokens: 1024 } },
+        fakeCtx({ session_id: "s1", turn_id: "t1", emit: () => undefined }),
+      )
+      .catch(() => undefined); // no bound turn → any error is fine; input passed validation
     expect(ok).toBeUndefined();
   });
 

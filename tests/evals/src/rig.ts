@@ -41,7 +41,12 @@ import { ModelRouterImpl, ProviderRegistryImpl } from "@nyx/model";
 import type { MockTurn } from "@nyx/model";
 import { openSessionStore } from "@nyx/session";
 import { createKernel } from "@nyx/kernel";
-import { createToolRuntime, registerBuiltinTools, ToolRegistryImpl, ToolRouterImpl } from "@nyx/tools";
+import {
+  createToolRuntime,
+  registerBuiltinTools,
+  ToolRegistryImpl,
+  ToolRouterImpl,
+} from "@nyx/tools";
 import {
   createSubagentManager,
   registerSubagentTool,
@@ -136,7 +141,9 @@ export class ScriptedProvider implements ModelProvider {
   }
 
   listModels(): Promise<ModelInfo[]> {
-    return Promise.resolve([{ id: "mock-1", context_window: 128000, max_output: 8192, supports: ["tools"] }]);
+    return Promise.resolve([
+      { id: "mock-1", context_window: 128000, max_output: 8192, supports: ["tools"] },
+    ]);
   }
 
   async *complete(req: CompletionRequest): AsyncGenerator<ModelChunk, void, void> {
@@ -183,7 +190,11 @@ export function makeApprovalRig(
     try {
       const engine = handle.engine as unknown as {
         pending(session_id: string): Promise<ApprovalRecord[]>;
-        resolve(id: string, decision: "allow" | "deny", decided_by: string): Promise<ApprovalRecord>;
+        resolve(
+          id: string,
+          decision: "allow" | "deny",
+          decided_by: string,
+        ): Promise<ApprovalRecord>;
       };
       for (const record of await engine.pending(sessionId)) {
         const decision = decisions[n] ?? "deny";
@@ -253,7 +264,8 @@ export interface FakeToolSpec {
 
 export interface LoopSetup {
   provider_script: Array<
-    { text: string } | { tool_call: { name: string; call_id?: string; input: Record<string, unknown> } }
+    | { text: string }
+    | { tool_call: { name: string; call_id?: string; input: Record<string, unknown> } }
   >;
   tools?: FakeToolSpec[];
   policy?: PolicyRule[];
@@ -262,7 +274,11 @@ export interface LoopSetup {
   seed_history?: { turns: number; tool_result_bytes: number };
   compaction_budget_tokens?: number;
   memory?: boolean;
-  subagents?: { child_marker: string; child_script: Array<{ text: string }>; child_hold_ms?: number };
+  subagents?: {
+    child_marker: string;
+    child_script: Array<{ text: string }>;
+    child_hold_ms?: number;
+  };
   abort_after_event?: string;
   /** Abort the turn N ms after it starts — DURING a hanging tool (the
    *  event-stream abort fires after the round yields; a mid-execution
@@ -278,9 +294,7 @@ export interface LoopRunResult {
 }
 
 /** Convert the YAML provider script into MockTurn[]. */
-export function toMockTurns(
-  script: LoopSetup["provider_script"],
-): MockTurn[] {
+export function toMockTurns(script: LoopSetup["provider_script"]): MockTurn[] {
   return script.map((step) => {
     if ("text" in step) {
       return [
@@ -312,10 +326,7 @@ export interface LoopRig {
   close(): Promise<void>;
 }
 
-export async function runLoopEval(
-  setup: LoopSetup,
-  userMessage: string,
-): Promise<LoopRunResult> {
+export async function runLoopEval(setup: LoopSetup, userMessage: string): Promise<LoopRunResult> {
   const baseDir = await fsp.mkdtemp(path.join(os.tmpdir(), "nyx-eval-"));
   const db = new Database(":memory:");
   const store = openSessionStore(":memory:", { db });
@@ -382,7 +393,12 @@ export async function runLoopEval(
 
   // The REAL approval engine, wired like the production surface, with a
   // scripted operator resolver for THIS session.
-  const approvalRig = makeApprovalRig(db, store, session.session_id, setup.approval_decisions ?? []);
+  const approvalRig = makeApprovalRig(
+    db,
+    store,
+    session.session_id,
+    setup.approval_decisions ?? [],
+  );
   const approvals = approvalRig.engine;
 
   const runtime = createToolRuntime({
@@ -417,14 +433,23 @@ export async function runLoopEval(
           type: "message.assistant",
           session_id: session.session_id,
           turn_id: `seed-${i}`,
-          content: [{ type: "tool_use", call_id: `seed-${i}`, name: "fs.read", input: { path: `big-${i}.txt` } }],
+          content: [
+            {
+              type: "tool_use",
+              call_id: `seed-${i}`,
+              name: "fs.read",
+              input: { path: `big-${i}.txt` },
+            },
+          ],
           ts: ts++,
         },
         {
           type: "message.assistant",
           session_id: session.session_id,
           turn_id: `seed-${i}`,
-          content: [{ type: "tool_result", call_id: `seed-${i}`, output: { kind: "text", text: filler } }],
+          content: [
+            { type: "tool_result", call_id: `seed-${i}`, output: { kind: "text", text: filler } },
+          ],
           ts: ts++,
         },
         {
@@ -469,7 +494,9 @@ export async function runLoopEval(
     session: store,
     model: router,
     tools: registry,
-    tool_router: { select: (call, available) => available.find((d) => d.name === call.name) ?? null },
+    tool_router: {
+      select: (call, available) => available.find((d) => d.name === call.name) ?? null,
+    },
     policy,
     approvals,
     sandbox,
@@ -528,5 +555,10 @@ export async function runLoopEval(
   store.close();
   db.close();
 
-  return { events: logEvents, memory_entries: memoryEntries, session_id: session.session_id, ...(error !== undefined ? { error } : {}) };
+  return {
+    events: logEvents,
+    memory_entries: memoryEntries,
+    session_id: session.session_id,
+    ...(error !== undefined ? { error } : {}),
+  };
 }

@@ -54,10 +54,7 @@ function baseSpec(over: Record<string, unknown> = {}): Record<string, unknown> {
  * Park a fresh task in `state` using ONLY public manager/store transitions —
  * the reachability half of the state-machine proof.
  */
-async function parkedAt(
-  s: Stack,
-  state: TaskState,
-): Promise<TaskRecord> {
+async function parkedAt(s: Stack, state: TaskState): Promise<TaskRecord> {
   const rec = await s.manager.create(baseSpec() as never, OWNER);
   switch (state) {
     case "pending":
@@ -189,14 +186,7 @@ describe("task creation", () => {
 });
 
 describe("state machine (hard rule #1: illegal transitions throw)", () => {
-  const STATES: TaskState[] = [
-    "pending",
-    "running",
-    "paused",
-    "completed",
-    "failed",
-    "cancelled",
-  ];
+  const STATES: TaskState[] = ["pending", "running", "paused", "completed", "failed", "cancelled"];
 
   it("every state is reachable through public transitions", async () => {
     const s = await makeStack();
@@ -390,10 +380,7 @@ describe("claim guards (§6.1 fan-out: R2-1 / R2-5 / R2-6)", () => {
 
   it("R2-6: retry() on a recurring task re-anchors next_attempt_at to the next cron fire, not now", async () => {
     const s = await makeStack();
-    const rec = await s.manager.create(
-      baseSpec({ schedule: "*/5 * * * *" }) as never,
-      OWNER,
-    );
+    const rec = await s.manager.create(baseSpec({ schedule: "*/5 * * * *" }) as never, OWNER);
     // Park it failed at 00:05 (the first fire).
     s.clock.now = T0 + 300_000;
     s.manager.sql.claim(rec.id, "w", 300_000, s.clock.now);

@@ -12,11 +12,7 @@ import {
   correlateCveDefinition,
   correlateCveHandler,
 } from "./correlate-cve/index.js";
-import {
-  MINIMIZE_META,
-  minimizePocDefinition,
-  minimizePocHandler,
-} from "./minimize-poc/index.js";
+import { MINIMIZE_META, minimizePocDefinition, minimizePocHandler } from "./minimize-poc/index.js";
 import {
   PREPARE_META,
   prepareDisclosureDefinition,

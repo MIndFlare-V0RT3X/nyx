@@ -13,11 +13,7 @@ import type { Engagement } from "@nyx/protocol";
 import type { EgressResolver, ResolvedEndpoint } from "@nyx/tools";
 import type { ResolvedAddress } from "@nyx/scope";
 import { EgressProxyServer } from "@nyx/sandbox";
-import type {
-  EgressDecision,
-  EgressListenerContext,
-  SandboxEgressBinding,
-} from "@nyx/sandbox";
+import type { EgressDecision, EgressListenerContext, SandboxEgressBinding } from "@nyx/sandbox";
 import { createEgressBinder, createEgressPolicy } from "./egress_policy.js";
 import { SecurityRateLimiter } from "./rate_limiter.js";
 import type { EngagementAuditSink } from "../engagement/loader.js";
@@ -196,10 +192,10 @@ describe("createEgressPolicy — the per-CONNECT decision", () => {
     expect(early.decision).toBe("deny");
     if (early.decision === "deny") expect(early.reason).toContain("engagement_not_yet_active");
 
-    const late = await policy.decide(
-      context({ engagement: engagement({ expires_at: NOW - 1 }) }),
-      { host: "example.com", port: 443 },
-    );
+    const late = await policy.decide(context({ engagement: engagement({ expires_at: NOW - 1 }) }), {
+      host: "example.com",
+      port: 443,
+    });
     expect(late.decision).toBe("deny");
   });
 

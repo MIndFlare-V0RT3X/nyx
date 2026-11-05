@@ -12,11 +12,7 @@
 // plausible path).
 
 /** Audit row shape (matches @nyx/policy's appendAudit entry). */
-export type VaultAuditSink = (entry: {
-  actor: string;
-  action: string;
-  payload: unknown;
-}) => void;
+export type VaultAuditSink = (entry: { actor: string; action: string; payload: unknown }) => void;
 
 /** Phase 0 §5.5: scoped tokens live at most 60 seconds. */
 export const CREDENTIAL_TOKEN_TTL_MS = 60_000;
@@ -77,7 +73,13 @@ export class CredentialVault {
     this.#audit?.({
       actor: "system:credentials",
       action: "security.credential.issued",
-      payload: { name, target_env, requester, expires_at: credential.expires_at, ttl_ms: CREDENTIAL_TOKEN_TTL_MS },
+      payload: {
+        name,
+        target_env,
+        requester,
+        expires_at: credential.expires_at,
+        ttl_ms: CREDENTIAL_TOKEN_TTL_MS,
+      },
     });
     return credential;
   }

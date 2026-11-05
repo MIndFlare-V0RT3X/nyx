@@ -34,11 +34,7 @@ export {
   type LoadEngagementDeps,
   type EngagementAuditSink,
 } from "./engagement/loader.js";
-export {
-  checkUrl,
-  parseActionUrl,
-  type ParsedActionUrl,
-} from "./engagement/matcher.js";
+export { checkUrl, parseActionUrl, type ParsedActionUrl } from "./engagement/matcher.js";
 export {
   checkTarget,
   checkResolvedTarget,
@@ -68,11 +64,13 @@ export {
   buildEngagementTooling,
   type SecurityToolMeta,
 } from "./scope/tool_filter.js";
-export { SecurityRateLimiter, type RateLimiterDeps, type RateTarget, type RateBucketStore } from "./scope/rate_limiter.js";
 export {
-  SqliteRateBucketStore,
-  type SqliteRateBucketStoreDeps,
-} from "./scope/rate_store.js";
+  SecurityRateLimiter,
+  type RateLimiterDeps,
+  type RateTarget,
+  type RateBucketStore,
+} from "./scope/rate_limiter.js";
+export { SqliteRateBucketStore, type SqliteRateBucketStoreDeps } from "./scope/rate_store.js";
 // Phase 6.1 — the egress proxy policy + binder (docs/EGRESS-PROXY.md).
 export {
   createEgressPolicy,

@@ -201,10 +201,7 @@ export async function startKernelHost(opts: KernelHostOptions): Promise<KernelHo
       }
 
       case "session.append":
-        return await store.append(
-          request.session_id as string,
-          request.events as SessionEvent[],
-        );
+        return await store.append(request.session_id as string, request.events as SessionEvent[]);
 
       case "session.read":
         return await store.read(
@@ -275,9 +272,7 @@ export async function startKernelHost(opts: KernelHostOptions): Promise<KernelHo
               ...(typeof entry.payload === "object" && entry.payload !== null
                 ? (entry.payload as Record<string, unknown>)
                 : { value: entry.payload }),
-              ...(entry.actor !== `ipc:${connection.role}`
-                ? { requested_actor: entry.actor }
-                : {}),
+              ...(entry.actor !== `ipc:${connection.role}` ? { requested_actor: entry.actor } : {}),
             },
           },
           { now },

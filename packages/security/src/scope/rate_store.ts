@@ -40,9 +40,8 @@ export class SqliteRateBucketStore implements RateBucketStore {
   }
 
   bucketCount(): number {
-    const row = this.db
-      .prepare("SELECT COUNT(*) AS n FROM rate_buckets")
-      .get() as { n: number } | undefined;
+    const row = this.db.prepare("SELECT COUNT(*) AS n FROM rate_buckets").get() as
+      { n: number } | undefined;
     return row?.n ?? 0;
   }
 
@@ -61,9 +60,7 @@ export class SqliteRateBucketStore implements RateBucketStore {
       // First acquisition waits one interval (bucket starts empty — strict
       // rate, no burst), matching the Phase 5 semantics exactly.
       const slot =
-        existing === undefined
-          ? now + interval_ms
-          : Math.max(now, existing.next_allowed_at);
+        existing === undefined ? now + interval_ms : Math.max(now, existing.next_allowed_at);
       this.db
         .prepare(
           `INSERT INTO rate_buckets (key, next_allowed_at, interval_ms, updated_at)

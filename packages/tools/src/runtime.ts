@@ -202,7 +202,10 @@ function extractEgressTarget(input: unknown): EgressExtraction {
   if (typeof obj.target === "string" && obj.target !== "") {
     const extracted = extractHostEntry(obj.target);
     if (extracted === null) {
-      return { ok: false, reason: `invalid target for network egress: ${JSON.stringify(obj.target)}` };
+      return {
+        ok: false,
+        reason: `invalid target for network egress: ${JSON.stringify(obj.target)}`,
+      };
     }
     return { ok: true, targets: [extracted] };
   }
@@ -217,11 +220,15 @@ function extractEgressTarget(input: unknown): EgressExtraction {
   if (typeof obj.rhosts === "string" && obj.rhosts !== "") {
     const extracted = extractHostEntry(obj.rhosts);
     if (extracted === null) {
-      return { ok: false, reason: `invalid rhosts for network egress: ${JSON.stringify(obj.rhosts)}` };
+      return {
+        ok: false,
+        reason: `invalid rhosts for network egress: ${JSON.stringify(obj.rhosts)}`,
+      };
     }
-    const rport = obj.options !== null && typeof obj.options === "object"
-      ? (obj.options as Record<string, unknown>).RPORT
-      : undefined;
+    const rport =
+      obj.options !== null && typeof obj.options === "object"
+        ? (obj.options as Record<string, unknown>).RPORT
+        : undefined;
     const port = typeof rport === "string" && /^\d+$/.test(rport) ? Number(rport) : undefined;
     return {
       ok: true,

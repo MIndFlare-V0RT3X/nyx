@@ -21,10 +21,7 @@ export interface RegisterSkillsHookDeps {
  * Register the catalog-injection hook on the kernel. Returns the unregister
  * function (surfaces' close paths).
  */
-export function registerSkillsHook(
-  kernel: Kernel,
-  deps: RegisterSkillsHookDeps,
-): () => void {
+export function registerSkillsHook(kernel: Kernel, deps: RegisterSkillsHookDeps): () => void {
   const handler = async (initCtx: InitContext): Promise<Partial<InitContext> | void> => {
     const meta = await deps.provider.sessionMeta(initCtx.session_id).catch(() => null);
     const persona_id = meta?.persona_id ?? "default";

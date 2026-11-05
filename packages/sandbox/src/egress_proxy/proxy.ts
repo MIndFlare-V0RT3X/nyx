@@ -11,10 +11,7 @@
 
 import * as net from "node:net";
 import { cidrContains, isIPLiteral } from "@nyx/scope";
-import type {
-  EgressDecisionProvider,
-  EgressListenerContext,
-} from "./types.js";
+import type { EgressDecisionProvider, EgressListenerContext } from "./types.js";
 
 /** Hard cap on the CONNECT request head (defense; a real head is ~100 B). */
 const MAX_HEAD_BYTES = 8192;
@@ -129,8 +126,7 @@ export class EgressProxyServer {
       });
       server.listen(port, gateway, () => {
         const address = server.address() as net.AddressInfo;
-        const boundPort =
-          typeof address === "object" && address !== null ? address.port : port;
+        const boundPort = typeof address === "object" && address !== null ? address.port : port;
         const key = `${gateway}:${boundPort}`;
         // Replace the error rejecter with a fatal close handler.
         server.removeAllListeners("error");
@@ -268,15 +264,7 @@ export class EgressProxyServer {
     // is rewritten to origin-form and relayed (Connection: close — one
     // decision per connection, no unchecked pipelined requests).
     if (isForwardMethod(m) && /^http:\/\/[^\s]+$/.test(authority)) {
-      await this.forwardAbsolute(
-        socket,
-        record,
-        method,
-        authority,
-        head,
-        bodyOffset,
-        pipelined,
-      );
+      await this.forwardAbsolute(socket, record, method, authority, head, bodyOffset, pipelined);
       return;
     }
     throw new Error(`only CONNECT (or absolute-form http) is accepted (got ${m || "empty"})`);
@@ -424,5 +412,4 @@ export class EgressProxyServer {
       tryNext(0);
     });
   }
-
 }

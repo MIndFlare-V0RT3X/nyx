@@ -9,15 +9,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { createKernel } from "./kernel.js";
-import {
-  generateSigningKeypair,
-  sha256Hex,
-  signManifest,
-} from "./signature.js";
-import {
-  loadPluginDirectory,
-  resolveSignatureMode,
-} from "./loader.js";
+import { generateSigningKeypair, sha256Hex, signManifest } from "./signature.js";
+import { loadPluginDirectory, resolveSignatureMode } from "./loader.js";
 import type { PluginManifest } from "@nyx/protocol";
 
 const INDEX_JS = `export async function setup(kernel) {
@@ -121,7 +114,9 @@ describe("loadPluginDirectory — integrity gate", () => {
 describe("loadPluginDirectory — signature gate", () => {
   it("strict: rejects an unsigned plugin", async () => {
     const dir = await writePlugin("unsigned");
-    await expect(loadPluginDirectory(dir, { mode: "strict", trustedKeys: [] })).rejects.toMatchObject({
+    await expect(
+      loadPluginDirectory(dir, { mode: "strict", trustedKeys: [] }),
+    ).rejects.toMatchObject({
       name: "PluginSignatureError",
       reason: "unsigned",
     });
@@ -228,10 +223,12 @@ describe("loadPluginDirectory → kernel.use (the runtime path end-to-end)", () 
     // The tool actually executes.
     const handler = kernel.tools.get("hello");
     expect(handler).not.toBeNull();
-    const out = await handler!.handler.execute(
-      { call_id: "c1", name: "hello", input: {} },
-      { session_id: "s", turn_id: "t", call_id: "c1", signal: new AbortController().signal } as never,
-    );
+    const out = await handler!.handler.execute({ call_id: "c1", name: "hello", input: {} }, {
+      session_id: "s",
+      turn_id: "t",
+      call_id: "c1",
+      signal: new AbortController().signal,
+    } as never);
     expect(out).toEqual({ kind: "text", text: "hello from plugin" });
   });
 });

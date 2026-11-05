@@ -24,7 +24,11 @@ export const nucleiTemplateInput = z
     request: z
       .object({
         method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]),
-        url: z.string().min(10).max(2048).regex(/^https?:\/\//, "absolute http(s) URL"),
+        url: z
+          .string()
+          .min(10)
+          .max(2048)
+          .regex(/^https?:\/\//, "absolute http(s) URL"),
         headers: z
           .record(z.string().min(1).max(128), z.string().max(4096))
           .refine((h) => Object.keys(h).length <= 32, "at most 32 headers")
@@ -55,12 +59,18 @@ export const nucleiTemplateInput = z
 const INPUT_SCHEMA = {
   type: "object",
   properties: {
-    finding_id: { type: "string", description: "The finding this check encodes (its target must be in scope)." },
+    finding_id: {
+      type: "string",
+      description: "The finding this check encodes (its target must be in scope).",
+    },
     request: {
       type: "object",
       description: "The minimal request that reproduces the finding.",
       properties: {
-        method: { type: "string", enum: ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] },
+        method: {
+          type: "string",
+          enum: ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+        },
         url: { type: "string", description: "Absolute http(s) URL of the affected endpoint." },
         headers: { type: "object", description: "Optional additional headers." },
         body: { type: "string", description: "Optional request body." },
@@ -73,8 +83,16 @@ const INPUT_SCHEMA = {
       description: "Detection criteria: at least one of status / words / regex.",
       properties: {
         status: { type: "array", items: { type: "integer" }, description: "HTTP status codes." },
-        words: { type: "array", items: { type: "string" }, description: "Words that must appear in the response." },
-        regex: { type: "array", items: { type: "string" }, description: "Regexes that must match the response." },
+        words: {
+          type: "array",
+          items: { type: "string" },
+          description: "Words that must appear in the response.",
+        },
+        regex: {
+          type: "array",
+          items: { type: "string" },
+          description: "Regexes that must match the response.",
+        },
       },
       additionalProperties: false,
     },
@@ -171,7 +189,9 @@ export function buildNucleiTemplate(opts: {
   };
 }
 
-export function nucleiTemplateHandler(deps: SecurityToolDeps & { store: FindingStore }): ToolHandler {
+export function nucleiTemplateHandler(
+  deps: SecurityToolDeps & { store: FindingStore },
+): ToolHandler {
   return {
     async execute(call, ctx: ToolContext): Promise<ToolOutput> {
       const input = nucleiTemplateInput.parse(call.input);

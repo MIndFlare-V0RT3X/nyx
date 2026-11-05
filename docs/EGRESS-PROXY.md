@@ -43,7 +43,7 @@ pinned per connection.
 ```
 
 - **Network**: `docker network create --internal --opt
-  com.docker.network.bridge.enable_icc=false nyx-egress-<id>`. `--internal`
+com.docker.network.bridge.enable_icc=false nyx-egress-<id>`. `--internal`
   gives the bridge **no NAT/masquerade**: container-originated packets to any
   external address are dropped by the host. The bridge gateway (a host-side
   interface) stays reachable — that is where the listeners bind. ICC off means
@@ -68,7 +68,7 @@ pinned per connection.
   explicit proxy flag (sqlmap `--proxy`, ffuf `-x`, …) point it at their
   class's port; env-honoring tools use the default port. **Documented bound:**
   a process inside the container can point at a different class's port — the
-  *tightest* class is evadable, but every listener still charges the per-host
+  _tightest_ class is evadable, but every listener still charges the per-host
   `default` aggregate bucket (Phase 5 semantics), so no path exceeds the
   engagement's declared per-host rate.
 - **DNS inside the sandbox (dead by design, Phase 6.4 / R1-5)**: the
@@ -117,7 +117,7 @@ CIDR and outside every excluded CIDR; hostname-only engagements load with a
 warning per Phase 2.0.4) → connect **by IP** (first pinned address that
 accepts), never re-consulting DNS for that connection's lifetime. A hostname
 that resolves in-scope on the first CONNECT and out-of-scope on the second is
-denied on the second — at the scope layer *and* because the pin is rebuilt
+denied on the second — at the scope layer _and_ because the pin is rebuilt
 from a fresh resolution every CONNECT. The tool layer keeps its own
 `scope.check()` and `checkResolvedTarget()` (belt and braces) — the bypass
 tests prove both layers independently.
@@ -149,8 +149,8 @@ listener fails to bind, the sandbox provision **aborts** — no proxy, no tools.
 ```yaml
 sandbox:
   egress_proxy:
-    enabled: true   # default; the production posture
-    port: 3128      # base port on each network gateway
+    enabled: true # default; the production posture
+    port: 3128 # base port on each network gateway
 ```
 
 `enabled: false` is rejected at config load unless **both**
@@ -168,9 +168,17 @@ One row per CONNECT decision, on the existing hash chain, actor
 `system:security`, actions `security.egress.allowed` / `security.egress.denied`:
 
 ```json
-{ "session_id": "…", "engagement_id": "…", "host": "api.example.com",
-  "port": 443, "rate_class": "sqlmap", "decision": "allow",
-  "reason": "…", "matched": "cidr:203.0.113.0/24", "pinned_ips": ["203.0.113.7"] }
+{
+  "session_id": "…",
+  "engagement_id": "…",
+  "host": "api.example.com",
+  "port": 443,
+  "rate_class": "sqlmap",
+  "decision": "allow",
+  "reason": "…",
+  "matched": "cidr:203.0.113.0/24",
+  "pinned_ips": ["203.0.113.7"]
+}
 ```
 
 Volume is bounded by the rate limiter itself. Proxy-level connection errors
@@ -204,14 +212,14 @@ proxy down (provision refused).
 
 ## Residuals (owned, with target phases)
 
-| Finding | Severity | Reason | Target Phase |
-|---|---|---|---|
-| Host INPUT services reachable (R1-2) | medium | docker networking reality — `--internal` confines FORWARD, not INPUT; the proxy's own listeners are subnet-gated, other host services are not NYX's to firewall | operator environment (DOCKER-USER rule below) / Phase 7 host hardening |
-| The docker acceptance suite skips in CI (R1-6) | medium | **CLOSED Phase 7.1** — the `test-docker` lane runs the full suite against a real daemon (push to `main`, tags, docker-surface PRs, `docker`-labeled PRs); branch protection in `.github/BRANCH_PROTECTION.md` | closed |
-| URL-path scoping is invisible to CONNECT (R1-8) | low | a CONNECT carries host:port only; for TLS the path is encrypted — the tool layer enforces paths; plain-HTTP paths ARE enforced via absolute-form | never (protocol limit) |
-| Local provider = dev posture (R1-7) | low | production refuses the local provider entirely; unset NYX_ENV + local + engagement is the documented dev posture (tool layer as the only gate) | never (enforced boundary) |
-| Rebinding pin is 30 s cached (R1-12) | info | the cached answer is the VALIDATED pin — no window opens; a fresh resolve re-validates after TTL | never (by design) |
-| Tunnel can establish ≤15 s past expiry (R1-16) | info | the decision is authorization-time; the pinned connect has a 15 s ceiling | never (bounded by design) |
+| Finding                                         | Severity | Reason                                                                                                                                                                                                        | Target Phase                                                           |
+| ----------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Host INPUT services reachable (R1-2)            | medium   | docker networking reality — `--internal` confines FORWARD, not INPUT; the proxy's own listeners are subnet-gated, other host services are not NYX's to firewall                                               | operator environment (DOCKER-USER rule below) / Phase 7 host hardening |
+| The docker acceptance suite skips in CI (R1-6)  | medium   | **CLOSED Phase 7.1** — the `test-docker` lane runs the full suite against a real daemon (push to `main`, tags, docker-surface PRs, `docker`-labeled PRs); branch protection in `.github/BRANCH_PROTECTION.md` | closed                                                                 |
+| URL-path scoping is invisible to CONNECT (R1-8) | low      | a CONNECT carries host:port only; for TLS the path is encrypted — the tool layer enforces paths; plain-HTTP paths ARE enforced via absolute-form                                                              | never (protocol limit)                                                 |
+| Local provider = dev posture (R1-7)             | low      | production refuses the local provider entirely; unset NYX_ENV + local + engagement is the documented dev posture (tool layer as the only gate)                                                                | never (enforced boundary)                                              |
+| Rebinding pin is 30 s cached (R1-12)            | info     | the cached answer is the VALIDATED pin — no window opens; a fresh resolve re-validates after TTL                                                                                                              | never (by design)                                                      |
+| Tunnel can establish ≤15 s past expiry (R1-16)  | info     | the decision is authorization-time; the pinned connect has a 15 s ceiling                                                                                                                                     | never (bounded by design)                                              |
 
 DOCKER-USER mitigation for R1-2 (operators who also want host services
 unreachable from engagement bridges):

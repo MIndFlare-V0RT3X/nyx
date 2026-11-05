@@ -23,32 +23,32 @@ RFC 5737/2606 documentation targets only.
 
 ```yaml
 schema: 1
-id: acme-q4-2026            # operator-facing reference
+id: acme-q4-2026 # operator-facing reference
 client: "Acme Corp"
-operator_id: "owner"        # must match the session owner
+operator_id: "owner" # must match the session owner
 signed_at: 2026-11-01T00:00:00Z
 authorized_by: "Jane Smith, CISO"
 emergency_contact: "security@acme.example"
 
-window:                     # the authorization window
+window: # the authorization window
   start: 2026-11-01T00:00:00Z
   end: 2026-12-01T00:00:00Z
 
 targets:
-  domains: [example.com]    # suffix-anchored; "*.example.com" = strict subdomains
-  cidrs: [203.0.113.0/24]   # authorizes raw IPs; required for resolved-address validation
-  urls: ["https://app.example.com/portal/*"]   # scheme+host+path, exact subtree
+  domains: [example.com] # suffix-anchored; "*.example.com" = strict subdomains
+  cidrs: [203.0.113.0/24] # authorizes raw IPs; required for resolved-address validation
+  urls: ["https://app.example.com/portal/*"] # scheme+host+path, exact subtree
 
-exclusions:                 # ALWAYS wins over targets
+exclusions: # ALWAYS wins over targets
   domains: [mail.example.com, "*.internal.example.com"]
   cidrs: [203.0.113.128/25]
 
-rate_limits:                # per class + the shared default (see SECURITY-SUBSYSTEM.md)
+rate_limits: # per class + the shared default (see SECURITY-SUBSYSTEM.md)
   default: { requests_per_second: 10 }
   nmap: { packets_per_second: 100 }
   ffuf: { requests_per_second: 20 }
 
-allowed_techniques:         # absent = none — unauthorized tools are absent from the registry
+allowed_techniques: # absent = none — unauthorized tools are absent from the registry
   - reconnaissance
   - port_scanning
   - web_enumeration
@@ -74,7 +74,7 @@ allowed_techniques:         # absent = none — unauthorized tools are absent fr
   `engagement_not_yet_active`; at/after `end`, expired. A tool call that
   sleeps past `end` waiting for its rate bucket does not fire, and binary
   runtimes are capped to the remaining window. Reports are gated at each
-  finding's *discovery* time (in-window), so writing the report after the
+  finding's _discovery_ time (in-window), so writing the report after the
   window closes works.
 
 ## Techniques
