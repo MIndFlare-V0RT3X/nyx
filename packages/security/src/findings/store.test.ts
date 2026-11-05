@@ -73,6 +73,8 @@ describe("FindingStore — create / get roundtrip", () => {
     expect(got).not.toBeNull();
     expect(got?.title).toBe("Reflected XSS in the portal login form");
     expect(got?.evidence[0]?.hash).toBe("a".repeat(64));
+    // R2-11: the FTS mirror survives the reopen too.
+    expect(await second.store.search("XSS")).toHaveLength(1);
   });
 });
 

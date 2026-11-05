@@ -21,7 +21,11 @@ export const ffufInput = z
       .string()
       .min(1)
       .max(512)
-      .regex(/^[A-Za-z0-9._\-/]+$/, "workspace-relative wordlist path"),
+      .regex(/^[A-Za-z0-9._\-/]+$/, "workspace-relative wordlist path")
+      .refine(
+        (p) => !p.startsWith("/") && !p.split("/").includes(".."),
+        "wordlist must be workspace-relative with no .. segments",
+      ),
     extensions: z.array(z.string().regex(/^[a-z0-9]{1,10}$/)).max(10).optional(),
   })
   .strict();

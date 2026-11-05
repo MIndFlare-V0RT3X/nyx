@@ -400,11 +400,19 @@ export function createServer(deps: ServerDeps): NyxServer {
       task_id: task.id,
       component: "task",
     });
+    // Phase 5 §1.3 layer 1 on the tasks path too (fan-out review R1-5): a
+    // task subagent inherits the session's engagement-scoped tool view —
+    // security tools whose technique is not authorized are structurally
+    // absent here exactly as they are in runTurn.
+    const taskEngagementTooling = buildEngagementTooling(
+      { tools: toolRegistry, kernel, policy, approvals },
+      meta?.engagement ?? null,
+    );
     return {
-      kernel,
+      kernel: taskEngagementTooling.kernel,
       session: sink.wrapped,
       model: router,
-      tools: toolRegistry,
+      tools: taskEngagementTooling.tools,
       tool_router: toolRouter,
       policy,
       approvals,

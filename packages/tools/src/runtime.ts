@@ -70,6 +70,7 @@ const PATH_FIELDS: ReadonlyMap<string, readonly string[]> = new Map([
   ["fs.write", ["path"]],
   ["shell.exec", []],
   ["web.fetch", []],
+  ["security.ffuf", ["wordlist"]],
 ]);
 
 /** Everything the caller supplies per call; the runtime adds routing, enforcement, and timing. */

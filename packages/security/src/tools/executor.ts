@@ -17,8 +17,13 @@
 
 import { spawn } from "node:child_process";
 
-/** The strict argv-token charset: printable ASCII minus shell metacharacters. */
-const SAFE_TOKEN = /^[A-Za-z0-9._\-/:+=@,%~[\]]+$/;
+/**
+ * The strict argv-token charset: printable ASCII minus shell-active
+ * metacharacters. URL syntax is admitted (?, &, # for query strings and
+ * fragments) — the sandbox executor quotes every token, so these cannot
+ * split words or start comments.
+ */
+const SAFE_TOKEN = /^[A-Za-z0-9._\-/:+=@,%~[\]?&#]+$/;
 
 export interface ExecutorResult {
   exit_code: number;
@@ -107,7 +112,10 @@ export class SandboxSecurityExecutor implements SecurityExecutor {
     opts: { timeout_ms?: number } = {},
   ): Promise<ExecutorResult> {
     assertSafeTokens([binary, ...args]);
-    const cmd = [binary, ...args].join(" ");
+    // Every token single-quoted: no globbing, no word splitting, no comment
+    // starts — the charset already excludes single quotes, so the quoting
+    // itself cannot be escaped (R1-6).
+    const cmd = [binary, ...args].map((t) => `'${t}'`).join(" ");
     const r = await this.sandbox.exec(cmd, opts);
     return { exit_code: r.exit_code, stdout: r.stdout, stderr: r.stderr };
   }

@@ -93,6 +93,21 @@ export function nmapHandler(deps: SecurityToolDeps): ToolHandler {
       // exclusion overlaps it).
       const isCidr = target.includes("/");
       if (isCidr && engagement !== null) {
+        // A CIDR with host bits set (203.0.113.42/25) is refused outright:
+        // the scanned range would depend on the binary's masking semantics
+        // (R1-9) — the operator writes the network address or nothing.
+        const parsed = parseCidr(target);
+        const hostBits =
+          parsed === null
+            ? 0n
+            : parsed.bits & ((1n << BigInt((parsed.family === 4 ? 32 : 128) - parsed.prefix)) - 1n);
+        if (hostBits !== 0n) {
+          return denied(
+            ctx,
+            `cidr ${target} has host bits set — write the network address (e.g. ` +
+              `${target.split("/")[0]!.replace(/\.[0-9]+$/, ".0")}/${target.split("/")[1]})`,
+          );
+        }
         const authorized = (engagement.targets.cidrs ?? []).some((a) => cidrCovers(a, target));
         const excluded = (engagement.targets.exclude?.cidrs ?? []).some((e) =>
           cidrOverlap(e, target),

@@ -69,6 +69,15 @@ describe("checkUrl — the security tools' single scope entry point", () => {
     expect(malformed.reason).toContain("malformed action url");
   });
 
+  it("an IP-literal URL entry authorizes its own host form (R2-9)", () => {
+    const eng = engagement({
+      targets: { cidrs: [], domains: [], urls: ["https://203.0.113.5/portal/*"] },
+    });
+    expect(checkUrl(eng, "https://203.0.113.5/portal/login", NOW).allowed).toBe(true);
+    expect(checkUrl(eng, "https://203.0.113.5/admin", NOW).allowed).toBe(false);
+    expect(checkUrl(eng, "https://203.0.113.6/portal/login", NOW).allowed).toBe(false);
+  });
+
   it("the window start denial flows through with the exact token", () => {
     const future = engagement({
       starts_at: NOW + 60_000,

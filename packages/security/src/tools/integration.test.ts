@@ -21,6 +21,7 @@ import type {
 import {
   FindingStore,
   FakeSecurityExecutor,
+  SandboxSecurityExecutor,
   SecurityRateLimiter,
   assertSafeTokens,
   buildEngagementTooling,
@@ -62,9 +63,11 @@ interface Rig {
   auditRows: Array<{ actor: string; action: string; payload: Record<string, unknown> }>;
   clock: { now: number };
   files: Map<string, string>;
+  resolvedHosts: string[];
   registry: ToolRegistryImpl;
   kernel: ReturnType<typeof buildEngagementTooling>["kernel"];
   tools: ReturnType<typeof buildEngagementTooling>["tools"];
+  limiterBucketCount: () => number;
 }
 
 function makeRig(eng: Engagement | null): Rig {
@@ -85,11 +88,16 @@ function makeRig(eng: Engagement | null): Rig {
       clock.now += ms;
     },
   });
-  // Fake DNS: in-scope names resolve into the authorized CIDR.
+  // Fake DNS: in-scope names resolve into the authorized CIDR. The resolved
+  // hostnames are recorded (R1-7: bracketed IPv6 must reach the resolver
+  // normalized, not as "[2001:db8::1]").
+  const resolvedHosts: string[] = [];
   const resolver = new DnsEgressResolver({
     now: () => clock.now,
     lookup: async (host: string) => {
+      resolvedHosts.push(host);
       if (host === "rebind.example.com") return [{ address: "198.51.100.99", family: 4 }];
+      if (host === "2001:db8::1") return [{ address: "2001:db8::1", family: 6 }];
       return [{ address: "203.0.113.10", family: 4 }];
     },
   } as never);
@@ -116,7 +124,18 @@ function makeRig(eng: Engagement | null): Rig {
     { tools: registry, kernel: fakeKernel, policy: allowAll(), approvals: autoApprove() } as never,
     eng,
   );
-  return { executor, store, auditRows, clock, files, registry, kernel: tooling.kernel, tools: tooling.tools };
+  return {
+    executor,
+    store,
+    auditRows,
+    clock,
+    files,
+    resolvedHosts,
+    registry,
+    kernel: tooling.kernel,
+    tools: tooling.tools,
+    limiterBucketCount: () => limiter.bucketCount,
+  };
 }
 
 function fakeSandbox(rig: Rig): Sandbox {
@@ -383,6 +402,156 @@ describe("§3.3 — rate limits and malformed output", () => {
     await expect(
       handler.execute({ call_id: "c1", name: "security.katana", input: { targets: ["https://app.example.com/portal/"] } }, ctx),
     ).rejects.toMatchObject({ name: "SecurityToolError", code: "skill.error", message: expect.stringContaining("boom") });
+  });
+});
+
+describe("the two-reviewer fan-out regressions (tool layer)", () => {
+  it("R1-1 (HIGH): ffuf wordlist traversal — absolute paths and .. segments are refused", async () => {
+    const eng = engagement();
+    const rig = makeRig(eng);
+    const ctx = toolContext(rig, eng);
+    const handler = rig.registry.get("security.ffuf")!.handler;
+    for (const wordlist of ["/etc/passwd", "../../.ssh/id_rsa", "wordlists/../../etc/passwd"]) {
+      await expect(
+        handler.execute(
+          { call_id: "c1", name: "security.ffuf", input: { url: "https://app.example.com/portal/FUZZ", wordlist } },
+          ctx,
+        ),
+      ).rejects.toThrow();
+    }
+    expect(rig.executor.calls).toHaveLength(0);
+  });
+
+  it("R1-1: a legitimate workspace-relative wordlist still fires", async () => {
+    const eng = engagement();
+    const rig = makeRig(eng);
+    rig.executor.respondWith(() => ({ exit_code: 0, stdout: '{"results":[]}', stderr: "" }));
+    const ctx = toolContext(rig, eng);
+    const handler = rig.registry.get("security.ffuf")!.handler;
+    const out = await handler.execute(
+      { call_id: "c1", name: "security.ffuf", input: { url: "https://app.example.com/portal/FUZZ", wordlist: "wordlists/common.txt" } },
+      ctx,
+    );
+    expect(out.kind).toBe("json");
+    expect(rig.executor.calls[0]!.args).toContain("wordlists/common.txt");
+  });
+
+  it("R1-3: a call that sleeps past the engagement window never fires", async () => {
+    const eng = engagement({ expires_at: T0 + 150, rate_limits: { default: { requests_per_second: 10 } } });
+    const rig = makeRig(eng);
+    const handler = rig.registry.get("security.subfinder")!.handler;
+    // First call charges the shared default bucket (next allowed at +100ms).
+    await handler.execute({ call_id: "c1", name: "security.subfinder", input: { domain: "example.com" } }, toolContext(rig, eng));
+    expect(rig.executor.calls).toHaveLength(1);
+    // Second call sleeps to T0+200, past expires_at (T0+150) — denied, executor silent.
+    const out = await handler.execute({ call_id: "c2", name: "security.subfinder", input: { domain: "example.com" } }, toolContext(rig, eng));
+    expect((out as { text: string }).text).toContain("expired");
+    expect(rig.executor.calls).toHaveLength(1);
+  });
+
+  it("R1-4: trailing-dot host variants share ONE rate bucket", async () => {
+    const eng = engagement();
+    const rig = makeRig(eng);
+    const handler = rig.registry.get("security.subfinder")!.handler;
+    await handler.execute({ call_id: "c1", name: "security.subfinder", input: { domain: "example.com" } }, toolContext(rig, eng));
+    await handler.execute({ call_id: "c2", name: "security.subfinder", input: { domain: "example.com." } }, toolContext(rig, eng));
+    // Same bucket (10 rps): the second call waited a full interval — not a
+    // fresh bucket, which would not have waited at all.
+    expect(rig.clock.now - T0).toBeGreaterThanOrEqual(100);
+    expect(rig.limiterBucketCount()).toBe(1);
+  });
+
+  it("R1-5: the engagement view flows into child tooling (the tasks-path mechanism)", () => {
+    const eng = engagement({ techniques: ["reconnaissance"] });
+    const rig = makeRig(eng);
+    // A child-style allowlist view over the session's engagement view: the
+    // child asks for security.nuclei by name, but the parent view already
+    // filtered it — absence is inherited, exactly as buildChildTooling
+    // composes views (the server's taskContextFor now wraps the same way).
+    const allowlist = new Set(["security.nuclei", "security.httpx", "fs.read"]);
+    const childView = {
+      list: () => rig.tools.list().filter((d) => allowlist.has(d.name)),
+      get: (name: string) => (allowlist.has(name) ? rig.tools.get(name) : null),
+    };
+    expect(childView.get("security.nuclei")).toBeNull();
+    expect(childView.list().map((d) => d.name)).toEqual([]);
+  });
+
+  it("R1-6/#11: URL query strings pass the charset and the sandbox composition quotes every token", async () => {
+    const eng = engagement();
+    const rig = makeRig(eng);
+    const commands: string[] = [];
+    const sandbox = fakeSandbox(rig);
+    const sandboxExec = sandbox.exec as unknown as (cmd: string, opts?: unknown) => Promise<{ exit_code: number; stdout: string; stderr: string }>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (sandbox as any).exec = async (cmd: string, opts?: unknown) => {
+      commands.push(cmd);
+      return sandboxExec(cmd, opts as never);
+    };
+    const executor = new SandboxSecurityExecutor(sandbox);
+    await executor.run("httpx", ["-json", "https://app.example.com/portal/login?q=1&x=2#frag"]);
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toContain("'https://app.example.com/portal/login?q=1&x=2#frag'");
+    // And the strict guard still refuses metacharacters.
+    await expect(executor.run("sh", ["-c", "rm -rf /"])).rejects.toMatchObject({ code: "charset" });
+  });
+
+  it("R1-7: an IPv6-literal target reaches the resolver UNBRACKETED", async () => {
+    const eng = engagement({ targets: { domains: [], cidrs: ["2001:db8::/32"], urls: [] } });
+    const rig = makeRig(eng);
+    const handler = rig.registry.get("security.httpx")!.handler;
+    const out = await handler.execute(
+      { call_id: "c1", name: "security.httpx", input: { targets: ["https://[2001:db8::1]/portal/"] } },
+      toolContext(rig, eng),
+    );
+    expect(out.kind).toBe("json");
+    expect(rig.resolvedHosts).toContain("2001:db8::1");
+    expect(rig.resolvedHosts.every((h) => !h.startsWith("["))).toBe(true);
+  });
+
+  it("R1-9: an nmap CIDR with host bits set is refused", async () => {
+    const eng = engagement();
+    const rig = makeRig(eng);
+    const ctx = toolContext(rig, eng);
+    const handler = rig.registry.get("security.nmap")!.handler;
+    const out = await handler.execute(
+      { call_id: "c1", name: "security.nmap", input: { target: "203.0.113.42/25" } },
+      ctx,
+    );
+    expect((out as { text: string }).text).toContain("host bits set");
+    expect(rig.executor.calls).toHaveLength(0);
+  });
+
+  it("R2-10: one malformed CVSS vector does not abort the remaining nuclei matches", async () => {
+    const eng = engagement();
+    const rig = makeRig(eng);
+    const stdout = [
+      JSON.stringify({
+        template_id: "good-template",
+        info: { name: "Good finding", severity: "high", classification: { cvss_metrics: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H" } },
+        matched_at: "https://app.example.com/portal/login",
+      }),
+      JSON.stringify({
+        template_id: "bad-vector",
+        info: { name: "Bad vector", severity: "medium", classification: { cvss_metrics: "CVSS:9.9/AV:N" } },
+        matched_at: "https://app.example.com/portal/x",
+      }),
+    ].join("\n");
+    rig.executor.respondWith(() => ({ exit_code: 0, stdout, stderr: "" }));
+    const ctx = toolContext(rig, eng);
+    const handler = rig.registry.get("security.nuclei")!.handler;
+    const out = await handler.execute(
+      { call_id: "c1", name: "security.nuclei", input: { targets: ["https://app.example.com/portal/login"] } },
+      ctx,
+    );
+    const json = (out as { json: { count: number } }).json;
+    expect(json.count).toBe(2);
+    const findings = await rig.store.list({ engagement_id: eng.id });
+    expect(findings).toHaveLength(2);
+    const good = findings.find((f) => f.title === "Good finding")!;
+    expect(good.cvss_3_1).toBe(9.8);
+    const bad = findings.find((f) => f.title === "Bad vector")!;
+    expect(bad.cvss_3_1).toBeUndefined();
   });
 });
 

@@ -26,6 +26,7 @@
 // until the latest one. Concurrency-safe without queues by construction.
 
 import type { Engagement } from "@nyx/protocol";
+import { normalizeHost } from "@nyx/scope";
 
 export interface RateLimiterDeps {
   now?: () => number;
@@ -85,12 +86,15 @@ export class SecurityRateLimiter {
     const hostRate =
       t.unit === "requests" ? limits.default?.requests_per_second : undefined;
 
+    // The host is normalized (lowercased, one trailing dot stripped) so a
+    // "example.com." spelling cannot split one host into two buckets (R1-4).
+    const host = normalizeHost(t.host);
     const keys: Array<{ key: string; rate: number }> = [];
     if (classRate !== undefined) {
-      keys.push({ key: `${t.engagement.id}|class:${t.tool_class}|${t.host}`, rate: classRate });
+      keys.push({ key: `${t.engagement.id}|class:${t.tool_class}|${host}`, rate: classRate });
     }
     if (hostRate !== undefined) {
-      keys.push({ key: `${t.engagement.id}|host:${t.host}`, rate: hostRate });
+      keys.push({ key: `${t.engagement.id}|host:${host}`, rate: hostRate });
     }
     if (keys.length === 0) return;
 

@@ -256,12 +256,32 @@ export function checkTarget(
   if (ip) {
     const hit = (targets.cidrs ?? []).find((c) => cidrContains(c, host));
     if (hit === undefined) {
-      return {
-        allowed: false,
-        reason: `ip ${host} not in engagement cidr scope (domains never authorize raw IPs)`,
-      };
+      // An IP-literal URL can still be authorized by an exact URL target
+      // entry (R2-9) — e.g. urls: ["https://203.0.113.5/portal/*"]. Domains
+      // never authorize raw IPs; URL entries authorize their own host form.
+      if (query.url !== undefined) {
+        const urlHit = (targets.urls ?? []).find((entry) => {
+          const pattern = parseUrlTarget(entry);
+          return pattern !== null && urlEntryMatches(query.url!, pattern);
+        });
+        if (urlHit !== undefined) {
+          matched = urlHit;
+          viaUrl = true;
+        } else {
+          return {
+            allowed: false,
+            reason: `ip ${host} not in engagement cidr scope (domains never authorize raw IPs)`,
+          };
+        }
+      } else {
+        return {
+          allowed: false,
+          reason: `ip ${host} not in engagement cidr scope (domains never authorize raw IPs)`,
+        };
+      }
+    } else {
+      matched = hit;
     }
-    matched = hit;
   } else {
     const domainHit = (targets.domains ?? []).find((d) => domainEntryMatches(host, d));
     if (domainHit !== undefined) {

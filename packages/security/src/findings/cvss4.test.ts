@@ -18,6 +18,10 @@ const VECTORS: Array<[string, number]> = [
   ["CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:A/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N", 5.1],
   ["CVSS:4.0/AV:L/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H", 9.4],
   ["CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H", 10.0],
+  // R2-1 regression: eq3=1/eq6=1 macrovector (111201) with a lowered CR —
+  // the eq3/eq6 next-lower transition must be 11→21 (eq3 INCREMENTED), not
+  // an identity. Reference score: 4.8.
+  ["CVSS:4.0/AV:N/AC:H/AT:N/PR:L/UI:P/VC:H/VI:L/VA:L/SC:L/SI:N/SA:N/CR:L", 4.8],
 ];
 
 describe("CVSS 4.0 base scoring", () => {

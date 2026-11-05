@@ -6,6 +6,7 @@
 
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { FindingEvidence } from "../findings/schema.js";
 
@@ -33,23 +34,35 @@ export async function verifyEvidence(
   root: string,
   evidence: readonly FindingEvidence[],
 ): Promise<VerifiedEvidence[]> {
-  const rootAbs = resolve(root);
+  const rootReal = realpathSync(resolve(root));
   const verified: VerifiedEvidence[] = [];
   for (const artifact of evidence) {
-    const abs = resolve(join(rootAbs, artifact.path));
-    if (abs !== rootAbs && !abs.startsWith(rootAbs + "/")) {
+    const abs = resolve(join(rootReal, artifact.path));
+    // Lexical containment AND symlink resolution: a symlink planted inside
+    // the workspace cannot redirect the evidence read outside it (R2-2).
+    let real: string;
+    try {
+      real = realpathSync(abs);
+    } catch (err) {
+      throw new EvidenceError(
+        "missing",
+        `evidence artifact ${artifact.path} not found in ${rootReal}: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    if (real !== rootReal && !real.startsWith(rootReal + "/")) {
       throw new EvidenceError(
         "escape",
-        `evidence path ${JSON.stringify(artifact.path)} escapes the engagement workspace`,
+        `evidence path ${JSON.stringify(artifact.path)} resolves outside the engagement workspace (symlink?)`,
       );
     }
     let bytes: Buffer;
     try {
-      bytes = await readFile(abs);
+      bytes = await readFile(real);
     } catch (err) {
       throw new EvidenceError(
         "missing",
-        `evidence artifact ${artifact.path} not found in ${rootAbs}: ` +
+        `evidence artifact ${artifact.path} not found in ${rootReal}: ` +
           `${err instanceof Error ? err.message : String(err)}`,
       );
     }

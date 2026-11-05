@@ -221,8 +221,10 @@ export class Cvss4Vector {
       // 10 --> 11
       scoreEq3eq6Next = next(nextLower(5, 1));
     } else if (eq3 === 0 || eq3 === 1) {
-      // 01 --> 11 and 11 --> 21
-      scoreEq3eq6Next = next(nextLower(2, 1));
+      // 01 --> 11 and 11 --> 21: both INCREMENT eq3 by one (fan-out review
+      // R2-1 — setting it to 1 was an identity for the 11 case and inflated
+      // every eq3=1/eq6=1 macrovector's score).
+      scoreEq3eq6Next = next(nextLower(2, eq3 + 1));
     } else {
       // 21/20 --> 32 (does not exist — NaN, skipped downstream)
       scoreEq3eq6Next = next(`${eq1}${eq2}${eq3 + 1}${eq4}${eq5}${eq6 + 1}`);

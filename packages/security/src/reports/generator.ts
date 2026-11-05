@@ -63,24 +63,66 @@ export interface RenderedReport {
   generated_at: number;
 }
 
-/** The scope gate: one finding outside the engagement aborts the report. */
+/** Hostname-shaped hosts only — the URL fallback never re-parses hostile
+ * strings like "example.com\\@evil.com" into an in-scope authority (R2-6). */
+const HOSTNAME_SHAPE = /^[A-Za-z0-9.-]+$/;
+
+/** Split an inline "host:port" out of a finding's host string (R2-4: a port
+ * embedded in the host must face the port policy, not ride it). */
+function splitHostPort(host: string): { host: string; port?: number } {
+  if (host.startsWith("[")) {
+    const close = host.indexOf("]");
+    if (close > 0 && host.charAt(close + 1) === ":") {
+      const suffix = host.slice(close + 2);
+      if (/^\d+$/.test(suffix)) return { host: host.slice(0, close + 1), port: Number(suffix) };
+    }
+    return { host };
+  }
+  const colon = host.indexOf(":");
+  if (colon !== -1 && host.indexOf(":", colon + 1) === -1 && /^\d+$/.test(host.slice(colon + 1))) {
+    return { host: host.slice(0, colon), port: Number(host.slice(colon + 1)) };
+  }
+  return { host };
+}
+
+/**
+ * The scope gate: one finding outside the engagement aborts the report.
+ * Each finding is evaluated at ITS OWN discovery time, which must lie inside
+ * the engagement window — the report is written after the window closes in
+ * the normal workflow, and the targets were in scope when the finding was
+ * recorded (R1-8). A finding discovered outside the window is refused.
+ */
 export function assertFindingsInScope(
   engagement: Engagement,
   findings: readonly Finding[],
-  now: number,
+  _now: number,
 ): void {
   for (const f of findings) {
-    const { host, port, path } = f.target;
+    if (
+      engagement.starts_at !== undefined &&
+      (f.discovered_at < engagement.starts_at || f.discovered_at >= engagement.expires_at)
+    ) {
+      throw new OutOfScopeFindingError(
+        f.id,
+        f.target.host,
+        `discovered ${new Date(f.discovered_at).toISOString()} — outside the engagement window ` +
+          `${new Date(engagement.starts_at).toISOString()} → ${new Date(engagement.expires_at).toISOString()}`,
+      );
+    }
+    const split = splitHostPort(f.target.host);
+    const host = split.host;
+    const port = f.target.port ?? split.port;
+    const path = f.target.path;
     const hostQuery = port !== undefined ? { host, port } : { host };
-    const verdict = checkTarget(engagement, hostQuery, now);
+    const verdict = checkTarget(engagement, hostQuery, f.discovered_at);
     if (verdict.allowed) continue;
     // Host-level authorization failed. A path-bearing target may still be
     // authorized by a URL target entry — check the concrete URL forms.
-    if (path !== undefined) {
+    if (path !== undefined && HOSTNAME_SHAPE.test(host)) {
       const portSuffix = port !== undefined ? `:${port}` : "";
       for (const scheme of ["https", "http"] as const) {
         const url = `${scheme}://${host}${portSuffix}${path}`;
-        if (checkUrl(engagement, url, now).allowed) break;
+        if (checkUrl(engagement, url, f.discovered_at).allowed) break;
         if (scheme === "http") {
           throw new OutOfScopeFindingError(f.id, `${host}${portSuffix}${path}`, verdict.reason);
         }
@@ -94,11 +136,23 @@ export function assertFindingsInScope(
 export async function generateReport(input: ReportInput): Promise<RenderedReport> {
   const now = (input.now ?? Date.now)();
 
-  // Gate 1: scope. Gate 2: evidence. Both BEFORE any rendering or writing.
+  // Gate 1: scope. Gate 2: evidence (every finding must HAVE hash-verified
+  // evidence — hard rule #5; an empty evidence list is a vacuous pass and is
+  // refused). Both BEFORE any rendering or writing.
   assertFindingsInScope(input.engagement, input.findings, now);
   const evidenceByFinding = new Map<string, VerifiedEvidence[]>();
-  for (const f of input.findings) {
-    evidenceByFinding.set(f.id, await verifyEvidence(input.evidence_root, f.evidence));
+  for (const [index, f] of input.findings.entries()) {
+    if (f.evidence.length === 0) {
+      throw Object.assign(
+        new Error(
+          `finding ${f.id} ("${f.title}") has no evidence — a finding without a ` +
+            "hash-verified artifact is not a finding (hard rule #5)",
+        ),
+        { name: "OutOfScopeFindingError", code: "missing_evidence" },
+      );
+    }
+    // Keyed with the index: duplicate ids cannot mis-attribute evidence (R2-7).
+    evidenceByFinding.set(`${f.id}#${index}`, await verifyEvidence(input.evidence_root, f.evidence));
   }
 
   const ordered = orderFindingsForReport(input.findings);
@@ -254,8 +308,8 @@ function renderMarkdown(
   lines.push("");
   lines.push("Every artifact below was hash-verified (sha256) at report time:");
   lines.push("");
-  for (const f of ordered) {
-    const arts = evidence.get(f.id) ?? [];
+  for (const [index, f] of ordered.entries()) {
+    const arts = evidence.get(`${f.id}#${index}`) ?? [];
     if (arts.length === 0) continue;
     lines.push(`- **${f.title}**`);
     for (const a of arts) {
@@ -301,9 +355,9 @@ function renderHtml(
   const e = input.engagement;
   const counts = severityCounts(ordered);
   const findingsHtml = ordered
-    .map((f) => {
+    .map((f, index) => {
       const t = f.target;
-      const arts = (evidence.get(f.id) ?? [])
+      const arts = (evidence.get(`${f.id}#${index}`) ?? [])
         .map(
           (a) =>
             `<li><code>${esc(a.path)}</code> — sha256 <code>${esc(a.hash)}</code> — ${esc(a.mime)} — ${a.bytes} bytes</li>`,
@@ -331,7 +385,7 @@ function renderHtml(
     .join("\n");
 
   const evidenceRows = ordered
-    .flatMap((f) => (evidence.get(f.id) ?? []).map((a) => ({ f, a })))
+    .flatMap((f, index) => (evidence.get(`${f.id}#${index}`) ?? []).map((a) => ({ f, a })))
     .map(
       ({ f, a }) =>
         `<tr><td>${esc(f.title)}</td><td><code>${esc(a.path)}</code></td><td><code>${esc(a.hash)}</code></td><td>${a.bytes}</td></tr>`,

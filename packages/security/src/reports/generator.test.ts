@@ -76,6 +76,22 @@ async function evidenceDir(): Promise<{ root: string; artifact: Finding["evidenc
   };
 }
 
+/** A findings fixture where every finding carries REAL hash-verified
+ * evidence (hard rule #5 — the report gate refuses empty evidence). */
+async function evidencedFindings(
+  root: string,
+  overrides: Array<Partial<Finding>>,
+): Promise<Finding[]> {
+  const out: Finding[] = [];
+  for (const [i, o] of overrides.entries()) {
+    const name = `ev-${i}-${Math.random().toString(36).slice(2, 8)}.txt`;
+    await writeFile(path.join(root, name), `evidence for ${o.id ?? i}\n`, "utf8");
+    const hash = createHash("sha256").update(readFileSync(path.join(root, name))).digest("hex");
+    out.push(finding({ ...o, evidence: [{ path: name, hash, mime: "text/plain" }] }));
+  }
+  return out;
+}
+
 describe("generateReport — the scope gate (§2.4)", () => {
   it("an out-of-scope finding aborts generation and writes NO file", async () => {
     const root = await tmpDir("nyx-report-gate-");
@@ -121,9 +137,12 @@ describe("generateReport — the scope gate (§2.4)", () => {
 
   it("a URL-target finding under an authorized path passes; a sibling path does not", async () => {
     const root = await tmpDir("nyx-report-gate4-");
+    const findings = await evidencedFindings(root, [
+      { id: "in", target: { host: "app.example.com", path: "/portal/login" } },
+    ]);
     const ok = await generateReport({
       engagement: { ...engagement(), targets: { domains: [], cidrs: [], urls: ["https://app.example.com/portal/*"] } },
-      findings: [finding({ target: { host: "app.example.com", path: "/portal/login" } })],
+      findings,
       evidence_root: root,
       format: "markdown",
       now: () => NOW,
@@ -132,7 +151,9 @@ describe("generateReport — the scope gate (§2.4)", () => {
     await expect(
       generateReport({
         engagement: { ...engagement(), targets: { domains: [], cidrs: [], urls: ["https://app.example.com/portal/*"] } },
-        findings: [finding({ target: { host: "app.example.com", path: "/admin/login" } })],
+        findings: await evidencedFindings(root, [
+          { id: "out", target: { host: "app.example.com", path: "/admin/login" } },
+        ]),
         evidence_root: root,
         format: "markdown",
         now: () => NOW,
@@ -194,17 +215,117 @@ describe("generateReport — the evidence gate (§2.4)", () => {
   });
 });
 
+describe("report-gate regressions (the two-reviewer fan-out)", () => {
+  it("R1-8: a report generates AFTER the window closed — findings discovered in-window are in scope", async () => {
+    const root = await tmpDir("nyx-report-exp-");
+    const findings = await evidencedFindings(root, [{ discovered_at: Date.UTC(2026, 10, 3) }]);
+    const expired = { ...engagement(), expires_at: NOW - 86_400_000 };
+    // discovered_at (Nov 3) is inside the window; NOW (Nov 5) is after it.
+    const report = await generateReport({
+      engagement: expired,
+      findings,
+      evidence_root: root,
+      format: "markdown",
+      now: () => NOW,
+    });
+    expect(report.findings_included).toBe(1);
+  });
+
+  it("R1-8 (the other edge): a finding discovered BEFORE the window opened is refused", async () => {
+    const root = await tmpDir("nyx-report-early-");
+    const findings = await evidencedFindings(root, [
+      { discovered_at: Date.UTC(2026, 9, 1) },
+    ]);
+    await expect(
+      generateReport({
+        engagement: engagement(),
+        findings,
+        evidence_root: root,
+        format: "markdown",
+        now: () => NOW,
+      }),
+    ).rejects.toMatchObject({ name: "OutOfScopeFindingError" });
+  });
+
+  it("R2-3: a finding with NO evidence is refused — hard rule #5", async () => {
+    const root = await tmpDir("nyx-report-noev-");
+    await expect(
+      generateReport({
+        engagement: engagement(),
+        findings: [finding({ evidence: [] })],
+        evidence_root: root,
+        format: "markdown",
+        now: () => NOW,
+      }),
+    ).rejects.toThrow(/no evidence/);
+  });
+
+  it("R2-4: a port embedded in the host string faces the port policy", async () => {
+    const root = await tmpDir("nyx-report-port-");
+    const eng = { ...engagement(), targets: { ...engagement().targets, ports: { allow: [443] } } };
+    const findings = await evidencedFindings(root, [
+      { id: "hostport", target: { host: "example.com:8080" } },
+    ]);
+    await expect(
+      generateReport({ engagement: eng, findings, evidence_root: root, format: "markdown", now: () => NOW }),
+    ).rejects.toMatchObject({ name: "OutOfScopeFindingError" });
+  });
+
+  it("R2-6: a hostile host shape cannot ride the URL fallback", async () => {
+    const root = await tmpDir("nyx-report-shape-");
+    const findings = await evidencedFindings(root, [
+      { id: "weird", target: { host: "example.com\\@evil.com", path: "/portal/login" } },
+    ]);
+    await expect(
+      generateReport({
+        engagement: { ...engagement(), targets: { domains: [], cidrs: [], urls: ["https://example.com/portal/*"] } },
+        findings,
+        evidence_root: root,
+        format: "markdown",
+        now: () => NOW,
+      }),
+    ).rejects.toMatchObject({ name: "OutOfScopeFindingError" });
+  });
+
+  it("R2-7: duplicate finding ids render their OWN evidence, not the last one's", async () => {
+    const root = await tmpDir("nyx-report-dup-");
+    const findings = await evidencedFindings(root, [{ id: "same" }, { id: "same" }]);
+    const report = await generateReport({
+      engagement: engagement(),
+      findings,
+      evidence_root: root,
+      format: "markdown",
+      now: () => NOW,
+    });
+    // Both artifacts listed under the Evidence section.
+    expect(report.content).toContain("ev-0-");
+    expect(report.content).toContain("ev-1-");
+  });
+
+  it("R2-2: a symlink inside the workspace pointing outside is refused", async () => {
+    const { root, artifact } = await evidenceDir();
+    const outside = await tmpDir("nyx-report-outside-");
+    await writeFile(path.join(outside, "secret.txt"), "outside material", "utf8");
+    const { symlinkSync } = await import("node:fs");
+    symlinkSync(path.join(outside, "secret.txt"), path.join(root, "link.txt"));
+    await expect(
+      verifyEvidence(root, [{ path: "link.txt", hash: artifact[0]!.hash, mime: "text/plain" }]),
+    ).rejects.toMatchObject({ code: "escape" });
+  });
+});
+
 describe("generateReport — markdown (§2.4)", () => {
   it("renders with correct severity ordering and the exact engagement id + window", async () => {
     const root = await tmpDir("nyx-report-md-");
+    const findings = await evidencedFindings(root, [
+      { id: "low", severity: "low", title: "Low finding" },
+      { id: "crit", severity: "critical", title: "Critical finding", cvss_4_0: 9.4 },
+      { id: "high", severity: "high", title: "High finding", cvss_3_1: 8.3 },
+      { id: "crit2", severity: "critical", title: "Older critical", cvss_4_0: 9.0, discovered_at: NOW - 7_200_000 },
+    ]);
     const report = await generateReport({
       engagement: engagement(),
-      findings: [
-        finding({ id: "low", severity: "low", title: "Low finding" }),
-        finding({ id: "crit", severity: "critical", title: "Critical finding", cvss_4_0: 9.4 }),
-        finding({ id: "high", severity: "high", title: "High finding", cvss_3_1: 8.3 }),
-        finding({ id: "crit2", severity: "critical", title: "Older critical", cvss_4_0: 9.0, discovered_at: NOW - 7_200_000 }),
-      ],
+      findings,
       evidence_root: root,
       format: "markdown",
       now: () => NOW,
@@ -238,9 +359,10 @@ describe("generateReport — markdown (§2.4)", () => {
 describe("generateReport — html (§2.4)", () => {
   it("is self-contained: no external asset fetches, inline styles only", async () => {
     const root = await tmpDir("nyx-report-html-");
+    const findings = await evidencedFindings(root, [{}]);
     const report = await generateReport({
       engagement: engagement(),
-      findings: [finding()],
+      findings,
       evidence_root: root,
       format: "html",
       now: () => NOW,
@@ -258,15 +380,16 @@ describe("generateReport — html (§2.4)", () => {
 
   it("escapes finding-controlled content (the report itself is not an XSS vector)", async () => {
     const root = await tmpDir("nyx-report-xss-");
+    const findings = await evidencedFindings(root, [
+      {
+        title: '</h3><script>alert("report")</script>',
+        description: "<img src=x onerror=alert(1)>",
+        notes: `"><svg onload=alert(2)>`,
+      },
+    ]);
     const report = await generateReport({
       engagement: engagement(),
-      findings: [
-        finding({
-          title: '</h3><script>alert("report")</script>',
-          description: "<img src=x onerror=alert(1)>",
-          notes: `"><svg onload=alert(2)>`,
-        }),
-      ],
+      findings,
       evidence_root: root,
       format: "html",
       now: () => NOW,

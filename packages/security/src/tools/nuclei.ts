@@ -166,6 +166,15 @@ export function nucleiHandler(deps: SecurityToolDeps & { store: FindingStore }):
             const metrics = typeof cls?.cvss_metrics === "string" ? cls.cvss_metrics : undefined;
             const cvss3Vector = metrics?.startsWith("CVSS:3.1") ? metrics : undefined;
             const cvss4Vector = metrics?.startsWith("CVSS:4.0") ? metrics : undefined;
+            // A malformed vector in one match must not abort the remaining
+            // matches (R2-10) — the finding lands without a CVSS score.
+            const safeScore = (fn: () => number): number | undefined => {
+              try {
+                return fn();
+              } catch {
+                return undefined;
+              }
+            };
             const cve =
               typeof cls?.cve_id === "string" && cls.cve_id.length > 0
                 ? [cls.cve_id.toUpperCase()]
@@ -183,8 +192,10 @@ export function nucleiHandler(deps: SecurityToolDeps & { store: FindingStore }):
                     ? m.info.description
                     : `nuclei template ${templateId} matched at ${matchedAt}`,
                 severity,
-                ...(cvss3Vector !== undefined ? { cvss_3_1: scoreCvss3Vector(cvss3Vector) } : {}),
-                ...(cvss4Vector !== undefined ? { cvss_4_0: scoreCvss4(cvss4Vector) } : {}),
+                ...(cvss3Vector !== undefined
+                  ? { cvss_3_1: safeScore(() => scoreCvss3Vector(cvss3Vector)) }
+                  : {}),
+                ...(cvss4Vector !== undefined ? { cvss_4_0: safeScore(() => scoreCvss4(cvss4Vector)) } : {}),
                 ...(cve !== undefined ? { cve } : {}),
                 ...(cwe !== undefined ? { cwe } : {}),
                 target,

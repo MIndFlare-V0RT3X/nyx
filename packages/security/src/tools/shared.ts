@@ -20,7 +20,7 @@ import type {
   ToolContext,
   ToolOutput,
 } from "@nyx/protocol";
-import { checkResolvedTarget } from "@nyx/scope";
+import { checkResolvedTarget, normalizeHost } from "@nyx/scope";
 import type { EgressResolver } from "@nyx/tools";
 import { createScopeEngine } from "../scope/engine.js";
 import type { EngagementAuditSink } from "../engagement/loader.js";
@@ -87,21 +87,36 @@ export async function runSecurityTool(opts: RunSecurityToolOptions): Promise<Too
     return denied(ctx, outcome.reason);
   }
 
-  // Layer 2 — pinned resolution + the DNS-rebinding check per target.
+  // Layer 2 — pinned resolution + the DNS-rebinding check per target. The
+  // resolver sees the NORMALIZED host (R1-7: bracketed IPv6 literals would
+  // otherwise pass scope and crash getaddrinfo).
   for (const target of opts.targets) {
     if (target.host.includes("/")) continue; // CIDR targets (nmap) skip DNS
     const port = target.port ?? 443;
-    const endpoint = await deps.resolver.resolve(target.host, port);
+    const host = normalizeHost(target.host);
+    const endpoint = await deps.resolver.resolve(host, port);
     const verdict = checkResolvedTarget(engagement, target, endpoint.ips, now());
     if (!verdict.allowed) {
       return denied(ctx, verdict.reason);
     }
   }
 
-  // Rate limit per distinct host — blocks (sleeps), never drops.
-  const hosts = [...new Set(opts.targets.map((t) => t.host))];
+  // Rate limit per distinct NORMALIZED host (R1-4: a trailing-dot variant
+  // must not split one host into two buckets) — blocks (sleeps), never drops.
+  const hosts = [...new Set(opts.targets.map((t) => normalizeHost(t.host)))];
   for (const host of hosts) {
     await deps.limiter.acquire({ engagement, tool_class: meta.rate_class, host, unit: meta.unit });
+  }
+
+  // The window is the legal authorization boundary (R1-3): re-check it after
+  // the limiter's sleep — a call that passed layer 3 but slept past
+  // expires_at must not fire — and cap the binary's runtime to the window.
+  const wallNow = (deps.now ?? Date.now)();
+  if (wallNow >= engagement.expires_at) {
+    return denied(
+      ctx,
+      `engagement expired at ${new Date(engagement.expires_at).toISOString()} while waiting for the rate limit`,
+    );
   }
 
   // Fire — argv composed only from validated input, charset-guarded. The
@@ -113,8 +128,10 @@ export async function runSecurityTool(opts: RunSecurityToolOptions): Promise<Too
     (deps.use_sandbox_executor === true
       ? new SandboxSecurityExecutor(ctx.sandbox)
       : new HostSecurityExecutor());
+  const remainingWindow = engagement.expires_at - wallNow;
+  const requested = opts.timeout_ms ?? 600_000;
   const result = await executor.run(opts.binary, args, {
-    timeout_ms: opts.timeout_ms,
+    timeout_ms: Math.max(1_000, Math.min(requested, remainingWindow)),
   });
   if (result.exit_code !== 0) {
     throw Object.assign(
