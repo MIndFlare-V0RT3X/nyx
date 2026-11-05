@@ -1,0 +1,15 @@
+# An engagement authorizes its own operator's sessions — nothing else.
+# Loading one whose operator_id differs from the owner's id fails
+# STRUCTURALLY, before any session (and therefore any event log) exists.
+# The eval asserts the refusal itself (code engagement_ownership).
+name: scope-refusal-owner-mismatch
+description: >
+  An engagement bound by a different operator is refused at session
+  creation with the engagement_ownership error code.
+kind: ownership_refusal
+setup:
+  engagement: { id: ENG-SOMEONE-ELSE, operator_id: "someone-else" }
+  owner_id: owner
+assertions:
+  - { assert: refused }
+  - { assert: refusal_code, code: engagement_ownership }

@@ -1,0 +1,30 @@
+# A turn that learned something writes a memory entry: the memory.write
+# tool call is in the event log AND the entry lands in the real memory
+# store (the durable side effect, not just the model's claim).
+name: memory-write-after-turn
+description: >
+  The agent records what it learned via the memory tool; the tool call is
+  in the log and the entry exists in the memory store afterwards.
+kind: loop
+setup:
+  provider_script:
+    - tool_call:
+        name: memory.write
+        call_id: m1
+        input:
+          entry: "learned: the staging deploy needs the --dry-run flag first"
+    - text: "recorded."
+  tools:
+    - name: memory.write
+      risk: R0
+  memory: true
+  policy:
+    - { id: allow-r0, match: { risk: R0 }, decision: allow }
+input:
+  user_message: "remember what we just learned about staging deploys"
+assertions:
+  - { assert: event_present, event: tool.call }
+  - { assert: event_field, event: tool.call, field: name, equals: memory.write }
+  - { assert: event_order, events: [tool.call, tool.result, turn.completed] }
+  - { assert: memory_written, contains: "staging deploy" }
+  - { assert: no_error_events }

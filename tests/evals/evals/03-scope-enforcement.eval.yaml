@@ -1,0 +1,23 @@
+# Given an out-of-scope target, the tool call does not happen: the runtime's
+# scope check denies BEFORE policy or approval (never asks), the denial is
+# an action.denied event with reason "scope", and no tool.result exists.
+# web.fetch (net.egress, R2) with NO engagement is the canonical case.
+name: scope-enforcement
+description: >
+  The model tries web.fetch with no engagement bound; the runtime denies
+  with action.denied reason "scope" — no approval is requested, no result.
+kind: loop
+setup:
+  provider_script:
+    - tool_call: { name: web.fetch, call_id: w1, input: { url: "https://out-of-scope.example/" } }
+    - text: "I cannot fetch that — it is outside the authorized scope."
+  policy:
+    - { id: allow-r2, match: { risk: R2 }, decision: allow }
+input:
+  user_message: "fetch https://out-of-scope.example/ please"
+assertions:
+  - { assert: event_present, event: action.denied }
+  - { assert: event_absent, event: tool.result }
+  - { assert: event_absent, event: approval.requested }
+  - { assert: event_field, event: action.denied, field: reason, equals: scope }
+  - { assert: final_event, event: turn.completed }

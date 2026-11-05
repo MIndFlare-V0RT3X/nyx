@@ -856,6 +856,64 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.5)
 
+  tests/evals:
+    dependencies:
+      '@nyx/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
+      '@nyx/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@nyx/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@nyx/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+      '@nyx/memory':
+        specifier: workspace:*
+        version: link:../../packages/memory
+      '@nyx/model':
+        specifier: workspace:*
+        version: link:../../packages/model
+      '@nyx/policy':
+        specifier: workspace:*
+        version: link:../../packages/policy
+      '@nyx/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@nyx/scope':
+        specifier: workspace:*
+        version: link:../../packages/scope
+      '@nyx/security':
+        specifier: workspace:*
+        version: link:../../packages/security
+      '@nyx/session':
+        specifier: workspace:*
+        version: link:../../packages/session
+      '@nyx/subagents':
+        specifier: workspace:*
+        version: link:../../packages/subagents
+      '@nyx/tools':
+        specifier: workspace:*
+        version: link:../../packages/tools
+    devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^7.6.12
+        version: 7.6.13
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.20.5
+      better-sqlite3:
+        specifier: ^11.8.1
+        version: 11.10.0
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.5)
+      yaml:
+        specifier: ^2.6.1
+        version: 2.9.1
+
 packages:
 
   '@alcalzone/ansi-tokenize@0.1.3':

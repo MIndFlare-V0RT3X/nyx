@@ -1,0 +1,18 @@
+# The disclosure package's manifest hashes match the on-disk artifacts:
+# every file the manifest records hashes (sha256, recomputed by the eval)
+# to exactly what the manifest claims.
+name: disclosure-package-integrity
+description: >
+  prepare-disclosure produces a package whose per-file sha256 manifest
+  matches the artifacts on disk.
+kind: disclosure_integrity
+setup:
+  finding:
+    title: "Path traversal in Apache httpd"
+    severity: high
+    reproduction: "GET /cgi-bin/../../../../etc/passwd returns 200 on 2.4.49"
+  affected_versions: ["2.4.49"]
+  vendor_contact: "security@apache.example"
+  impact: "Path traversal allows reading files outside the document root."
+assertions:
+  - { assert: hashes_match }

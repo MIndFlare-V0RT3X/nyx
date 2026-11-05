@@ -1,0 +1,37 @@
+# A multi-step research task delegates: the parent's spawn_subagent tool
+# call is in the parent log, the REAL subagent manager mirrors
+# subagent.spawned + subagent.completed on both logs, and the child's
+# result returns to the parent as the tool's result.
+name: subagent-delegation
+description: >
+  The parent delegates research to a subagent (spawn_subagent tool call);
+  the lifecycle events mirror onto the parent log and the child's summary
+  returns as the tool result.
+kind: loop
+setup:
+  provider_script:
+    - tool_call:
+        name: spawn_subagent
+        call_id: sp1
+        input:
+          task: "Research the RESEARCH-SUBTASK marker and report back."
+    - text: "The subagent finished; here is its report."
+  subagents:
+    child_marker: RESEARCH-SUBTASK
+    child_script:
+      - text: "found it: the answer is 42"
+  policy:
+    - { id: allow-r0, match: { risk: R0 }, decision: allow }
+    - { id: allow-r1, match: { risk: R1 }, decision: allow }
+input:
+  user_message: "research the topic for me, please delegate it"
+assertions:
+  - { assert: event_present, event: subagent.spawned }
+  - { assert: event_present, event: subagent.completed }
+  # The mirrored lifecycle events append to the log directly (before the
+  # loop's pump flushes the spawn tool's own call/result) — the durable
+  # order the store actually records.
+  - { assert: event_order, events: [subagent.spawned, subagent.completed, tool.call, tool.result] }
+  - { assert: event_present, event: tool.result }
+  - { assert: final_event, event: turn.completed }
+  - { assert: no_error_events }

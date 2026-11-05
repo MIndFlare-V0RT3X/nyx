@@ -1,0 +1,36 @@
+{
+  "name": "@nyx/evals",
+  "version": "0.1.0",
+  "description": "NYX \u2014 behavioral evals: the harness's integration tests. Scripted mock providers, assertions on the session EVENT LOG (never the final text), a recorded baseline, and a regression gate.",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json",
+    "eval:update": "EVAL_UPDATE=1 vitest run"
+  },
+  "dependencies": {
+    "@nyx/agent": "workspace:*",
+    "@nyx/config": "workspace:*",
+    "@nyx/db": "workspace:*",
+    "@nyx/kernel": "workspace:*",
+    "@nyx/memory": "workspace:*",
+    "@nyx/model": "workspace:*",
+    "@nyx/policy": "workspace:*",
+    "@nyx/protocol": "workspace:*",
+    "@nyx/scope": "workspace:*",
+    "@nyx/security": "workspace:*",
+    "@nyx/session": "workspace:*",
+    "@nyx/subagents": "workspace:*",
+    "@nyx/tools": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.2",
+    "better-sqlite3": "^11.8.1",
+    "vitest": "^2.1.8",
+    "yaml": "^2.6.1"
+  }
+}

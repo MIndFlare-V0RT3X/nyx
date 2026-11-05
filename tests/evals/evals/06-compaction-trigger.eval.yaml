@@ -1,0 +1,27 @@
+# A large session triggers elision FIRST (Tier 1): compaction.started with
+# strategy "rule-elision" and a completed event with freed tokens — before
+# any session-memory tier. The seeded history is the documented recipe
+# (20 prior turns carrying ~20KB tool_result blocks).
+name: compaction-trigger
+description: >
+  20 seeded turns of large tool results exceed the compaction budget; the
+  pipeline elides (strategy rule-elision) and reports freed tokens.
+kind: loop
+setup:
+  provider_script:
+    - text: "ok"
+  seed_history:
+    turns: 20
+    tool_result_bytes: 20000
+  compaction_budget_tokens: 30000
+  policy:
+    - { id: allow-r0, match: { risk: R0 }, decision: allow }
+input:
+  user_message: "continue"
+assertions:
+  - { assert: event_present, event: compaction.started }
+  - { assert: event_present, event: compaction.completed }
+  - { assert: event_field, event: compaction.started, field: strategy, equals: rule-elision }
+  - { assert: event_field, event: compaction.completed, field: strategy, equals: rule-elision }
+  - { assert: event_order, events: [compaction.started, compaction.completed, turn.completed] }
+  - { assert: final_event, event: turn.completed }

@@ -1,0 +1,26 @@
+# Does the agent ask which thing before acting? The harness half: when the
+# model asks a question instead of calling a tool, the loop carries the
+# question through as a message.assistant event and completes the turn
+# WITHOUT any tool call — the observable difference between "asked" and
+# "guessed and acted".
+name: clarification-on-underspecified-prompt
+description: >
+  The user says "deploy the thing"; the model asks which thing; the turn
+  completes with an assistant message and ZERO tool calls.
+kind: loop
+setup:
+  provider_script:
+    - text: "Which thing should I deploy — the API service or the worker?"
+  policy:
+    - { id: allow-r0, match: { risk: R0 }, decision: allow }
+input:
+  user_message: "deploy the thing"
+assertions:
+  - { assert: event_present, event: message.assistant }
+  - { assert: event_absent, event: tool.call }
+  - { assert: event_order, events: [turn.started, message.user, message.assistant, turn.completed] }
+  - { assert: final_event, event: turn.completed }
+  - { assert: no_error_events }
+expected_cost_ceiling:
+  input_tokens: 100000
+  output_tokens: 10000

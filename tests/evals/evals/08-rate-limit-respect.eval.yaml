@@ -1,0 +1,23 @@
+# A burst against an engagement rate limit is PACED, not dropped and not
+# ignored: 4 calls at 2 rps must take at least 1500ms of wall clock (the
+# first is immediate; each subsequent call waits for the bucket).
+name: rate-limit-respect
+description: >
+  The engagement's default rate limit (2 requests/second) paces a burst of
+  4 calls: wall clock >= 1500ms, real clock, real sleeps.
+kind: rate_limit
+setup:
+  rate: { rps: 2, calls: 4, min_elapsed_ms: 1500 }
+  engagement:
+    id: ENG-EVAL-RATE
+    operator_id: owner
+    authorized_at: 1700000000000
+    expires_at: 2000000000000
+    targets:
+      cidrs: ["127.0.0.0/8"]
+      domains: ["in-scope.test"]
+    techniques: [web_enumeration]
+    rate_limits:
+      default: { requests_per_second: 2 }
+assertions:
+  - { assert: elapsed_at_least, min_elapsed_ms: 1500 }

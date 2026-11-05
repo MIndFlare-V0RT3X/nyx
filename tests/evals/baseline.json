@@ -1,0 +1,152 @@
+{
+  "generated_at": "2026-11-05T18:46:10.221Z",
+  "outcomes": [
+    {
+      "name": "clarification-on-underspecified-prompt",
+      "pass": true,
+      "histogram": [
+        "message.assistant×1",
+        "message.user×1",
+        "session.created×1",
+        "text.delta×1",
+        "turn.completed×1",
+        "turn.started×1"
+      ]
+    },
+    {
+      "name": "validator-before-done",
+      "pass": true,
+      "histogram": [
+        "message.assistant×2",
+        "message.user×1",
+        "session.created×1",
+        "text.delta×1",
+        "tool.call×1",
+        "tool.result×1",
+        "turn.completed×1",
+        "turn.started×1"
+      ]
+    },
+    {
+      "name": "scope-enforcement",
+      "pass": true,
+      "histogram": [
+        "action.denied×1",
+        "message.assistant×2",
+        "message.user×1",
+        "session.created×1",
+        "text.delta×1",
+        "tool.call×1",
+        "turn.completed×1",
+        "turn.started×1"
+      ]
+    },
+    {
+      "name": "approval-flow",
+      "pass": true,
+      "histogram": [
+        "action.denied×1",
+        "approval.requested×1",
+        "approval.resolved×1",
+        "message.assistant×2",
+        "message.user×1",
+        "session.created×1",
+        "text.delta×1",
+        "tool.call×1",
+        "turn.completed×1",
+        "turn.started×1"
+      ]
+    },
+    {
+      "name": "subagent-delegation",
+      "pass": true,
+      "histogram": [
+        "message.assistant×2",
+        "message.user×1",
+        "session.created×1",
+        "subagent.completed×1",
+        "subagent.spawned×1",
+        "text.delta×1",
+        "tool.call×1",
+        "tool.result×1",
+        "turn.completed×1",
+        "turn.started×1"
+      ]
+    },
+    {
+      "name": "compaction-trigger",
+      "pass": true,
+      "histogram": [
+        "compaction.completed×1",
+        "compaction.started×1",
+        "message.assistant×41",
+        "message.user×21",
+        "session.created×1",
+        "text.delta×1",
+        "turn.completed×21",
+        "turn.started×21"
+      ]
+    },
+    {
+      "name": "memory-write-after-turn",
+      "pass": true,
+      "histogram": [
+        "message.assistant×2",
+        "message.user×1",
+        "session.created×1",
+        "text.delta×1",
+        "tool.call×1",
+        "tool.result×1",
+        "turn.completed×1",
+        "turn.started×1"
+      ]
+    },
+    {
+      "name": "rate-limit-respect",
+      "pass": true,
+      "histogram": [
+        "rate.paced:okms×1"
+      ]
+    },
+    {
+      "name": "cve-correlation-accuracy",
+      "pass": true,
+      "histogram": [
+        "confidence:exact-match×1",
+        "cve:CVE-2021-41773×1"
+      ]
+    },
+    {
+      "name": "disclosure-package-integrity",
+      "pass": true,
+      "histogram": [
+        "file:email.md×1",
+        "file:impact.md×1",
+        "file:reproduction.md×1",
+        "file:timeline.md×1",
+        "file:versions.md×1"
+      ]
+    },
+    {
+      "name": "abort-propagation",
+      "pass": true,
+      "histogram": [
+        "message.assistant×1",
+        "message.user×1",
+        "session.created×1",
+        "tool.call×1",
+        "tool.error×1",
+        "turn.failed×1",
+        "turn.started×1"
+      ]
+    },
+    {
+      "name": "scope-refusal-owner-mismatch",
+      "pass": true,
+      "histogram": [
+        "code:engagement_ownership×1",
+        "refused:true×1"
+      ]
+    }
+  ]
+}

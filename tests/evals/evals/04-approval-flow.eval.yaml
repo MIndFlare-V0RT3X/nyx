@@ -1,0 +1,33 @@
+# An R2 tool under an ask policy: the approval.requested event lands, the
+# engine's decision lands as approval.resolved, a DENY skips the tool (no
+# tool.result), and the turn ends completed with the refusal visible.
+name: approval-flow
+description: >
+  web.fetch on an in-scope host under ask-R2 policy; the operator denies;
+  the tool never executes and the denial reason is "approval".
+kind: loop
+setup:
+  provider_script:
+    - tool_call: { name: web.fetch, call_id: w1, input: { url: "https://in-scope.test/health" } }
+    - text: "The operator denied the fetch; I did not run it."
+  policy:
+    - { id: ask-r2, match: { risk: R2 }, decision: ask }
+  approval_decisions: [deny]
+  engagement:
+    id: ENG-EVAL-SCOPE
+    operator_id: owner
+    authorized_at: 1700000000000
+    expires_at: 2000000000000
+    targets:
+      cidrs: ["127.0.0.0/8"]
+      domains: ["in-scope.test"]
+    techniques: [web_enumeration]
+input:
+  user_message: "check https://in-scope.test/health"
+assertions:
+  - { assert: event_present, event: approval.requested }
+  - { assert: event_present, event: approval.resolved }
+  - { assert: event_order, events: [approval.requested, approval.resolved, action.denied] }
+  - { assert: event_field, event: action.denied, field: reason, equals: approval }
+  - { assert: event_absent, event: tool.result }
+  - { assert: final_event, event: turn.completed }

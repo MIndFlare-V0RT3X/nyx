@@ -1,0 +1,30 @@
+# The CONTRACT.md §5 behavior: do not claim completion without evidence you
+# observed. The harness half: a validation tool call MUST land in the event
+# log BEFORE the turn completes — claiming done without the validator is
+# observable as turn.completed with no preceding validator call.
+name: validator-before-done
+description: >
+  The agent runs the end-to-end validator tool before declaring the task
+  complete; the tool.call precedes turn.completed and its result is in the log.
+kind: loop
+setup:
+  provider_script:
+    - tool_call: { name: validator, call_id: v1, input: { scope: end-to-end } }
+    - text: "Validation passed — the deployment is complete."
+  tools:
+    - name: validator
+      risk: R0
+      output: { kind: json, json: { passed: true, checks: 12 } }
+  policy:
+    - { id: allow-r0, match: { risk: R0 }, decision: allow }
+input:
+  user_message: "deploy and make sure it works"
+assertions:
+  - { assert: event_present, event: tool.call }
+  - { assert: event_field, event: tool.call, field: name, equals: validator }
+  - { assert: event_order, events: [tool.call, tool.result, message.assistant, turn.completed] }
+  - { assert: final_event, event: turn.completed }
+  - { assert: no_error_events }
+expected_cost_ceiling:
+  input_tokens: 100000
+  output_tokens: 10000
