@@ -4,11 +4,19 @@
 // incrementally maintained projections, rebuild from the event log, and
 // require byte-identical projections. Run directly via:
 //   pnpm --filter @nyx/session test -- replay-10k
+//
+// v0.7.1: this is the canonical 10k test. The redundant scale block that
+// lived in replay.test.ts (same workload, plus machine-bound timing
+// assertions) was deleted; its unique ground-truth count assertions moved
+// here. Timings are logged, never asserted — a wall-clock bound calibrated
+// on one machine is a flakiness bug on the next (WSL2 is 3–5× slower on
+// file-backed writes; see docs/TOOLING-NOTES.md).
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { afterAll, describe, expect, it } from "vitest";
+import { mergeUsage } from "@nyx/protocol";
 import type { SessionEvent, SessionStore } from "@nyx/protocol";
 import { SessionStoreImpl } from "./store.js";
 
@@ -178,11 +186,36 @@ describe("replay-10k (Phase 0 verification 0.1)", () => {
     const events = genHistory(0x10c, sid, COUNT);
     expect(events).toHaveLength(COUNT);
 
+    // Ground truth derived from the generated list (ported from the deleted
+    // replay.test.ts 10k block in v0.7.1): the incremental projections are
+    // held to the generator, not merely to whatever the incremental path
+    // happened to produce.
+    const expectedMessages = events.filter(
+      (e) => e.type === "message.user" || e.type === "message.assistant",
+    ).length;
+    const expectedToolCalls = events.filter((e) => e.type === "tool.call").length;
+    const expectedApprovals = events.filter((e) => e.type === "approval.requested").length;
+    const expectedUsage = mergeUsage(
+      ...events
+        .filter(
+          (e): e is Extract<SessionEvent, { type: "turn.completed" }> =>
+            e.type === "turn.completed",
+        )
+        .map((e) => e.usage),
+    );
+
     const t0 = performance.now();
     for (let i = 0; i < events.length; i += 500) {
       await store.append(sid, events.slice(i, i + 500));
     }
     const tAppend = performance.now();
+
+    // The incremental projections match the generator's ground truth.
+    const incremental = await store.projection(sid);
+    expect(incremental.messages).toHaveLength(expectedMessages);
+    expect(incremental.tool_calls).toHaveLength(expectedToolCalls);
+    expect(incremental.approvals).toHaveLength(expectedApprovals);
+    expect(incremental.usage.total_tokens).toBe(expectedUsage.total_tokens);
 
     // Incremental state BEFORE the rebuild — the ground truth to reproduce.
     const beforeRows = snapshotRawRows(store);
