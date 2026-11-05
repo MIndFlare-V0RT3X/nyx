@@ -20,7 +20,9 @@ and `BUILD-CONVENTIONS.md` for the working agreement every package follows.
 
 ## Workflow
 
-- pnpm 9 workspaces + Turborepo. Node >= 22 (24 LTS recommended).
+- pnpm 9 workspaces + Turborepo. Node 24 LTS (the `.nvmrc` pin) or 26
+  (better-sqlite3 12.x prebuilds cover both; CI runs the fast lane on
+  `[24, 26]`), 24 is what the tests are verified against.
 - `pnpm install && pnpm build && pnpm test && pnpm lint` must pass from a
   clean clone before any PR. The SPDX audit runs with
   `node scripts/check-spdx.mjs` (CI runs it too).

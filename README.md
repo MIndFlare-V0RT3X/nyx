@@ -55,8 +55,13 @@ Vulnerability reports: GitHub security advisories, please (`SECURITY.md`).
 
 ## Quickstart
 
+**Requires Node 24 LTS.** In the repo root, run `nvm use` (or `nvm install 24
+&& nvm use 24`) before anything else. Node 26 is not supported by
+`better-sqlite3` 11.x; v0.7.1 bumps to 12.x which supports both 24 and 26 —
+but the pinned version in `.nvmrc` is what the tests were verified against.
+
 ```bash
-corepack enable            # pnpm 9 via your Node >= 22 install
+corepack enable            # pnpm 9 (Node 24 LTS — see above)
 pnpm install
 pnpm build
 pnpm test
