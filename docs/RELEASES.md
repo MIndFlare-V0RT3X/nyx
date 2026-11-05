@@ -27,13 +27,13 @@ full detail; `docs/ROADMAP.md` has the phase history.
 
 ### Artifact
 
-- **`nyx-0.7.0.tar.gz`** — the tagged tree via `git archive`
-  (prefix `nyx-0.7.0/`)
-- **sha256**: published in the `v0.7.0` tag annotation and the GitHub
-  release body, and recorded in the main-tip copy of this file. The tagged
-  tree cannot contain the hash of its own archive — the hash covers the
-  bytes that would include it — so this copy intentionally points at those
-  anchors instead of embedding the value.
+- **`nyx-0.7.0.tar.gz`** — the tagged tree via `git archive` (content
+  from commit `8058eb8`, prefix `nyx-0.7.0/`, 693 files)
+- **sha256**: `06aa4c621cb02e13cb4af39ca0eed7e3add1335fa2051f6e9732dc0091957040`
+  (recorded here at the `main` tip; the tagged tree cannot contain the
+  hash of its own archive — the hash covers the bytes that would include
+  it — so the tagged copy of this file points at the tag annotation, the
+  GitHub release body, and this section instead)
 
 The archive is deterministic — rebuilding it from the same tag with
 `git archive --format=tar.gz --prefix=nyx-0.7.0/ v0.7.0` reproduces the
@@ -49,7 +49,7 @@ external publication:
    overclaimed "signed" (the tag is annotated, not GPG-signed)
    (archive hashes to
    `66fc0ec6efc6eed17ecf3a1a3c04acb453e7a9386a19311778c99bf67f461e21`);
-3. finally at this commit — to fold in the repo-wide prettier
+3. finally at `8058eb8` — to fold in the repo-wide prettier
    normalization (`e54c66d`, 211 files, provably inert: the full fresh
    suite ran identical counts, 1299 passing + 21 docker-gated = 1320,
    before and after) so the artifact matches the repo tip.
