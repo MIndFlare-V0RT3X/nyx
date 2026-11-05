@@ -211,11 +211,29 @@ function isValidIanaTimeZone(tz: string): boolean {
 
 const tildePathSchema = z.string().min(1).transform(expandTilde);
 
+/**
+ * Phase 6.1 — the container egress proxy (docs/EGRESS-PROXY.md).
+ *
+ * `enabled: false` is the DEV-ONLY escape hatch (the Phase 5 posture:
+ * `--network none` sandboxes, tool layer as the only gate). loadConfig
+ * rejects it unless NYX_ENV=development AND --allow-direct-egress — see
+ * the loader's post-schema validation.
+ */
+const egressProxySchema = z
+  .object({
+    enabled: z.boolean().default(true),
+    /** Base port on each sandbox network gateway; each engagement rate
+     *  class binds base+1+i (sorted). Default 3128 (the squid convention). */
+    port: z.number().int().min(1).max(65535).default(3128),
+  })
+  .strict();
+
 const sandboxSchema = z
   .object({
     provider: z.enum(["docker", "local"]).default("docker"),
     image: z.string().min(1).default("alpine:3.20"),
     workdir_root: tildePathSchema.default("~/.nyx/sandboxes"),
+    egress_proxy: egressProxySchema.default({}),
   })
   .strict();
 

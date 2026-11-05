@@ -31,9 +31,14 @@ function fallbackConfig(): NyxConfig {
 
 async function main(): Promise<void> {
   const configPath = process.env.NYX_CONFIG_PATH ?? "nyx.config.yaml";
+  // Phase 6.1: the dev-only egress escape hatch — same double condition as
+  // the CLI (NYX_ENV=development AND the explicit flag); loadConfig enforces.
+  const allowDirectEgress = process.argv.includes("--allow-direct-egress");
   let config: NyxConfig;
   if (existsSync(configPath)) {
-    config = await loadConfig(configPath);
+    config = await loadConfig(configPath, {
+      ...(allowDirectEgress ? { allowDirectEgress: true } : {}),
+    });
   } else {
     config = fallbackConfig();
     process.stderr.write(

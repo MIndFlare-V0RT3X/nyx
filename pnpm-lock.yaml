@@ -507,6 +507,9 @@ importers:
       '@nyx/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@nyx/sandbox':
+        specifier: workspace:*
+        version: link:../sandbox
       '@nyx/scope':
         specifier: workspace:*
         version: link:../scope

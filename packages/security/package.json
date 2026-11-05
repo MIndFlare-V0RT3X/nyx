@@ -12,7 +12,9 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
@@ -20,6 +22,7 @@
   },
   "dependencies": {
     "@nyx/protocol": "workspace:*",
+    "@nyx/sandbox": "workspace:*",
     "@nyx/scope": "workspace:*",
     "@nyx/tools": "workspace:*",
     "nanoid": "^5.0.9",

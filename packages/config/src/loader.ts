@@ -18,6 +18,12 @@ export interface LoadConfigOptions {
    * used.
    */
   env?: Record<string, string | undefined>;
+  /**
+   * Phase 6.1 — the `--allow-direct-egress` CLI flag. The ONLY way
+   * `sandbox.egress_proxy.enabled: false` passes validation, and even then
+   * only with NYX_ENV=development (see validateEgressPolicy).
+   */
+  allowDirectEgress?: boolean;
 }
 
 /**
@@ -67,7 +73,38 @@ export async function loadConfig(
     });
   }
 
+  // Phase 6.1 hard rule 1: the egress proxy is required in production.
+  // Disabling it is a dev-only escape hatch and must be explicit twice —
+  // NYX_ENV=development AND the CLI flag.
+  validateEgressPolicy(result.data, {
+    nyxEnv: env.NYX_ENV,
+    allowDirectEgress: opts?.allowDirectEgress === true,
+    configPath: path,
+  });
+
   return deepFreeze(result.data);
+}
+
+/**
+ * The egress-proxy posture check (docs/EGRESS-PROXY.md "Escape hatch").
+ * Exported for the apps to re-run against an already-loaded config when the
+ * flag arrives after the load (it does not today, but the rule stays
+ * load-bearing and testable in isolation).
+ */
+export function validateEgressPolicy(
+  config: { sandbox: { egress_proxy: { enabled: boolean } } },
+  opts: { nyxEnv: string | undefined; allowDirectEgress: boolean; configPath: string },
+): void {
+  if (config.sandbox.egress_proxy.enabled) return;
+  if (opts.nyxEnv === "development" && opts.allowDirectEgress) return;
+  const where =
+    opts.nyxEnv === "development"
+      ? "pass --allow-direct-egress to accept the documented Phase 5 posture"
+      : `NYX_ENV is "${opts.nyxEnv ?? "unset"}", not "development"`;
+  throw new ConfigError(
+    `${opts.configPath}: sandbox.egress_proxy.enabled: false is not permitted — the ` +
+      `egress proxy is required in production (${where}; see docs/EGRESS-PROXY.md)`,
+  );
 }
 
 function normalizeDocument(raw: unknown): unknown {

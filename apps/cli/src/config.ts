@@ -30,10 +30,17 @@ export interface ResolvedConfig {
  */
 export async function resolveCliConfig(
   env: NodeJS.ProcessEnv = process.env,
+  opts: { allow_direct_egress?: boolean } = {},
 ): Promise<ResolvedConfig> {
   const path = env[CONFIG_PATH_ENV] ?? DEFAULT_CONFIG_PATH;
   if (existsSync(path)) {
-    return { config: await loadConfig(path), source: { kind: "file", path } };
+    return {
+      config: await loadConfig(path, {
+        env,
+        ...(opts.allow_direct_egress === true ? { allowDirectEgress: true } : {}),
+      }),
+      source: { kind: "file", path },
+    };
   }
   return { config: fallbackConfig(), source: { kind: "fallback" } };
 }

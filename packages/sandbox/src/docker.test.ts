@@ -6,7 +6,13 @@ import * as path from "node:path";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
 import type { SandboxSpec } from "@nyx/protocol";
-import { DockerSandboxProvider, checkDocker } from "./docker.js";
+import {
+  containerRunArgs,
+  DockerSandboxProvider,
+  checkDocker,
+  egressNetworkCreateArgs,
+  egressNetworkGatewayInspectArgs,
+} from "./docker.js";
 import { isForkable } from "./fork.js";
 
 const execFileP = promisify(execFile);
@@ -53,7 +59,7 @@ describe("DockerSandboxProvider (no daemon required)", () => {
     expect(await checkDocker("nyx-no-such-docker-bin")).toBe(false);
   });
 
-  it("refuses network modes other than none in Phase 0", async () => {
+  it("refuses allowlist without a binder and open always (Phase 6.1 semantics)", async () => {
     const hostDir = await freshHostDir();
     for (const network of ["allowlist", "open"] as const) {
       const err = await provider.provision(spec(hostDir, { network })).then(
@@ -248,3 +254,121 @@ describe("DockerSandboxProvider fork (docker daemon)", () => {
     }
   });
 });
+
+// ── Phase 6.1: the egress-proxy arg vectors (no daemon required) ────────────
+
+describe("egress network + run arg builders (Phase 6.1)", () => {
+  it("network create: internal bridge, ICC off, labeled for prune", () => {
+    const args = egressNetworkCreateArgs("nyx-egress-test");
+    expect(args[0]).toBe("network");
+    expect(args[1]).toBe("create");
+    expect(args).toContain("--internal");
+    expect(args).toContain("--opt");
+    expect(args).toContain("com.docker.network.bridge.enable_icc=false");
+    expect(args).toContain("--label");
+    expect(args).toContain("org.nyx.egress=true");
+    expect(args[args.length - 1]).toBe("nyx-egress-test");
+  });
+
+  it("gateway inspect uses the IPAM template", () => {
+    expect(egressNetworkGatewayInspectArgs("net1")).toEqual([
+      "network",
+      "inspect",
+      "net1",
+      "--format",
+      "{{(index .IPAM.Config 0).Gateway}}",
+    ]);
+  });
+
+  it("run vector for an allowlist sandbox: the egress network, never 'open'", () => {
+    const args = containerRunArgs({
+      container: "nyx-sbx-x",
+      network: "nyx-egress-test",
+      hostDir: "/tmp/host",
+      image: "alpine:3.20",
+      limits: { memory_mb: 256, cpu: 1 },
+    });
+    const networkIdx = args.indexOf("--network");
+    expect(networkIdx).toBeGreaterThan(-1);
+    expect(args[networkIdx + 1]).toBe("nyx-egress-test");
+    expect(args).toContain("--memory");
+    expect(args).toContain("256m");
+    expect(args).toContain("--cpus");
+    expect(args).toContain("1");
+    expect(args.slice(-3)).toEqual(["alpine:3.20", "sleep", "infinity"]);
+  });
+
+  it("FD-LEAK / UNIX-SOCKET-PASS: no run vector ever mounts a socket or anything outside the workspace bind", () => {
+    // The only bind mount any container gets is <hostDir>:/workspace —
+    // /var/run/docker.sock, abstract sockets, and every other host path are
+    // structurally absent from the vectors (docs/EGRESS-PROXY.md).
+    for (const network of ["none", "nyx-egress-test"]) {
+      const args = containerRunArgs({
+        container: "c",
+        network,
+        hostDir: "/tmp/sbx",
+        image: "alpine:3.20",
+      });
+      const mounts = args.filter((_, i) => args[i - 1] === "-v");
+      expect(mounts).toEqual(["/tmp/sbx:/workspace"]);
+      const flat = args.join(" ");
+      expect(flat).not.toContain("docker.sock");
+      expect(flat).not.toContain("/var/run");
+      expect(flat).not.toContain(".sock");
+      expect(flat).not.toContain("--privileged");
+      expect(flat).not.toContain("--pid=host");
+      expect(flat).not.toContain("--network=host");
+      expect(flat).not.toContain("--net=host");
+    }
+  });
+
+  it("provision with allowlist but NO binder is refused (no proxy, no tools)", async () => {
+    const hostDir = await freshHostDir();
+    const noBinder = new DockerSandboxProvider();
+    const err = await noBinder
+      .provision(
+        spec(hostDir, {
+          network: "allowlist",
+          egress: { session_id: "s1", engagement: fakeEngagement() },
+        }),
+      )
+      .then(() => undefined, (e: unknown) => e);
+    expect((err as Error).message).toContain("no proxy, no tools");
+  });
+
+  it("provision with allowlist but no spec.egress identity is refused", async () => {
+    const hostDir = await freshHostDir();
+    const binder = new DockerSandboxProvider({
+      egress: {
+        bindNetwork: async () => {
+          throw new Error("should not be called");
+        },
+        unbindNetwork: async () => undefined,
+      },
+    });
+    const err = await binder
+      .provision(spec(hostDir, { network: "allowlist" }))
+      .then(() => undefined, (e: unknown) => e);
+    expect((err as Error).message).toContain("spec.egress");
+  });
+
+  it("local provider refuses allowlist (no container boundary)", async () => {
+    const { LocalSandboxProvider: Local } = await import("./local.js");
+    const local = new Local({ root: await freshHostDir() });
+    const err = await local
+      .provision(spec("/tmp/unused", { network: "allowlist" }))
+      .then(() => undefined, (e: unknown) => e);
+    expect((err as Error).message).toContain("container boundary");
+  });
+});
+
+function fakeEngagement(): import("@nyx/protocol").Engagement {
+  return {
+    id: "ENG-DOCKER-TEST",
+    operator_id: "owner",
+    authorized_at: Date.now() - 1000,
+    expires_at: Date.now() + 3_600_000,
+    targets: { cidrs: ["127.0.0.0/8"], domains: [] },
+    techniques: ["web_enumeration"],
+  };
+}

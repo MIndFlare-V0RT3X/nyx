@@ -16,7 +16,7 @@ export type {
 } from "./schema.js";
 export { interpolateEnvVars } from "./interpolate.js";
 export type { InterpolationResult } from "./interpolate.js";
-export { loadConfig } from "./loader.js";
+export { loadConfig, validateEgressPolicy } from "./loader.js";
 export type { LoadConfigOptions } from "./loader.js";
 export { ConfigError } from "./errors.js";
 export type { ConfigErrorCode } from "./errors.js";

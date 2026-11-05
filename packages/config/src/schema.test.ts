@@ -27,6 +27,7 @@ describe("configSchema", () => {
       provider: "docker",
       image: "alpine:3.20",
       workdir_root: join(homedir(), ".nyx/sandboxes"),
+      egress_proxy: { enabled: true, port: 3128 },
     });
     expect(cfg.memory).toEqual({ root: join(homedir(), ".nyx/memory"), episode_expiry_days: 30 });
     expect(cfg.persona).toEqual({ default_id: "default", root: "./personas" });

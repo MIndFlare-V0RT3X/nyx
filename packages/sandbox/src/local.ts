@@ -237,6 +237,18 @@ export class LocalSandboxProvider implements SandboxProvider {
     if (this.forceProd || process.env.NYX_ENV === "production") {
       throw notImplemented("local sandbox is not allowed in production; use the docker provider");
     }
+    if (spec.network === "allowlist") {
+      throw notImplemented(
+        'network mode "allowlist" requires a container boundary; the local provider runs on ' +
+          "the host with no network isolation — use the docker provider (docs/EGRESS-PROXY.md)",
+      );
+    }
+    if (spec.network === "open") {
+      throw notImplemented(
+        'network mode "open" is not supported and never will be — egress is allowlist-only ' +
+          "via the egress proxy (docs/EGRESS-PROXY.md)",
+      );
+    }
     await fsp.mkdir(this.root, { recursive: true });
     const workdir = await fsp.mkdtemp(join(this.root, "nyx-sbx-"));
     return new LocalSandbox(

@@ -68,7 +68,18 @@ export {
   buildEngagementTooling,
   type SecurityToolMeta,
 } from "./scope/tool_filter.js";
-export { SecurityRateLimiter, type RateLimiterDeps, type RateTarget } from "./scope/rate_limiter.js";
+export { SecurityRateLimiter, type RateLimiterDeps, type RateTarget, type RateBucketStore } from "./scope/rate_limiter.js";
+export {
+  SqliteRateBucketStore,
+  type SqliteRateBucketStoreDeps,
+} from "./scope/rate_store.js";
+// Phase 6.1 — the egress proxy policy + binder (docs/EGRESS-PROXY.md).
+export {
+  createEgressPolicy,
+  createEgressBinder,
+  type EgressPolicyDeps,
+  type EgressBinderOptions,
+} from "./scope/egress_policy.js";
 
 // ── findings (Phase 5 §2.2) ─────────────────────────────────────────────────
 export {

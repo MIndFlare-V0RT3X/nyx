@@ -98,12 +98,15 @@ async function main(): Promise<void> {
     .option("--persona <id>", "persona id for a new session")
     .option("--engagement <file>", "engagement YAML file bound at session creation (JSON also accepted)")
     .option("--session <id>", "reuse an existing session")
+    .option("--allow-direct-egress", "dev-only: accept sandbox.egress_proxy.enabled: false (NYX_ENV=development required; the Phase 5 posture)")
     .action(
       async (
         message: string,
-        opts: { persona?: string; engagement?: string; session?: string },
+        opts: { persona?: string; engagement?: string; session?: string; allowDirectEgress?: boolean },
       ) => {
-        const { config } = await resolveCliConfig();
+        const { config } = await resolveCliConfig(undefined, {
+          ...(opts.allowDirectEgress === true ? { allow_direct_egress: true } : {}),
+        });
         const engagement =
           opts.engagement !== undefined
             ? (await loadEngagementFile(opts.engagement)).engagement
@@ -128,13 +131,16 @@ async function main(): Promise<void> {
     .option("--session <id>", "reuse an existing session (a new one is created by default)")
     .option("--persona <id>", "persona id for a new session")
     .option("--engagement <file>", "engagement YAML file bound at session creation (JSON also accepted)")
-    .action(async (opts: { session?: string; persona?: string; engagement?: string }) => {
+    .option("--allow-direct-egress", "dev-only: accept sandbox.egress_proxy.enabled: false (NYX_ENV=development required; the Phase 5 posture)")
+    .action(async (opts: { session?: string; persona?: string; engagement?: string; allowDirectEgress?: boolean }) => {
       if (process.stdin.isTTY !== true) {
         fatal(
           'chat requires an interactive terminal (stdin is not a TTY); use `nyx run "<message>"` for one-shot turns',
         );
       }
-      const { config } = await resolveCliConfig();
+      const { config } = await resolveCliConfig(undefined, {
+        ...(opts.allowDirectEgress === true ? { allow_direct_egress: true } : {}),
+      });
       const engagement =
         opts.engagement !== undefined
           ? (await loadEngagementFile(opts.engagement)).engagement

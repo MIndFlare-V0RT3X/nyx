@@ -1,19 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // DockerSandboxProvider — drives the `docker` CLI directly (no dockerode).
 //
-// Phase 0 stance: only `--network none` containers. `allowlist`/`open`
-// network modes are refused until the roadmap egress-proxy work lands.
-// Every command this package runs on your machine is listed in the README
-// so operators can audit it.
+// Phase 6.1: `network: "allowlist"` sandboxes get a per-sandbox `--internal`
+// bridge (no NAT out, ICC off) whose only useful address is the gateway,
+// where the kernel-process egress proxy binds per-rate-class CONNECT
+// listeners (see egress_proxy/ and docs/EGRESS-PROXY.md). `network: "open"`
+// is still refused — there is no configuration that produces an unproxied
+// container with egress. Every command this package runs on your machine is
+// listed in the README so operators can audit it.
 
 import { spawn } from "node:child_process";
 import type { ChildProcess, ChildProcessWithoutNullStreams } from "node:child_process";
 import { promises as fsp } from "node:fs";
+import * as net from "node:net";
 import * as path from "node:path";
 import { nanoid } from "nanoid";
 import type { ExecResult, Sandbox, SandboxProvider, SandboxSpec } from "@nyx/protocol";
 import { resolveContained } from "./paths.js";
 import type { ForkableSandbox } from "./fork.js";
+import type { SandboxEgressBinding } from "./egress_proxy/types.js";
 
 /** Absolute mount point of the host bind inside every container. */
 const WORKSPACE = "/workspace";
@@ -26,6 +31,12 @@ export interface DockerSandboxOptions {
   image?: string;
   /** Docker CLI binary. Default "docker". */
   dockerBin?: string;
+  /**
+   * Phase 6.1 — the kernel-process egress proxy binding. Required for
+   * `network: "allowlist"` provisions (no binder → refused: no proxy, no
+   * tools). Wired by the apps from @nyx/security's createEgressBinder.
+   */
+  egress?: SandboxEgressBinding;
 }
 
 /** True when `docker version` exits 0 within 3 seconds. */
@@ -174,10 +185,93 @@ function throwIfFailed(op: string, r: CliResult): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Phase 6.1 — pure arg builders (unit-tested without a daemon; the exact
+// vectors the provider passes to the docker CLI, so tests can assert the
+// network posture — internal bridge, ICC off, and NO socket/bind mounts
+// ever appear in a run vector).
+// ---------------------------------------------------------------------------
+
+/** `--internal` = no NAT/masquerade out; ICC off = containers cannot talk to
+ *  each other on this bridge; the gateway (host side) stays reachable. */
+export function egressNetworkCreateArgs(name: string): string[] {
+  return [
+    "network",
+    "create",
+    "--internal",
+    "--opt",
+    "com.docker.network.bridge.enable_icc=false",
+    "--label",
+    "org.nyx.egress=true",
+    name,
+  ];
+}
+
+export function egressNetworkGatewayInspectArgs(name: string): string[] {
+  return ["network", "inspect", name, "--format", "{{(index .IPAM.Config 0).Gateway}}"];
+}
+
+export function egressNetworkConnectedContainersArgs(name: string): string[] {
+  return ["network", "inspect", name, "--format", "{{range .Containers}}{{.Name}}\n{{end}}"];
+}
+
+export function egressNetworkDisconnectArgs(name: string, container: string): string[] {
+  return ["network", "disconnect", "-f", name, container];
+}
+
+export function egressNetworkRmArgs(name: string): string[] {
+  return ["network", "rm", name];
+}
+
+/** The shared `docker run` vector for provision and fork (network varies). */
+export function containerRunArgs(opts: {
+  container: string;
+  network: string;
+  hostDir: string;
+  image: string;
+  limits?: { memory_mb?: number; cpu?: number };
+}): string[] {
+  const args = [
+    "run",
+    "-d",
+    "--name",
+    opts.container,
+    "--network",
+    opts.network,
+    "-v",
+    `${opts.hostDir}:${WORKSPACE}`,
+    "-w",
+    WORKSPACE,
+  ];
+  if (opts.limits?.memory_mb !== undefined && opts.limits.memory_mb > 0) {
+    args.push("--memory", `${opts.limits.memory_mb}m`);
+  }
+  if (opts.limits?.cpu !== undefined && opts.limits.cpu > 0) {
+    args.push("--cpus", String(opts.limits.cpu));
+  }
+  args.push(opts.image, "sleep", "infinity");
+  return args;
+}
+
 interface ExecOpts {
   cwd?: string;
   timeout_ms?: number;
   env?: Record<string, string>;
+}
+
+/** Phase 6.1 — the egress wiring a sandbox on an "allowlist" network
+ *  carries. Parent and forks share one network; whoever's destroy observes
+ *  the last endpoint leaving closes the lights (unbind + network rm). */
+interface EgressNet {
+  /** The docker network name (nyx-egress-<nanoid>). */
+  network: string;
+  /** The bridge gateway IP the proxy listeners are bound on. */
+  gateway: string;
+  /** Port mapper for the engagement's rate classes. */
+  portFor(rateClass: string | null): number;
+  binder: SandboxEgressBinding;
+  /** The sandbox id whose listeners these are (the parent). */
+  listenerOwnerSandboxId: string;
 }
 
 class DockerSandbox implements ForkableSandbox {
@@ -186,6 +280,12 @@ class DockerSandbox implements ForkableSandbox {
   /** Container-internal workdir: the mount point of the host bind. */
   readonly workdir = WORKSPACE;
   private destroyed = false;
+
+  /** Present iff this sandbox is egress-proxied (network "allowlist"). */
+  readonly egress?: {
+    gateway: string;
+    portFor(rateClass: string | null): number;
+  };
 
   constructor(
     id: string,
@@ -203,8 +303,13 @@ class DockerSandbox implements ForkableSandbox {
      * leaks a dangling image on the daemon.
      */
     private readonly forkImageId: string | undefined = undefined,
+    /** Phase 6.1 — egress wiring when provisioned on an allowlist network. */
+    private readonly egressNet: EgressNet | undefined = undefined,
   ) {
     this.id = id;
+    if (egressNet !== undefined) {
+      this.egress = { gateway: egressNet.gateway, portFor: egressNet.portFor };
+    }
   }
 
   /**
@@ -254,27 +359,17 @@ class DockerSandbox implements ForkableSandbox {
           { code: "provider_error" },
         );
       }
-      const args = [
-        "run",
-        "-d",
-        "--name",
-        childName,
-        "--network",
-        "none",
-        "-v",
-        `${childHostDir}:${WORKSPACE}`,
-        "-w",
-        WORKSPACE,
-      ];
-      // Resource isolation mirrors the parent's limits (§6.2 R4-5) — a
-      // forked child must never run with LESS constraint than its parent.
-      if (this.limits?.memory_mb !== undefined && this.limits.memory_mb > 0) {
-        args.push("--memory", `${this.limits.memory_mb}m`);
-      }
-      if (this.limits?.cpu !== undefined && this.limits.cpu > 0) {
-        args.push("--cpus", String(this.limits.cpu));
-      }
-      args.push(tempImage, "sleep", "infinity");
+      const args = containerRunArgs({
+        container: childName,
+        // Phase 6.1: a fork of an egress-proxied sandbox re-attaches the
+        // PARENT's network (same session, same engagement, same proxy
+        // listeners) — never `none`, which would silently strip the child's
+        // scoped egress; never anything unproxied.
+        network: this.egressNet?.network ?? "none",
+        hostDir: childHostDir,
+        image: tempImage,
+        limits: this.limits,
+      });
       const run = await cliRun(this.dockerBin, args, { timeout_ms: RUN_TIMEOUT_MS });
       throwIfFailed("run (fork)", run);
     } catch (err) {
@@ -304,6 +399,9 @@ class DockerSandbox implements ForkableSandbox {
       this.live,
       this.limits,
       forkImageId,
+      // The child shares the parent's egress network and its listeners;
+      // teardown (last endpoint out) is inherited below via egressNet.
+      this.egressNet,
     );
   }
 
@@ -419,6 +517,16 @@ class DockerSandbox implements ForkableSandbox {
     } finally {
       this.live.delete(this.id);
     }
+    if (this.egressNet !== undefined) {
+      // Phase 6.1 teardown — "the last one out closes the lights". Parent
+      // and forks share one network; when this destroy leaves OTHER
+      // endpoints (a still-running fork of the same session), the network
+      // and its proxy listeners stay (their egress is still legitimately
+      // scoped). When we are the last: unbind the listeners FIRST (no new
+      // egress can be authorized), then remove the network. Both idempotent;
+      // a concurrent last-destroy races into one winner and one no-op.
+      await this.maybeTeardownEgress();
+    }
     if (this.createdHostDir) {
       // We created the host bind dir during provision — remove it again.
       await fsp.rm(this.hostDir, { recursive: true, force: true });
@@ -434,6 +542,39 @@ class DockerSandbox implements ForkableSandbox {
       }
     }
   }
+
+  /**
+   * Inspect the egress network's remaining endpoints; unbind + rm when none
+   * are left. Best-effort by design: an inspect/rm failure leaves the network
+   * INERT (no listener survives the kernel process anyway — a leaked bridge
+   * without listeners passes no egress) and `docker network prune --filter
+   * label=org.nyx.egress=true` reclaims it.
+   */
+  private async maybeTeardownEgress(): Promise<void> {
+    const net = this.egressNet;
+    if (net === undefined) return;
+    try {
+      const r = await cliRun(
+        this.dockerBin,
+        egressNetworkConnectedContainersArgs(net.network),
+        { timeout_ms: 30_000 },
+      );
+      if (r.exit_code !== 0) return; // already removed, or daemon hiccup
+      const remaining = r.stdout
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
+      if (remaining.length > 0) return; // forks still working — same session
+      // Last one out: no listener may authorize anything new…
+      await net.binder.unbindNetwork(net.listenerOwnerSandboxId);
+      // …then the bridge itself goes.
+      await cliRun(this.dockerBin, egressNetworkRmArgs(net.network), {
+        timeout_ms: 30_000,
+      });
+    } catch {
+      /* best-effort: an inert labeled network is reclaimed via prune */
+    }
+  }
 }
 
 export class DockerSandboxProvider implements SandboxProvider {
@@ -441,19 +582,33 @@ export class DockerSandboxProvider implements SandboxProvider {
 
   private readonly image: string;
   private readonly dockerBin: string;
+  private readonly egress: SandboxEgressBinding | undefined;
   /** Container names this provider created and has not destroyed yet. */
   private readonly live = new Set<string>();
 
   constructor(opts: DockerSandboxOptions = {}) {
     this.image = opts.image ?? "alpine:3.20";
     this.dockerBin = opts.dockerBin ?? "docker";
+    this.egress = opts.egress;
   }
 
   async provision(spec: SandboxSpec): Promise<Sandbox> {
-    if (spec.network !== "none") {
+    if (spec.network === "open") {
       throw notImplemented(
-        `network mode "${spec.network}" is not implemented in Phase 0; only "none" is supported ` +
-          "(roadmap: an egress proxy for allowlisted network access)",
+        'network mode "open" is not supported and never will be — egress is ' +
+          "allowlist-only via the egress proxy (docs/EGRESS-PROXY.md)",
+      );
+    }
+    if (spec.network === "allowlist" && this.egress === undefined) {
+      throw notImplemented(
+        'network mode "allowlist" requires the egress proxy binder — no proxy, no tools ' +
+          "(docs/EGRESS-PROXY.md)",
+      );
+    }
+    if (spec.network === "allowlist" && spec.egress === undefined) {
+      throw notImplemented(
+        'network mode "allowlist" requires spec.egress (the session/engagement identity ' +
+          "the proxy binds its listeners for)",
       );
     }
     if (!(await checkDocker(this.dockerBin))) {
@@ -475,45 +630,100 @@ export class DockerSandboxProvider implements SandboxProvider {
 
     const container = `nyx-sbx-${nanoid()}`;
     const image = spec.image ?? this.image;
-    const args = [
-      "run",
-      "-d",
-      "--name",
+
+    // ── Phase 6.1: the allowlist path. Create the internal bridge, learn
+    // its gateway, bind the proxy listeners there (a bind failure ABORTS the
+    // provision — no proxy, no tools), and run the container attached to it
+    // with the proxy env baked into every exec. ──
+    let egressNet: EgressNet | undefined;
+    let env = spec.env ?? {};
+    if (spec.network === "allowlist" && this.egress !== undefined && spec.egress !== undefined) {
+      const network = `nyx-egress-${nanoid()}`;
+      const created = await cliRun(this.dockerBin, egressNetworkCreateArgs(network), {
+        timeout_ms: 30_000,
+      });
+      throwIfFailed("network create", created);
+      try {
+        const gw = await cliRun(this.dockerBin, egressNetworkGatewayInspectArgs(network), {
+          timeout_ms: 30_000,
+        });
+        throwIfFailed("network inspect (gateway)", gw);
+        const gateway = gw.stdout.trim();
+        if (net.isIP(gateway) === 0) {
+          throw providerError(
+            `egress network ${network} has no usable gateway (inspect returned "${gateway.slice(0, 60)}")`,
+          );
+        }
+        // The bind throws on port collision → abort before the container
+        // exists; the sandbox is never spawned without its proxy.
+        const info = await this.egress.bindNetwork(network, gateway, {
+          session_id: spec.egress.session_id,
+          sandbox_id: container,
+          engagement: spec.egress.engagement,
+        });
+        egressNet = {
+          network,
+          gateway,
+          portFor: info.proxyPortFor,
+          binder: this.egress,
+          listenerOwnerSandboxId: container,
+        };
+        env = { ...env, ...info.env };
+      } catch (err) {
+        // Wind the network back — no sandbox exists, nothing may linger.
+        try {
+          await cliRun(this.dockerBin, egressNetworkRmArgs(network), { timeout_ms: 30_000 });
+        } catch {
+          /* best-effort: labeled network, reclaimed via prune */
+        }
+        throw err;
+      }
+    }
+
+    const args = containerRunArgs({
       container,
-      "--network",
-      "none",
-      "-v",
-      `${hostDir}:${WORKSPACE}`,
-      "-w",
-      WORKSPACE,
-    ];
-    if (spec.limits?.memory_mb !== undefined && spec.limits.memory_mb > 0) {
-      args.push("--memory", `${spec.limits.memory_mb}m`);
-    }
-    if (spec.limits?.cpu !== undefined && spec.limits.cpu > 0) {
-      args.push("--cpus", String(spec.limits.cpu));
-    }
-    args.push(image, "sleep", "infinity");
+      network: egressNet?.network ?? "none",
+      hostDir,
+      image,
+      limits: spec.limits,
+    });
 
     const r = await cliRun(this.dockerBin, args, { timeout_ms: RUN_TIMEOUT_MS });
     if (r.timed_out) {
-      // Best-effort cleanup: the run may or may not have created the container.
+      // Best-effort cleanup: the run may or may not have created the
+      // container, and the egress wiring must not outlive the failure.
       void cliRun(this.dockerBin, ["rm", "-f", container]).catch(() => undefined);
+      if (egressNet !== undefined) {
+        void egressNet.binder.unbindNetwork(egressNet.listenerOwnerSandboxId);
+        void cliRun(this.dockerBin, egressNetworkRmArgs(egressNet.network)).catch(
+          () => undefined,
+        );
+      }
       throw providerError(
         `docker run timed out after ${RUN_TIMEOUT_MS}ms (first run may be pulling ${image})`,
       );
     }
-    throwIfFailed("run", r);
+    if (r.exit_code !== 0) {
+      if (egressNet !== undefined) {
+        await egressNet.binder.unbindNetwork(egressNet.listenerOwnerSandboxId);
+        await cliRun(this.dockerBin, egressNetworkRmArgs(egressNet.network)).catch(
+          () => undefined,
+        );
+      }
+      throwIfFailed("run", r);
+    }
     this.live.add(container);
     return new DockerSandbox(
       container,
       hostDir,
       this.dockerBin,
       !existed,
-      spec.env ?? {},
+      env,
       spec.limits?.wall_ms,
       this.live,
       { memory_mb: spec.limits?.memory_mb, cpu: spec.limits?.cpu },
+      undefined,
+      egressNet,
     );
   }
 }

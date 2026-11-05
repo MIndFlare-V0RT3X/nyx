@@ -80,6 +80,7 @@ describe("loadConfig — golden files", () => {
       provider: "docker",
       image: "alpine:3.20",
       workdir_root: join(homedir(), ".nyx/sandboxes"),
+      egress_proxy: { enabled: true, port: 3128 },
     });
     expect(cfg.memory).toEqual({
       root: join(homedir(), ".nyx/memory"),
@@ -161,7 +162,12 @@ describe("loadConfig — golden files", () => {
           },
         ],
       },
-      sandbox: { provider: "docker", image: "debian:12", workdir_root: "/var/lib/nyx/sandboxes" },
+      sandbox: {
+        provider: "docker",
+        image: "debian:12",
+        workdir_root: "/var/lib/nyx/sandboxes",
+        egress_proxy: { enabled: true, port: 3128 },
+      },
       memory: { root: "/var/lib/nyx/memory", episode_expiry_days: 14 },
       persona: { default_id: "main", root: "./personas" },
       logging: { level: "debug", redact: ["api_key", "authorization"] },
@@ -207,6 +213,7 @@ describe("loadConfig — golden files", () => {
       provider: "docker",
       image: "alpine:3.20",
       workdir_root: join(homedir(), ".nyx/sandboxes"),
+      egress_proxy: { enabled: true, port: 3128 },
     });
     expect(cfg.logging.level).toBe("info");
   });
@@ -496,5 +503,64 @@ describe("loadConfig — example config", () => {
     expect(cfg.server?.auth.owner_token).toBe("stub-owner-token");
     expect(cfg.owner_id).toBe("owner");
     expect(Object.isFrozen(cfg)).toBe(true);
+  });
+});
+
+describe("loadConfig — egress proxy posture (Phase 6.1)", () => {
+  const NO_PROXY_YAML = ["sandbox:", "  egress_proxy:", "    enabled: false", ROUTER].join("\n");
+  const WITH_PROXY_YAML = ["sandbox:", "  egress_proxy:", "    enabled: true", ROUTER].join("\n");
+
+  it("defaults: enabled, port 3128", async () => {
+    const cfg = await loadConfig(await tempConfig(ROUTER));
+    expect(cfg.sandbox.egress_proxy).toEqual({ enabled: true, port: 3128 });
+  });
+
+  it("enabled: false in production (NYX_ENV unset) is a hard validation error", async () => {
+    const file = await tempConfig(NO_PROXY_YAML);
+    await expect(loadConfig(file, { env: {} })).rejects.toThrow(ConfigError);
+    await expect(loadConfig(file, { env: {} })).rejects.toThrow(/egress proxy is required/);
+  });
+
+  it("enabled: false with NYX_ENV=production is a hard validation error", async () => {
+    const file = await tempConfig(NO_PROXY_YAML);
+    await expect(
+      loadConfig(file, { env: { NYX_ENV: "production" } }),
+    ).rejects.toThrow(/not "development"/);
+  });
+
+  it("enabled: false with NYX_ENV=development but WITHOUT the flag still errors", async () => {
+    const file = await tempConfig(NO_PROXY_YAML);
+    await expect(
+      loadConfig(file, { env: { NYX_ENV: "development" } }),
+    ).rejects.toThrow(/--allow-direct-egress/);
+  });
+
+  it("enabled: false with NYX_ENV=development AND --allow-direct-egress loads (the dev escape hatch)", async () => {
+    const file = await tempConfig(NO_PROXY_YAML);
+    const cfg = await loadConfig(file, {
+      env: { NYX_ENV: "development" },
+      allowDirectEgress: true,
+    });
+    expect(cfg.sandbox.egress_proxy.enabled).toBe(false);
+  });
+
+  it("enabled: true needs no flag in any environment", async () => {
+    const file = await tempConfig(WITH_PROXY_YAML);
+    const cfg = await loadConfig(file, { env: { NYX_ENV: "production" } });
+    expect(cfg.sandbox.egress_proxy.enabled).toBe(true);
+  });
+
+  it("unknown egress_proxy fields are rejected (strict section)", async () => {
+    const file = await tempConfig(
+      ["sandbox:", "  egress_proxy:", "    intersep: true", ROUTER].join("\n"),
+    );
+    await expect(loadConfig(file, { env: {} })).rejects.toThrow(ConfigError);
+  });
+
+  it("port must be a valid port number", async () => {
+    const file = await tempConfig(
+      ["sandbox:", "  egress_proxy:", "    port: 70000", ROUTER].join("\n"),
+    );
+    await expect(loadConfig(file, { env: {} })).rejects.toThrow(ConfigError);
   });
 });

@@ -31,6 +31,28 @@ import { normalizeHost } from "@nyx/scope";
 export interface RateLimiterDeps {
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * Phase 6.1 (R1-10) — pluggable bucket persistence. Default: in-memory
+   * (one process). Wire a SQLiteRateBucketStore over the shared nyx.db and
+   * EVERY kernel process enforces the same buckets — two NYX processes on
+   * one DB no longer run N× the declared rate.
+   */
+  store?: RateBucketStore;
+}
+
+/**
+ * Persistence for GCRA bucket slots. The store is consulted synchronously
+ * (better-sqlite3 is sync, so a transaction around get+set is trivially
+ * atomic); the limiter sleeps OUTSIDE any store transaction — a reservation
+ * commits immediately and the caller waits, so concurrent acquires (even
+ * cross-process) serialize on the store and each get a distinct slot.
+ */
+export interface RateBucketStore {
+  /** Reserve the next slot for `key` (see limiter key formats) and return
+   *  the time it fires (Unix ms). MUST be atomic get+set. */
+  reserve(key: string, interval_ms: number, now: number): number;
+  /** Bookkeeping: how many buckets exist (diagnostics/tests). */
+  bucketCount(): number;
 }
 
 /** One rate-limited acquisition. */
@@ -49,19 +71,34 @@ interface Bucket {
   interval_ms: number;
 }
 
+/** The default in-process store: the Phase 5 semantics, unchanged. */
+class MemoryRateBucketStore implements RateBucketStore {
+  private readonly buckets = new Map<string, Bucket>();
+  reserve(key: string, interval_ms: number, now: number): number {
+    const existing = this.buckets.get(key);
+    const slot = existing === undefined ? now + interval_ms : Math.max(now, existing.next_allowed_at);
+    this.buckets.set(key, { next_allowed_at: slot + interval_ms, interval_ms });
+    return slot;
+  }
+  bucketCount(): number {
+    return this.buckets.size;
+  }
+}
+
 export class SecurityRateLimiter {
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
-  private readonly buckets = new Map<string, Bucket>();
+  private readonly store: RateBucketStore;
 
   constructor(deps: RateLimiterDeps = {}) {
     this.now = deps.now ?? Date.now;
     this.sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+    this.store = deps.store ?? new MemoryRateBucketStore();
   }
 
   /** Bookkeeping only: how many buckets exist (diagnostics/tests). */
   get bucketCount(): number {
-    return this.buckets.size;
+    return this.store.bucketCount();
   }
 
   /**
@@ -98,20 +135,15 @@ export class SecurityRateLimiter {
     }
     if (keys.length === 0) return;
 
+    // GCRA reservation, Phase 6.1 form: every applicable bucket is reserved
+    // ATOMICALLY in the store (memory: sequential; SQLite: one transaction)
+    // and the caller sleeps until the LATEST reserved slot. The bucket still
+    // starts empty — first request waits one interval, strict rate, no burst.
     const now = this.now();
     let waitMs = 0;
     for (const { key, rate } of keys) {
       const interval = 1000 / rate;
-      const existing = this.buckets.get(key);
-      const bucket: Bucket =
-        existing === undefined
-          ? // Starts EMPTY: the first acquisition also waits one interval —
-            // the strict rate with no free burst.
-            { next_allowed_at: now + interval, interval_ms: interval }
-          : existing;
-      const slot = Math.max(now, bucket.next_allowed_at);
-      bucket.next_allowed_at = slot + interval;
-      this.buckets.set(key, bucket);
+      const slot = this.store.reserve(key, interval, now);
       const wait = slot - now;
       if (wait > waitMs) waitMs = wait;
     }

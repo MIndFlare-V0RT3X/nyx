@@ -30,9 +30,15 @@ import type { DnsResolver } from "@nyx/policy";
 import { MemoryStoreImpl } from "@nyx/memory";
 import { loadPersona, PersonaRuntimeImpl } from "@nyx/persona";
 import { ModelRouterImpl, ProviderRegistryImpl } from "@nyx/model";
-import { DockerSandboxProvider, checkDocker, LocalSandboxProvider } from "@nyx/sandbox";
+import {
+  DockerSandboxProvider,
+  EgressProxyServer,
+  checkDocker,
+  LocalSandboxProvider,
+} from "@nyx/sandbox";
 import {
   createToolRuntime,
+  DnsEgressResolver,
   registerBuiltinTools,
   ToolRegistryImpl,
   ToolRouterImpl,
@@ -62,7 +68,15 @@ import {
   type TaskManager,
   type TaskRunner,
 } from "@nyx/tasks";
-import { buildEngagementTooling, FindingStore, registerSecurityTools, SecurityRateLimiter } from "@nyx/security";
+import {
+  buildEngagementTooling,
+  createEgressBinder,
+  createEgressPolicy,
+  FindingStore,
+  registerSecurityTools,
+  SecurityRateLimiter,
+  SqliteRateBucketStore,
+} from "@nyx/security";
 import {
   ChannelManager,
   ChannelSessionStore,
@@ -85,6 +99,7 @@ import {
   TaskSpecSchema,
   toSerializedError,
   type ContentBlock,
+  type Engagement,
   type ModelProvider,
   type PersonaRuntime,
   type ApprovalEngine,
@@ -322,15 +337,21 @@ export function createServer(deps: ServerDeps): NyxServer {
   registerLoadSkillTool(toolRegistry, { provider: skillsProvider });
   registerSkillsHook(kernel, { provider: skillsProvider });
 
-  // ── security (Phase 5 §3) ──
+  // ── security (Phase 5 §3 + Phase 6.1) ──
   // The tools register when enabled — safe by construction: without an
   // authorizing engagement the session's registry view filters every one of
   // them out (5.2's buildEngagementTooling in runTurn). One process-level
-  // rate limiter; buckets are keyed (engagement, class, host).
+  // rate limiter — Phase 6.1: its buckets live in nyx.db (rate_buckets,
+  // migration 0005) so every kernel process on this database enforces the
+  // same slots (R1-10). The same limiter charges the egress proxy's
+  // per-CONNECT decisions.
+  const limiter = new SecurityRateLimiter({
+    store: new SqliteRateBucketStore({ db: unified.db }),
+  });
   if (config.security?.enabled !== false) {
     registerSecurityTools(toolRegistry, {
       store: new FindingStore({ db: unified.db }),
-      limiter: new SecurityRateLimiter(),
+      limiter,
       use_sandbox_executor: config.security?.executor !== "host",
       audit: (entry) => approvalEngineHandle.audit(entry),
     });
@@ -358,19 +379,58 @@ export function createServer(deps: ServerDeps): NyxServer {
     return runtime;
   };
 
+  // ── egress proxy (Phase 6.1; docs/EGRESS-PROXY.md) ──
+  // The kernel-process CONNECT proxy for engagement sandboxes. Sessions
+  // WITHOUT an engagement always get --network none (nothing to authorize);
+  // engagement sessions get a per-sandbox --internal bridge whose only
+  // egress is this proxy. `enabled: false` never reaches here in production
+  // (loadConfig rejects it — dev-only escape hatch with the CLI flag).
+  const egressEnabled =
+    config.sandbox.egress_proxy.enabled && config.sandbox.provider === "docker";
+  const egressProxy =
+    egressEnabled
+      ? new EgressProxyServer({
+          policy: createEgressPolicy({
+            resolver: new DnsEgressResolver(),
+            limiter,
+            audit: (entry) => approvalEngineHandle.audit(entry),
+          }),
+        })
+      : undefined;
+  const egressBinder =
+    egressProxy !== undefined
+      ? createEgressBinder(egressProxy, { basePort: config.sandbox.egress_proxy.port })
+      : undefined;
+
   const sandboxProvider: SandboxProvider =
     config.sandbox.provider === "local"
       ? new LocalSandboxProvider({ root: config.sandbox.workdir_root })
-      : new DockerSandboxProvider({ image: config.sandbox.image });
+      : new DockerSandboxProvider({
+          image: config.sandbox.image,
+          ...(egressBinder !== undefined ? { egress: egressBinder } : {}),
+        });
   const sessionSandboxes = new Map<string, Sandbox>();
   const sandboxFor = async (session_id: string): Promise<Sandbox> => {
     const cached = sessionSandboxes.get(session_id);
     if (cached !== undefined) return cached;
+    // Phase 6.1: an engagement session gets the egress-proxied sandbox
+    // (network "allowlist" — the provider builds the internal bridge and
+    // binds the proxy listeners); everything else stays --network none.
+    let network: "none" | "allowlist" = "none";
+    let egress: { session_id: string; engagement: Engagement } | undefined;
+    if (egressBinder !== undefined) {
+      const meta = await store.meta(session_id);
+      if (meta !== null && meta.engagement !== null) {
+        network = "allowlist";
+        egress = { session_id, engagement: meta.engagement };
+      }
+    }
     const sandbox = await sandboxProvider.provision({
       provider: config.sandbox.provider,
       workdir: join(config.sandbox.workdir_root, session_id),
       image: config.sandbox.image,
-      network: "none",
+      network,
+      ...(egress !== undefined ? { egress } : {}),
     });
     sessionSandboxes.set(session_id, sandbox);
     return sandbox;
@@ -1288,6 +1348,10 @@ export function createServer(deps: ServerDeps): NyxServer {
         await sandbox.destroy().catch(() => undefined);
       }
       sessionSandboxes.clear();
+      // Phase 6.1: destroy() above already unbinds each sandbox's egress
+      // listeners (last-endpoint-out); this is the belt-and-braces sweep for
+      // sandboxes that were never destroyed.
+      if (egressProxy !== undefined) await egressProxy.stop();
       store.close();
       approvalEngineHandle.close(); // no-op on the shared handle
       unified.close(); // the one owner of the nyx.db handle

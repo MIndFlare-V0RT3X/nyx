@@ -29,9 +29,10 @@ import {
 import { MemoryStoreImpl } from "@nyx/memory";
 import { loadPersona, PersonaRuntimeImpl } from "@nyx/persona";
 import { ModelRouterImpl, ProviderRegistryImpl } from "@nyx/model";
-import { DockerSandboxProvider, LocalSandboxProvider } from "@nyx/sandbox";
+import { DockerSandboxProvider, EgressProxyServer, LocalSandboxProvider } from "@nyx/sandbox";
 import {
   createToolRuntime,
+  DnsEgressResolver,
   registerBuiltinTools,
   ToolRegistryImpl,
   ToolRouterImpl,
@@ -50,7 +51,15 @@ import {
   registerLoadSkillTool,
   registerSkillsHook,
 } from "@nyx/skills";
-import { buildEngagementTooling, FindingStore, registerSecurityTools, SecurityRateLimiter } from "@nyx/security";
+import {
+  buildEngagementTooling,
+  createEgressBinder,
+  createEgressPolicy,
+  FindingStore,
+  registerSecurityTools,
+  SecurityRateLimiter,
+  SqliteRateBucketStore,
+} from "@nyx/security";
 import type {
   ApprovalEngine,
   ApprovalRecord,
@@ -301,13 +310,18 @@ export function createLocalRuntime(deps: LocalRuntimeDeps): LocalRuntime {
   registerLoadSkillTool(toolRegistry, { provider: skillsProvider });
   registerSkillsHook(kernel, { provider: skillsProvider });
 
-  // ── security (Phase 5 §3; mirrors apps/server) ──
+  // ── security (Phase 5 §3 + Phase 6.1; mirrors apps/server) ──
   // Registration is safe by construction — the session's engagement view
-  // filters unauthorized techniques out at turn scope.
+  // filters unauthorized techniques out at turn scope. One process-level
+  // limiter with nyx.db-backed buckets (R1-10: every kernel process on this
+  // database enforces the same slots); the egress proxy charges it too.
+  const limiter = new SecurityRateLimiter({
+    store: new SqliteRateBucketStore({ db: unified.db }),
+  });
   if (config.security?.enabled !== false) {
     registerSecurityTools(toolRegistry, {
       store: new FindingStore({ db: unified.db }),
-      limiter: new SecurityRateLimiter(),
+      limiter,
       use_sandbox_executor: config.security?.executor !== "host",
       audit: (entry) => approvalHandle.audit(entry),
     });
@@ -335,19 +349,52 @@ export function createLocalRuntime(deps: LocalRuntimeDeps): LocalRuntime {
     return runtime;
   };
 
+  // ── egress proxy (Phase 6.1; docs/EGRESS-PROXY.md; mirrors apps/server) ──
+  const egressEnabled =
+    config.sandbox.egress_proxy.enabled && config.sandbox.provider === "docker";
+  const egressProxy =
+    egressEnabled
+      ? new EgressProxyServer({
+          policy: createEgressPolicy({
+            resolver: new DnsEgressResolver(),
+            limiter,
+            audit: (entry) => approvalHandle.audit(entry),
+          }),
+        })
+      : undefined;
+  const egressBinder =
+    egressProxy !== undefined
+      ? createEgressBinder(egressProxy, { basePort: config.sandbox.egress_proxy.port })
+      : undefined;
+
   const sandboxProvider: SandboxProvider =
     config.sandbox.provider === "local"
       ? new LocalSandboxProvider({ root: config.sandbox.workdir_root })
-      : new DockerSandboxProvider({ image: config.sandbox.image });
+      : new DockerSandboxProvider({
+          image: config.sandbox.image,
+          ...(egressBinder !== undefined ? { egress: egressBinder } : {}),
+        });
   const sessionSandboxes = new Map<string, Sandbox>();
   const sandboxFor = async (session_id: string): Promise<Sandbox> => {
     const cached = sessionSandboxes.get(session_id);
     if (cached !== undefined) return cached;
+    // Phase 6.1: an engagement session gets the egress-proxied sandbox
+    // (network "allowlist"); everything else stays --network none.
+    let network: "none" | "allowlist" = "none";
+    let egress: { session_id: string; engagement: Engagement } | undefined;
+    if (egressBinder !== undefined) {
+      const meta = await store.meta(session_id);
+      if (meta !== null && meta.engagement !== null) {
+        network = "allowlist";
+        egress = { session_id, engagement: meta.engagement };
+      }
+    }
     const sandbox = await sandboxProvider.provision({
       provider: config.sandbox.provider,
       workdir: join(config.sandbox.workdir_root, session_id),
       image: config.sandbox.image,
-      network: "none",
+      network,
+      ...(egress !== undefined ? { egress } : {}),
     });
     sessionSandboxes.set(session_id, sandbox);
     return sandbox;
@@ -495,6 +542,10 @@ export function createLocalRuntime(deps: LocalRuntimeDeps): LocalRuntime {
       // outputs, artifacts) that the operator may still want to read —
       // sandbox GC is a deferred item. The server destroys its sandboxes on
       // shutdown; the CLI keeps them under config.sandbox.workdir_root.
+      // (Phase 6.1: the egress listeners die with this process anyway —
+      // stop() is for embedded/test lifetimes; leftover networks are inert
+      // and labeled for `docker network prune`.)
+      if (egressProxy !== undefined) await egressProxy.stop();
       store.close();
       approvalHandle.close(); // no-op on the shared handle
       unified.close(); // the one owner of the nyx.db handle
