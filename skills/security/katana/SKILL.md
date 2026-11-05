@@ -22,3 +22,9 @@ default 2). Every target must be in the engagement's scope.
   are invisible; say so when reporting coverage.
 - Crawl results are inputs for `security-nuclei`, not findings themselves.
 - Respect the rate limit: blocks, never drops.
+
+## Preserving output
+To keep a run as evidence, write the result into the workspace (`fs.write`
+to `artifacts/katana-<target>.json`) and record its sha256 via `shell.exec`
+(`sha256sum artifacts/katana-<target>.json`) — a finding you record later can then cite it
+as hash-verified evidence.

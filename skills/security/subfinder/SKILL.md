@@ -26,3 +26,9 @@ deduplicated and lowercased.
   subdomains alone are not findings.
 - Wildcard engagements (`*.example.com`) authorize strict subdomains only —
   the apex needs its own entry.
+
+## Preserving output
+To keep a run as evidence, write the result into the workspace (`fs.write`
+to `artifacts/subfinder-<domain>.json`) and record its sha256 via `shell.exec`
+(`sha256sum artifacts/subfinder-<domain>.json`) — a finding you record later can then cite it
+as hash-verified evidence.

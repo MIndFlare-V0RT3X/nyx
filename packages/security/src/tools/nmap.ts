@@ -145,27 +145,27 @@ export function nmapHandler(deps: SecurityToolDeps): ToolHandler {
           return args;
         },
         parse: async (stdout) => {
-          // Greppable output: one "Host: <addr> (<status>)" line per host,
-          // followed by "\tPorts: 22/open/tcp//ssh///, 80/open/tcp//http///".
+          // Greppable output (the REAL format): one line per host,
+          // "Host: <addr> (<name>)\tPorts: 22/open/tcp//ssh///, ...\tIgnored State: ..."
+          // — the Ports field is a TAB-separated field ON the Host line,
+          // never a line of its own (R3-5).
           const openPorts: Array<{ host: string; port: number; service: string }> = [];
-          let currentHost = "";
           for (const line of stdout.split("\n")) {
-            const hostMatch = /^Host:\s+(\S+)/.exec(line);
-            if (hostMatch !== null) {
-              currentHost = hostMatch[1]!;
-              continue;
-            }
-            const portsMatch = /^\s*Ports:\s+(.*)$/.exec(line);
-            if (portsMatch !== null) {
-              for (const entry of portsMatch[1]!.split(",")) {
-                // <port>/<state>/<proto>//<service>///
-                const parts = entry.trim().split("/");
-                const port = Number(parts[0]);
-                const state = parts[1];
-                const service = parts[3] ?? "";
-                if (Number.isInteger(port) && port > 0 && state === "open") {
-                  openPorts.push({ host: currentHost, port, service });
-                }
+            if (!line.startsWith("Host:")) continue;
+            const fields = line.split("\t");
+            const hostMatch = /^Host:\s+(\S+)/.exec(fields[0] ?? "");
+            if (hostMatch === null) continue;
+            const host = hostMatch[1]!;
+            const portsField = fields.find((f) => f.startsWith("Ports:"));
+            if (portsField === undefined) continue;
+            for (const entry of portsField.slice("Ports:".length).split(",")) {
+              // <port>/<state>/<proto>//<service>///
+              const parts = entry.trim().split("/");
+              const port = Number(parts[0]);
+              const state = parts[1];
+              const service = parts[3] ?? "";
+              if (Number.isInteger(port) && port > 0 && state === "open") {
+                openPorts.push({ host, port, service });
               }
             }
           }

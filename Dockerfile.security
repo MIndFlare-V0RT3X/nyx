@@ -15,6 +15,10 @@
 # checked egress path with executor "host" (operator-installed binaries) or
 # inside this image for offline/local processing. This image is the pinned
 # foundation the network mode will build on.
+#
+# nmap comes from the Debian archive (bookworm ships 7.93 — the upstream
+# 7.993 is NOT packaged for this suite; building it from source would need
+# the full toolchain, so the distro pin is the reproducible choice here).
 
 FROM debian:12.9-slim
 
@@ -23,7 +27,7 @@ ARG HTTPX_VERSION=v1.12.0
 ARG NUCLEI_VERSION=v3.11.1
 ARG FFUF_VERSION=v2.3.0
 ARG KATANA_VERSION=v1.8.0
-ARG NMAP_VERSION=7.993
+ARG NMAP_VERSION=7.93+dfsg1-1
 ARG TARGETARCH
 
 RUN : "${SUBFINDER_VERSION:?SUBFINDER_VERSION must be pinned}" \
@@ -38,12 +42,13 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates \
       curl \
-      bzip2 \
-      "nmap=${NMAP_VERSION}*" \
+      unzip \
+      "nmap=${NMAP_VERSION}" \
  && rm -rf /var/lib/apt/lists/*
 
-# ProjectDiscovery tools ship prebuilt per-arch tarballs; map docker's
-# TARGETARCH to their release naming.
+# ProjectDiscovery tools ship prebuilt per-arch zips (version WITHOUT the
+# leading v in the asset name; the binary sits at the zip root). ffuf ships
+# a tarball containing the bare binary.
 RUN case "${TARGETARCH}" in \
       amd64) PDARCH=amd64 ;; \
       arm64) PDARCH=arm64 ;; \
@@ -57,14 +62,17 @@ RUN case "${TARGETARCH}" in \
  && curl -fsSL "https://github.com/ffuf/ffuf/releases/download/${FFUF_VERSION}/ffuf_${FFUF_VERSION#v}_linux_${PDARCH}.tar.gz" | tar -xz -C /usr/local/bin ffuf \
  && cd /tmp/pd \
  && for z in subfinder httpx nuclei katana; do unzip -o -q "${z}.zip" -d "${z}x"; done \
- && mv subfinderx/subfinder httpx/httpx nuclei/nuclei katanax/katana /usr/local/bin/ \
- && rm -rf /tmp/pd \
- && subfinder -version 2>&1 | head -1 \
- && httpx -version 2>&1 | head -1 \
- && nuclei -version 2>&1 | head -1 \
- && katana -version 2>&1 | head -1 \
- && ffuf -V \
- && nmap --version | head -1
+ && mv subfinderx/subfinder httpxx/httpx nucleix/nuclei katanax/katana /usr/local/bin/ \
+ && rm -rf /tmp/pd
+
+# The version checks FAIL the build on mismatch (grep's exit code is the
+# check — a wrong or broken binary stops the build).
+RUN subfinder -version 2>&1 | grep -q "v${SUBFINDER_VERSION#v}" \
+ && httpx -version 2>&1 | grep -q "v${HTTPX_VERSION#v}" \
+ && nuclei -version 2>&1 | grep -q "v${NUCLEI_VERSION#v}" \
+ && katana -version 2>&1 | grep -q "v${KATANA_VERSION#v}" \
+ && ffuf -V | grep -q "version ${FFUF_VERSION#v}" \
+ && nmap --version | grep -q "Nmap version ${NMAP_VERSION%%+*}"
 
 # A small default wordlist for ffuf (operators mount their own at
 # /workspace/wordlists when they want more).

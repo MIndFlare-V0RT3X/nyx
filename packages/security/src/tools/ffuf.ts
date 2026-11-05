@@ -26,7 +26,10 @@ export const ffufInput = z
         (p) => !p.startsWith("/") && !p.split("/").includes(".."),
         "wordlist must be workspace-relative with no .. segments",
       ),
-    extensions: z.array(z.string().regex(/^[a-z0-9]{1,10}$/)).max(10).optional(),
+    extensions: z
+      .array(z.string().regex(/^\.?[a-z0-9]{1,10}$/, "extension like '.php' or 'php'"))
+      .max(10)
+      .optional(),
   })
   .strict();
 
@@ -45,8 +48,8 @@ const INPUT_SCHEMA = {
     },
     extensions: {
       type: "array",
-      items: { type: "string" },
-      description: "Optional extensions appended to each word (e.g. ['.php']).",
+      items: { type: "string", pattern: "^\\.?[a-z0-9]{1,10}$" },
+      description: "Optional extensions appended to each word (e.g. ['.php'] — the dot is added if missing).",
     },
   },
   required: ["url", "wordlist"],
@@ -91,41 +94,47 @@ export function ffufHandler(deps: SecurityToolDeps): ToolHandler {
         deps,
         targets: [parsed],
         buildArgs: () => {
-          const args = ["-w", input.wordlist, "-of", "json", "-o", "/dev/stdout", "-s"];
+          // -json: newline-delimited JSON records on stdout; -s keeps the
+          // per-match quiet printout the ONLY other stdout content, and the
+          // record stream is what we parse (R3-6: -o/-of json on /dev/stdout
+          // is unusable — quiet mode prints matched words to stdout and the
+          // final file write would append to them).
+          const args = ["-json", "-s"];
           const rate = cooperativeRate(ctx.engagement!, FFUF_META);
           if (rate !== undefined) args.push("-rate", String(Math.max(1, rate)));
           if (input.extensions !== undefined && input.extensions.length > 0) {
-            args.push("-e", input.extensions.join(","));
+            // ffuf appends the extension verbatim — the DOT is required.
+            args.push("-e", input.extensions.map((e) => (e.startsWith(".") ? e : `.${e}`)).join(","));
           }
+          args.push("-w", input.wordlist);
           args.push("-u", input.url);
           return args;
         },
         parse: async (stdout) => {
-          let parsed: unknown;
-          try {
-            parsed = JSON.parse(stdout);
-          } catch {
-            throw Object.assign(
-              new Error(`malformed ffuf JSON output: ${stdout.slice(0, 200)}`),
-              { name: "SecurityToolError", code: "skill.error" },
-            );
-          }
-          const results = (parsed as { results?: unknown }).results;
-          if (!Array.isArray(results)) {
-            throw Object.assign(new Error("ffuf output has no results array"), {
-              name: "SecurityToolError",
-              code: "skill.error",
-            });
-          }
-          const hits = results.map((r) => {
-            const rec = r as Record<string, unknown>;
-            return {
+          // -json emits one JSON record per match (newline-delimited).
+          // Quiet-mode matched-word lines are plain words, not JSON — only
+          // lines starting with '{' are parsed as records (R3-6).
+          const hits: Array<{ url: string; status: number | null; length: number | null; words: number | null }> = [];
+          for (const line of stdout.split("\n")) {
+            const trimmed = line.trim();
+            if (trimmed.length === 0) continue;
+            if (!trimmed.startsWith("{")) continue; // quiet matched-word line
+            let rec: Record<string, unknown>;
+            try {
+              rec = JSON.parse(trimmed) as Record<string, unknown>;
+            } catch {
+              throw Object.assign(
+                new Error(`malformed ffuf JSON record: ${trimmed.slice(0, 200)}`),
+                { name: "SecurityToolError", code: "skill.error" },
+              );
+            }
+            hits.push({
               url: typeof rec.url === "string" ? rec.url : "",
               status: typeof rec.status === "number" ? rec.status : null,
               length: typeof rec.length === "number" ? rec.length : null,
               words: typeof rec.words === "number" ? rec.words : null,
-            };
-          });
+            });
+          }
           return { kind: "json", json: { hits, count: hits.length } };
         },
       });

@@ -79,20 +79,36 @@ export function nucleiDefinition(): ToolDefinition {
   };
 }
 
+/**
+ * Real nuclei -jsonl records use DASHED keys (template-id, matched-at,
+ * info.classification.{cve-id,cwe-id,cvss-metrics}) and ARRAYS for the id
+ * fields; the underscored variants are tolerated defensively (R3-4).
+ */
 interface NucleiMatch {
   info?: {
     name?: unknown;
     severity?: unknown;
     description?: unknown;
-    classification?: {
-      cve_id?: unknown;
-      cwe_id?: unknown;
-      cvss_metrics?: unknown;
-    };
+    classification?: Record<string, unknown>;
   };
+  "matched-at"?: unknown;
   matched_at?: unknown;
+  "template-id"?: unknown;
   template_id?: unknown;
   host?: unknown;
+}
+
+function pick(a: unknown, b: unknown): unknown {
+  return a !== undefined ? a : b;
+}
+
+/** Real output ids are StringSlices; accept a string or the first array entry. */
+function asId(v: unknown): string | undefined {
+  if (typeof v === "string" && v.length > 0) return v;
+  if (Array.isArray(v) && typeof v[0] === "string" && (v[0] as string).length > 0) {
+    return v[0] as string;
+  }
+  return undefined;
 }
 
 export function nucleiHandler(deps: SecurityToolDeps & { store: FindingStore }): ToolHandler {
@@ -122,7 +138,9 @@ export function nucleiHandler(deps: SecurityToolDeps & { store: FindingStore }):
           }
           const rate = cooperativeRate(ctx.engagement!, NUCLEI_META);
           if (rate !== undefined) args.push("-rl", String(Math.max(1, rate)));
-          args.push(...targets.map((t) => t.url));
+          // goflags stops parsing at the first non-flag token: targets go
+          // through repeated -u flags, never as positional args (R3-1/2/3).
+          for (const t of targets) args.push("-u", t.url);
           return args;
         },
         parse: async (stdout, ctx2: ToolContext) => {
@@ -143,14 +161,17 @@ export function nucleiHandler(deps: SecurityToolDeps & { store: FindingStore }):
             const severity = SEVERITIES.includes(m.info?.severity as FindingSeverity)
               ? (m.info!.severity as FindingSeverity)
               : "info";
-            const templateId =
-              typeof m.template_id === "string" && m.template_id.length > 0
-                ? m.template_id
-                : "unknown-template";
+            const templateIdRaw = asId(pick(m["template-id"], m.template_id)) ?? "unknown-template";
+            const templateId = templateIdRaw;
             const name =
               typeof m.info?.name === "string" && m.info.name.length > 0 ? m.info.name : `nuclei ${templateId}`;
+            const matchedAtRaw = pick(m["matched-at"], m.matched_at);
             const matchedAt =
-              typeof m.matched_at === "string" ? m.matched_at : typeof m.host === "string" ? m.host : "";
+              typeof matchedAtRaw === "string" && matchedAtRaw.length > 0
+                ? matchedAtRaw
+                : typeof m.host === "string" && m.host.length > 0
+                  ? m.host
+                  : "";
             let target: Finding["target"];
             try {
               const u = new URL(matchedAt);
@@ -163,7 +184,8 @@ export function nucleiHandler(deps: SecurityToolDeps & { store: FindingStore }):
               target = { host: matchedAt.toLowerCase() };
             }
             const cls = m.info?.classification;
-            const metrics = typeof cls?.cvss_metrics === "string" ? cls.cvss_metrics : undefined;
+            const metricsRaw = pick(cls?.["cvss-metrics"], cls?.cvss_metrics);
+            const metrics = typeof metricsRaw === "string" ? metricsRaw : undefined;
             const cvss3Vector = metrics?.startsWith("CVSS:3.1") ? metrics : undefined;
             const cvss4Vector = metrics?.startsWith("CVSS:4.0") ? metrics : undefined;
             // A malformed vector in one match must not abort the remaining
@@ -175,13 +197,12 @@ export function nucleiHandler(deps: SecurityToolDeps & { store: FindingStore }):
                 return undefined;
               }
             };
-            const cve =
-              typeof cls?.cve_id === "string" && cls.cve_id.length > 0
-                ? [cls.cve_id.toUpperCase()]
-                : undefined;
+            const cveId = asId(pick(cls?.["cve-id"], cls?.cve_id));
+            const cve = cveId !== undefined ? [cveId.toUpperCase()] : undefined;
+            const cweId = asId(pick(cls?.["cwe-id"], cls?.cwe_id));
             const cwe =
-              typeof cls?.cwe_id === "string" && cls.cwe_id.length > 0
-                ? [`CWE-${cls.cwe_id.replace(/^CWE-?/i, "").toUpperCase()}`]
+              cweId !== undefined
+                ? [`CWE-${cweId.replace(/^CWE-?/i, "").replace(/^\d+$/, (d) => d).toUpperCase()}`]
                 : undefined;
             const created = await deps.store.createInSession(
               { session_id: ctx2.session_id, engagement: ctx2.engagement },

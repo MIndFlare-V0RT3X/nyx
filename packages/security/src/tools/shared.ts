@@ -174,5 +174,9 @@ export function cooperativeRate(
   const rate =
     meta.unit === "requests" ? own?.requests_per_second : own?.packets_per_second;
   if (rate !== undefined) return rate;
-  return meta.unit === "requests" ? limits.default?.requests_per_second : undefined;
+  if (meta.unit === "requests") return limits.default?.requests_per_second;
+  // Packet-class tools fall back to the default REQUEST rate as a
+  // conservative packets ceiling (1 packet per request-rate unit — errs
+  // tight; declare nmap.packets_per_second for the real ceiling) (R3-11).
+  return limits.default?.requests_per_second;
 }

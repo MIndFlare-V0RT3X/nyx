@@ -74,14 +74,18 @@ export function katanaHandler(deps: SecurityToolDeps): ToolHandler {
           const args = ["-silent", "-d", String(input.depth ?? 2), "-nc"];
           const rate = cooperativeRate(ctx.engagement!, KATANA_META);
           if (rate !== undefined) args.push("-rate-limit", String(Math.max(1, rate)));
-          args.push(...targets.map((t) => t.url));
+          // goflags stops parsing at the first non-flag token: targets go
+          // through repeated -u flags, never as positional args (R3-1/2/3).
+          for (const t of targets) args.push("-u", t.url);
           return args;
         },
         parse: async (stdout) => {
+          // Only http(s) URL lines count — anything else on stdout is
+          // dropped from the result (R3-14: never treat noise as endpoints).
           const urls = stdout
             .split("\n")
             .map((l) => l.trim())
-            .filter((l) => l.length > 0);
+            .filter((l) => l.startsWith("http://") || l.startsWith("https://"));
           return { kind: "json", json: { urls, count: urls.length } };
         },
       });

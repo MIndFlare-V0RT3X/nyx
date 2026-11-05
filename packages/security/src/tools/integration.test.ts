@@ -204,16 +204,17 @@ describe("§3.3 — running a skill against an in-scope target", () => {
     const eng = engagement();
     const rig = makeRig(eng);
     const ctx = toolContext(rig, eng);
+    // REAL nuclei -jsonl format: dashed keys, array cve-id/cwe-id (R3-4).
     const nucleiJsonl = [
       JSON.stringify({
-        template_id: "cve-2026-1234",
+        "template-id": "cve-2026-1234",
         info: {
           name: "Example Reflected XSS",
           severity: "high",
           description: "Reflected XSS in the q parameter.",
-          classification: { cve_id: "CVE-2026-1234", cwe_id: "79", cvss_metrics: "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N" },
+          classification: { "cve-id": ["CVE-2026-1234"], "cwe-id": ["79"], "cvss-metrics": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N" },
         },
-        matched_at: "https://app.example.com/portal/login",
+        "matched-at": "https://app.example.com/portal/login",
         host: "app.example.com",
       }),
     ].join("\n");
@@ -263,7 +264,10 @@ describe("§3.3 — running a skill against an in-scope target", () => {
     expect(rig.executor.calls).toHaveLength(1);
     const { binary, args } = rig.executor.calls[0]!;
     expect(binary).toBe("httpx");
-    expect(args).toContain("https://app.example.com/portal/");
+    // Targets ride -u flags — goflags drops positional args (R3-1).
+    expect(args).toContain("-u");
+    expect(args[args.indexOf("-u") + 1]).toBe("https://app.example.com/portal/");
+    expect(args.filter((a) => a === "-u")).toHaveLength(1);
     // default bucket 10 rps → cooperative rate-limit flag
     expect(args).toContain("-rate-limit");
     expect(args[args.indexOf("-rate-limit") + 1]).toBe("10");
@@ -336,9 +340,10 @@ describe("§3.3 — out-of-scope targets: both layers proven", () => {
   it("nmap CIDR containment: a covered range scans, an uncovered or excluded range is denied", async () => {
     const eng = engagement();
     const rig = makeRig(eng);
+    // REAL greppable format: Ports is a TAB field on the Host line (R3-5).
     rig.executor.respondWith(() => ({
       exit_code: 0,
-      stdout: "Host: 203.0.113.20 (up)\n\tPorts: 22/open/tcp//ssh///, 443/open/tcp//https///\n",
+      stdout: "Host: 203.0.113.20 (up)\tPorts: 22/open/tcp//ssh///, 443/open/tcp//https///\tIgnored State: closed (998)\n",
       stderr: "",
     }));
     const ctx = toolContext(rig, eng);
@@ -527,14 +532,14 @@ describe("the two-reviewer fan-out regressions (tool layer)", () => {
     const rig = makeRig(eng);
     const stdout = [
       JSON.stringify({
-        template_id: "good-template",
-        info: { name: "Good finding", severity: "high", classification: { cvss_metrics: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H" } },
-        matched_at: "https://app.example.com/portal/login",
+        "template-id": "good-template",
+        info: { name: "Good finding", severity: "high", classification: { "cvss-metrics": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H" } },
+        "matched-at": "https://app.example.com/portal/login",
       }),
       JSON.stringify({
-        template_id: "bad-vector",
-        info: { name: "Bad vector", severity: "medium", classification: { cvss_metrics: "CVSS:9.9/AV:N" } },
-        matched_at: "https://app.example.com/portal/x",
+        "template-id": "bad-vector",
+        info: { name: "Bad vector", severity: "medium", classification: { "cvss-metrics": "CVSS:9.9/AV:N" } },
+        "matched-at": "https://app.example.com/portal/x",
       }),
     ].join("\n");
     rig.executor.respondWith(() => ({ exit_code: 0, stdout, stderr: "" }));
@@ -552,6 +557,88 @@ describe("the two-reviewer fan-out regressions (tool layer)", () => {
     expect(good.cvss_3_1).toBe(9.8);
     const bad = findings.find((f) => f.title === "Bad vector")!;
     expect(bad.cvss_3_1).toBeUndefined();
+  });
+});
+
+describe("R3 regressions — real binary invocation and output formats", () => {
+  it("R3-6/#7: ffuf uses -json JSONL records and dotted extensions", async () => {
+    const eng = engagement();
+    const rig = makeRig(eng);
+    rig.executor.respondWith(() => ({
+      exit_code: 0,
+      stdout: 'admin\n{"url":"https://app.example.com/portal/admin","status":200,"length":512,"words":40}\n',
+      stderr: "",
+    }));
+    const ctx = toolContext(rig, eng);
+    const handler = rig.registry.get("security.ffuf")!.handler;
+    const out = await handler.execute(
+      {
+        call_id: "c1",
+        name: "security.ffuf",
+        input: { url: "https://app.example.com/portal/FUZZ", wordlist: "wordlists/common.txt", extensions: ["php"] },
+      },
+      ctx,
+    );
+    const json = (out as { json: { hits: Array<{ url: string; status: number | null }>; count: number } }).json;
+    expect(json.count).toBe(1);
+    expect(json.hits[0]!.url).toBe("https://app.example.com/portal/admin");
+    expect(json.hits[0]!.status).toBe(200);
+    const args = rig.executor.calls[0]!.args;
+    expect(args).toContain("-json");
+    expect(args).not.toContain("/dev/stdout");
+    // The dotless "php" input is normalized to ".php".
+    expect(args[args.indexOf("-e") + 1]).toBe(".php");
+  });
+
+  it("R3-2: nuclei targets ride repeated -u flags", async () => {
+    const eng = engagement();
+    const rig = makeRig(eng);
+    rig.executor.respondWith(() => ({ exit_code: 0, stdout: "", stderr: "" }));
+    const ctx = toolContext(rig, eng);
+    const handler = rig.registry.get("security.nuclei")!.handler;
+    await handler.execute(
+      {
+        call_id: "c1",
+        name: "security.nuclei",
+        input: { targets: ["https://app.example.com/portal/a", "https://app.example.com/portal/b"] },
+      },
+      ctx,
+    );
+    const args = rig.executor.calls[0]!.args;
+    expect(args.filter((a) => a === "-u")).toHaveLength(2);
+    expect(args).toContain("https://app.example.com/portal/a");
+    expect(args).toContain("https://app.example.com/portal/b");
+  });
+
+  it("R3-3/#14: katana targets ride -u and only http(s) URL lines count", async () => {
+    const eng = engagement();
+    const rig = makeRig(eng);
+    rig.executor.respondWith(() => ({
+      exit_code: 0,
+      stdout: "https://app.example.com/portal/a\n[WARN] some noise\nhttps://app.example.com/portal/b\n",
+      stderr: "",
+    }));
+    const ctx = toolContext(rig, eng);
+    const handler = rig.registry.get("security.katana")!.handler;
+    const out = await handler.execute(
+      { call_id: "c1", name: "security.katana", input: { targets: ["https://app.example.com/portal/"] } },
+      ctx,
+    );
+    const json = (out as { json: { urls: string[]; count: number } }).json;
+    expect(json.urls).toEqual(["https://app.example.com/portal/a", "https://app.example.com/portal/b"]);
+    expect(rig.executor.calls[0]!.args).toContain("-u");
+  });
+
+  it("R3-11: nmap derives a conservative --max-rate from the default request rate", async () => {
+    const eng = engagement({ rate_limits: { default: { requests_per_second: 10 } } });
+    const rig = makeRig(eng);
+    rig.executor.respondWith(() => ({ exit_code: 0, stdout: "", stderr: "" }));
+    const ctx = toolContext(rig, eng);
+    const handler = rig.registry.get("security.nmap")!.handler;
+    await handler.execute({ call_id: "c1", name: "security.nmap", input: { target: "203.0.113.20" } }, ctx);
+    const args = rig.executor.calls[0]!.args;
+    expect(args).toContain("--max-rate");
+    expect(args[args.indexOf("--max-rate") + 1]).toBe("10");
   });
 });
 

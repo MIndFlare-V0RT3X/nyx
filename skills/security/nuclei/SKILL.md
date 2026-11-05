@@ -27,3 +27,8 @@ run's raw JSONL output stored as the hash-recorded evidence artifact.
 - Findings can never carry a foreign engagement id — they inherit this
   session's binding structurally.
 - Rate limits block rather than drop; large scans take time.
+
+## Preserving output
+Findings and their raw-output artifact are recorded AUTOMATICALLY (the
+evidence artifact and its sha256 come back in the tool result). For any
+manually-recorded finding, cite that artifact path + hash as evidence.

@@ -74,7 +74,9 @@ export function httpxHandler(deps: SecurityToolDeps): ToolHandler {
           const args = ["-json", "-silent", "-title", "-tech-detect", "-status-code"];
           const rate = cooperativeRate(ctx.engagement!, HTTPX_META);
           if (rate !== undefined) args.push("-rate-limit", String(Math.max(1, rate)));
-          args.push(...targets.map((t) => t.url));
+          // goflags stops parsing at the first non-flag token: targets go
+          // through repeated -u flags, never as positional args (R3-1/2/3).
+          for (const t of targets) args.push("-u", t.url);
           return args;
         },
         parse: async (stdout) => {
