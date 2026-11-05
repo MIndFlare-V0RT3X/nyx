@@ -12,7 +12,7 @@ as unreleased phases, recorded below in order.
 The first publishable release: Phases 0–7, feature-complete against the
 original roadmap. 1320 tests (1299 passing + 21 docker-gated bypass proofs
 that run live in the `test-docker` CI lane), lint clean, typecheck clean,
-SPDX headers on all 387 source files.
+SPDX headers on all 388 source files.
 
 ### Added — Phase 7 (release readiness: CI · plugin trust · process split · behavioral evals)
 
@@ -56,9 +56,9 @@ SPDX headers on all 387 source files.
   (the R1-2 host-INPUT residual is the headline, with its DOCKER-USER
   mitigation), CODE_OF_CONDUCT, issue templates (bug / feature / security),
   PR template, CONTRIBUTING extended (CI lanes, adding a skill / plugin /
-  tool wrapper / eval), `scripts/check-spdx.mjs` (387/387 source files),
-  version 0.7.0 everywhere, this entry, and the signed `v0.7.0` tag with
-  its tarball sha256 in the release notes.
+  tool wrapper / eval), `scripts/check-spdx.mjs` (388/388 source files),
+  version 0.7.0 everywhere, this entry, and the `v0.7.0` tag with its
+  tarball sha256 in the release notes (`docs/RELEASES.md`).
 
 ### Added — Phase 6 (egress proxy · exploitation tooling · CVE disclosure)
 
