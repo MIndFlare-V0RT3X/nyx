@@ -24,7 +24,7 @@ suites are in flight against the frozen contracts. Seams already reserved for
 later phases: `CompactionStrategy` (Phase 3), the `tasks` table in the session
 DDL and `ApprovalEngine.consume()` (Phase 4), `SKILLS_CATALOG` (Phase 5), the
 `Embedder` interface (vector retrieval), and sandbox `allowlist` networking
-(refused with `not_implemented` until the Phase 6 egress work).
+(implemented in Phase 6 — the egress proxy, docs/EGRESS-PROXY.md).
 
 ## Delivery status
 
@@ -50,11 +50,16 @@ that phases extend, not rewrite:
 - **Phase 5 (skills).** `SKILLS_CATALOG` is section 6 of every assembled
   prompt today (empty by default); skills surface as one-liners with the body
   loaded on demand, exactly like memory.
-- **Phase 6 (authorized-engagement tooling).** The enforcement spine already
-  exists: `@nyx/scope` plus its policy integration. New tooling registers as
-  tool definitions — the `handler` locator scheme (`builtin:*`, `mcp:*`,
-  `plugin:*`) is the surface a Python sidecar speaks without touching the
-  kernel.
+- **Phase 6 (authorized-engagement tooling) — SHIPPED.** The egress proxy
+  (docs/EGRESS-PROXY.md), the exploitation toolkit (docs/EXPLOITATION.md),
+  and the CVE disclosure workflow (docs/DISCLOSURE.md), all on the Phase 5
+  enforcement spine. New tooling registers as tool definitions — the
+  `handler` locator scheme (`builtin:*`, `mcp:*`, `plugin:*`) is the surface
+  a Python sidecar speaks without touching the kernel.
+- **Phase 7 (host hardening).** The owned residuals from the Phase 6
+  fan-out: the docker INPUT-path exposure (operator DOCKER-USER mitigation
+  documented), a docker-capable CI lane for the acceptance suite, and plugin
+  trust boundaries (docs/SECURITY-SUBSYSTEM.md residual table).
 - **Phase 8 (more sandboxes).** `SandboxProviders` is a registry keyed by
   provider id; E2B and Daytona are new `SandboxProvider` implementations, not
   kernel changes.
