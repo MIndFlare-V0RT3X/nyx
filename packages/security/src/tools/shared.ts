@@ -14,6 +14,8 @@
 // Only then does the executor see an argv composed exclusively of
 // handler-validated tokens (charset-guarded — see executor.ts).
 
+import * as path from "node:path";
+import * as fsp from "node:fs/promises";
 import type {
   Engagement,
   ScopeTargetQuery,
@@ -119,6 +121,47 @@ export function assertWorkspacePath(ctx: ToolContext, p: string, label: string):
     }
   }
   return workspaceRelative(ctx, p);
+}
+
+/**
+ * R2-4 (and R3-12's general rule): a workspace file passed to a binary must
+ * resolve WHERE THE BINARY READS IT. Sandbox executor: the workspace is the
+ * cwd — the (contained) relative path is correct. Real host executor: only
+ * the local provider's workdir is host-addressable; resolve absolute under
+ * the workdir and fail LOUDLY when the file is not readable on the host
+ * (docker+host cannot address workspace files — use the sandbox executor).
+ * An injected executor (tests) gets the relative form verbatim.
+ */
+const resolvePath = (base: string, rel: string) => path.resolve(base, rel);
+const fspStat = (p: string) => fsp.stat(p);
+
+export async function resolveForExecutor(
+  ctx: ToolContext,
+  deps: SecurityToolDeps,
+  relPath: string,
+  label: string,
+): Promise<string> {
+  const contained = assertWorkspacePath(ctx, relPath, label);
+  const realHost =
+    deps.executor instanceof HostSecurityExecutor ||
+    (deps.executor === undefined && deps.use_sandbox_executor !== true);
+  if (!realHost) return contained;
+  const absolute = resolvePath(ctx.sandbox.workdir, contained);
+  try {
+    const stat = await fspStat(absolute);
+    if (!stat.isFile()) throw new Error("not a file");
+    return absolute;
+  } catch {
+    throw Object.assign(
+      new Error(
+        `${label} "${contained}" is not readable on the host at ${absolute} (the host ` +
+          "executor only addresses workspace files with the local provider). Use the " +
+          'sandbox executor (security.executor: "sandbox") — the turnkey live mode since ' +
+          "the Phase 6.1 egress proxy.",
+      ),
+      { name: "SecurityToolError", code: "skill.error" as const },
+    );
+  }
 }
 
 export function egressProxyUrl(ctx: ToolContext, rateClass: string): string | undefined {

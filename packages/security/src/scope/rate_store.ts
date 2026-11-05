@@ -50,6 +50,10 @@ export class SqliteRateBucketStore implements RateBucketStore {
     // Atomic get+set: better-sqlite3 serializes transactions, and a busy
     // writer from another process waits on busy_timeout (the unified handle
     // opens with 5000 ms).
+    // BEGIN IMMEDIATE: takes the write lock up front, so a cross-process
+    // concurrent read never upgrades mid-transaction (SQLITE_BUSY_SNAPSHOT
+    // from a DEFERRED read→write upgrade — R1-13). busy_timeout (5 s on the
+    // unified handle) absorbs the wait.
     const reserveTx = this.db.transaction((): number => {
       const existing = this.db
         .prepare("SELECT next_allowed_at, interval_ms FROM rate_buckets WHERE key = ?")
@@ -72,7 +76,7 @@ export class SqliteRateBucketStore implements RateBucketStore {
         .run(key, slot + interval_ms, interval_ms, now);
       return slot;
     });
-    const slot = reserveTx();
+    const slot = reserveTx.immediate();
     this.maybePrune(now);
     return slot;
   }

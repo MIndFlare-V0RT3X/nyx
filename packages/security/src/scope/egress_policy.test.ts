@@ -356,3 +356,48 @@ describe("createEgressBinder — listeners, ports, env, rollback", () => {
     expect(server.listenerCount).toBe(0);
   });
 });
+
+// ── Phase 6.4 fan-out regressions (R1-18: honest proofs) ────────────────────
+
+describe("R1-18 — the honest proofs (real policy, real clock)", () => {
+  it("TWO-LAYER PROOF with the REAL policy: a raw out-of-scope CONNECT (no tool layer at all) is denied by the proxy's scope engine", async () => {
+    const resolver = new FakeResolver();
+    resolver.answers = () => [{ address: "203.0.113.10", family: 4 }];
+    const { rows, audit } = sink();
+    const limiter = new SecurityRateLimiter({ now: () => NOW });
+    const policy = createEgressPolicy({ resolver, limiter, audit, now: () => NOW });
+    // The REAL engagement fixture authorizes example.com + 203.0.113.0/24
+    // (minus the excluded /32) — outsider.test is out of scope.
+    const denied = await policy.decide(context(), { host: "outsider.test", port: 443 });
+    expect(denied.decision).toBe("deny");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.action).toBe("security.egress.denied");
+    // And the in-scope host still allows through the same real policy.
+    const allowed = await policy.decide(context(), { host: "example.com", port: 443 });
+    expect(allowed.decision).toBe("allow");
+  });
+
+  it("REAL PACING: N CONNECTs through the policy observe the declared rate in wall-clock time", async () => {
+    const resolver = new FakeResolver();
+    resolver.answers = () => [{ address: "203.0.113.10", family: 4 }];
+    // 5 rps declared for the default class + per-host aggregate: 4 decisions
+    // take >= 3 intervals (the bucket starts empty) — ~600 ms real time.
+    const eng = engagement({
+      rate_limits: { default: { requests_per_second: 5 } },
+    });
+    const limiter = new SecurityRateLimiter(); // REAL clock + REAL sleep
+    const policy = createEgressPolicy({ resolver, limiter, now: () => NOW });
+    const t0 = Date.now();
+    for (let i = 0; i < 4; i += 1) {
+      const d = await policy.decide(context({ engagement: eng }), {
+        host: "example.com",
+        port: 443,
+      });
+      expect(d.decision).toBe("allow");
+    }
+    const elapsed = Date.now() - t0;
+    // 4 acquires on an empty 5 rps bucket: slots at +200, +400, +600, +800 ms
+    // — the last sleeps ~600 ms. Allow scheduler slop, require the floor.
+    expect(elapsed).toBeGreaterThanOrEqual(500);
+  });
+});

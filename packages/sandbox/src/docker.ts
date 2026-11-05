@@ -211,6 +211,17 @@ export function egressNetworkGatewayInspectArgs(name: string): string[] {
   return ["network", "inspect", name, "--format", "{{(index .IPAM.Config 0).Gateway}}"];
 }
 
+/** Gateway AND subnet in one inspect ({{.}} delimits; "gw|subnet"). */
+export function egressNetworkTopologyInspectArgs(name: string): string[] {
+  return [
+    "network",
+    "inspect",
+    name,
+    "--format",
+    "{{(index .IPAM.Config 0).Gateway}}|{{(index .IPAM.Config 0).Subnet}}",
+  ];
+}
+
 export function egressNetworkConnectedContainersArgs(name: string): string[] {
   return ["network", "inspect", name, "--format", "{{range .Containers}}{{.Name}}\n{{end}}"];
 }
@@ -230,6 +241,13 @@ export function containerRunArgs(opts: {
   hostDir: string;
   image: string;
   limits?: { memory_mb?: number; cpu?: number };
+  /**
+   * R1-5 (Phase 6.4): null the container's DNS — docker's embedded resolver
+   * forwards arbitrary names out of the HOST (an ungated exfil channel).
+   * Proxied clients send hostnames in CONNECT/absolute-form requests and
+   * never resolve locally; direct resolvers have no route anyway.
+   */
+  deadDns?: boolean;
 }): string[] {
   const args = [
     "run",
@@ -243,6 +261,10 @@ export function containerRunArgs(opts: {
     "-w",
     WORKSPACE,
   ];
+  if (opts.deadDns === true) {
+    // 127.0.0.255: loopback, no listener — instant refusal, no query leaves.
+    args.push("--dns", "127.0.0.255", "--dns-search", ".");
+  }
   if (opts.limits?.memory_mb !== undefined && opts.limits.memory_mb > 0) {
     args.push("--memory", `${opts.limits.memory_mb}m`);
   }
@@ -272,6 +294,9 @@ interface EgressNet {
   binder: SandboxEgressBinding;
   /** The sandbox id whose listeners these are (the parent). */
   listenerOwnerSandboxId: string;
+  /** R1-10: ONLY the listener owner (the parent) unbinds; forks never do
+   *  (an early-fork destroy must not kill the parent's live egress). */
+  ownsListeners: boolean;
 }
 
 class DockerSandbox implements ForkableSandbox {
@@ -399,9 +424,12 @@ class DockerSandbox implements ForkableSandbox {
       this.live,
       this.limits,
       forkImageId,
-      // The child shares the parent's egress network and its listeners;
-      // teardown (last endpoint out) is inherited below via egressNet.
-      this.egressNet,
+      // The child shares the parent's egress network and its listeners, but
+      // NEVER unbinds them (R1-10: only the owner does); it best-effort
+      // removes the network when it is the last endpoint out.
+      this.egressNet !== undefined
+        ? { ...this.egressNet, ownsListeners: false }
+        : undefined,
     );
   }
 
@@ -505,8 +533,17 @@ class DockerSandbox implements ForkableSandbox {
   }
 
   async destroy(): Promise<void> {
+    // R1-9: retriable — the destroyed flag is set only on SUCCESS, so a
+    // failed rm (daemon hiccup) leaves the destroy callable again instead
+    // of stranding a live container with bound listeners forever.
     if (this.destroyed) return;
-    this.destroyed = true;
+    if (this.egressNet !== undefined && this.egressNet.ownsListeners) {
+      // R1-9/R1-10: the LISTENER OWNER unbinds FIRST — no new egress can be
+      // authorized from this moment — before the container goes away, so a
+      // failed rm can never leave live listeners behind. (The parent session
+      // is being torn down; its forks are aborted with it.)
+      await this.egressNet.binder.unbindNetwork(this.egressNet.listenerOwnerSandboxId);
+    }
     try {
       const r = await cliRun(this.dockerBin, ["rm", "-f", this.id]);
       // "No such container" means someone removed it first — destroy stays
@@ -518,15 +555,11 @@ class DockerSandbox implements ForkableSandbox {
       this.live.delete(this.id);
     }
     if (this.egressNet !== undefined) {
-      // Phase 6.1 teardown — "the last one out closes the lights". Parent
-      // and forks share one network; when this destroy leaves OTHER
-      // endpoints (a still-running fork of the same session), the network
-      // and its proxy listeners stay (their egress is still legitimately
-      // scoped). When we are the last: unbind the listeners FIRST (no new
-      // egress can be authorized), then remove the network. Both idempotent;
-      // a concurrent last-destroy races into one winner and one no-op.
+      // The network itself: removed when the last endpoint leaves. The
+      // parent (owner) already unbound; forks only ever best-effort rm.
       await this.maybeTeardownEgress();
     }
+    this.destroyed = true;
     if (this.createdHostDir) {
       // We created the host bind dir during provision — remove it again.
       await fsp.rm(this.hostDir, { recursive: true, force: true });
@@ -551,12 +584,12 @@ class DockerSandbox implements ForkableSandbox {
    * label=org.nyx.egress=true` reclaims it.
    */
   private async maybeTeardownEgress(): Promise<void> {
-    const net = this.egressNet;
-    if (net === undefined) return;
+    const egress = this.egressNet;
+    if (egress === undefined) return;
     try {
       const r = await cliRun(
         this.dockerBin,
-        egressNetworkConnectedContainersArgs(net.network),
+        egressNetworkConnectedContainersArgs(egress.network),
         { timeout_ms: 30_000 },
       );
       if (r.exit_code !== 0) return; // already removed, or daemon hiccup
@@ -564,11 +597,10 @@ class DockerSandbox implements ForkableSandbox {
         .split("\n")
         .map((l) => l.trim())
         .filter((l) => l.length > 0);
-      if (remaining.length > 0) return; // forks still working — same session
-      // Last one out: no listener may authorize anything new…
-      await net.binder.unbindNetwork(net.listenerOwnerSandboxId);
-      // …then the bridge itself goes.
-      await cliRun(this.dockerBin, egressNetworkRmArgs(net.network), {
+      if (remaining.length > 0) return; // forks still attached — same session
+      // Last endpoint out: the bridge itself goes (the LISTENERS were
+      // already unbound by the owner's destroy — R1-9/R1-10).
+      await cliRun(this.dockerBin, egressNetworkRmArgs(egress.network), {
         timeout_ms: 30_000,
       });
     } catch {
@@ -644,14 +676,23 @@ export class DockerSandboxProvider implements SandboxProvider {
       });
       throwIfFailed("network create", created);
       try {
-        const gw = await cliRun(this.dockerBin, egressNetworkGatewayInspectArgs(network), {
+        const topo = await cliRun(this.dockerBin, egressNetworkTopologyInspectArgs(network), {
           timeout_ms: 30_000,
         });
-        throwIfFailed("network inspect (gateway)", gw);
-        const gateway = gw.stdout.trim();
-        if (net.isIP(gateway) === 0) {
+        throwIfFailed("network inspect (topology)", topo);
+        const [gatewayRaw, subnetRaw] = topo.stdout.trim().split("|");
+        const gateway = (gatewayRaw ?? "").trim();
+        const subnet = (subnetRaw ?? "").trim();
+        // R1-17: the wildcard/unspecified address would bind listeners on
+        // EVERY host interface — reject it.
+        if (net.isIP(gateway) === 0 || gateway === "0.0.0.0" || gateway === "::") {
           throw providerError(
             `egress network ${network} has no usable gateway (inspect returned "${gateway.slice(0, 60)}")`,
+          );
+        }
+        if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2}$/.test(subnet)) {
+          throw providerError(
+            `egress network ${network} has no usable subnet (inspect returned "${subnet.slice(0, 60)}")`,
           );
         }
         // The bind throws on port collision → abort before the container
@@ -660,6 +701,7 @@ export class DockerSandboxProvider implements SandboxProvider {
           session_id: spec.egress.session_id,
           sandbox_id: container,
           engagement: spec.egress.engagement,
+          subnet,
         });
         egressNet = {
           network,
@@ -667,6 +709,7 @@ export class DockerSandboxProvider implements SandboxProvider {
           portFor: info.proxyPortFor,
           binder: this.egress,
           listenerOwnerSandboxId: container,
+          ownsListeners: true,
         };
         env = { ...env, ...info.env };
       } catch (err) {
@@ -686,6 +729,7 @@ export class DockerSandboxProvider implements SandboxProvider {
       hostDir,
       image,
       limits: spec.limits,
+      ...(egressNet !== undefined ? { deadDns: true } : {}),
     });
 
     const r = await cliRun(this.dockerBin, args, { timeout_ms: RUN_TIMEOUT_MS });

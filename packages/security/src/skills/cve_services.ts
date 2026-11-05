@@ -98,7 +98,16 @@ export function createPinnedJsonFetch(deps: CveServicesDeps = {}): JsonFetch {
     ) {
       throw new Error(`refusing non-CVE-service host ${host}`);
     }
-    const ips = resolver !== undefined ? (await resolver.resolve(host, 443)).ips : null;
+    let ips: { address: string }[] | null = null;
+    if (resolver !== undefined) {
+      const resolved = (await resolver.resolve(host, 443)).ips;
+      // R3-16: an empty answer must not fall back to unpinned hostname
+      // resolution (DNS-rebinding window) — it is an error.
+      if (resolved.length === 0) {
+        throw new Error(`resolver returned no addresses for ${host}`);
+      }
+      ips = resolved;
+    }
     const headers: Record<string, string> = {
       host: host,
       accept:
@@ -149,10 +158,21 @@ export function createPinnedJsonFetch(deps: CveServicesDeps = {}): JsonFetch {
  * NVD + OSV discover; GHSA enriches each found CVE with its advisory
  * summary (and independently confirms the mapping).
  */
+export interface CveServiceStatus {
+  nvd: "ok" | "error";
+  osv: "ok" | "error";
+  ghsa: "ok" | "error";
+}
+
 export async function queryCveServices(
   query: CveServiceQuery,
   fetchImpl: JsonFetch,
-): Promise<{ candidates: CveCandidate[]; queries: string[] }> {
+): Promise<{
+  candidates: CveCandidate[];
+  queries: string[];
+  service_status: CveServiceStatus;
+}> {
+  const service_status: CveServiceStatus = { nvd: "ok", osv: "ok", ghsa: "ok" };
   const terms = (query.vuln_terms ?? []).map((t) => t.toLowerCase());
   const product = query.product.toLowerCase();
   const version = query.version?.toLowerCase();
@@ -165,7 +185,10 @@ export async function queryCveServices(
     `https://${CVE_SERVICE_HOSTS.nvd}/rest/json/cves/2.0?keywordSearch=` +
     encodeURIComponent(nvdQuery);
   queries.push(nvdUrl);
-  const nvd = (await fetchImpl(nvdUrl).catch(() => null)) as NvdResponse | null;
+  const nvd = (await fetchImpl(nvdUrl).catch(() => {
+    service_status.nvd = "error";
+    return null;
+  })) as NvdResponse | null;
   if (nvd !== null && Array.isArray(nvd.vulnerabilities)) {
     for (const v of nvd.vulnerabilities) {
       const cveId = v.cve?.id;
@@ -191,9 +214,10 @@ export async function queryCveServices(
     ...(query.version !== undefined ? { version: query.version } : {}),
   });
   queries.push(`${osvUrl} (POST ${osvBody})`);
-  const osv = (await fetchImpl(osvUrl, { method: "POST", body: osvBody }).catch(() => null)) as
-    | OsvResponse
-    | null;
+  const osv = (await fetchImpl(osvUrl, { method: "POST", body: osvBody }).catch(() => {
+    service_status.osv = "error";
+    return null;
+  })) as OsvResponse | null;
   if (osv !== null && Array.isArray(osv.vulns)) {
     for (const v of osv.vulns) {
       const cve = (v.aliases ?? []).find((a) => a.startsWith("CVE-")) ?? null;
@@ -212,13 +236,19 @@ export async function queryCveServices(
     }
   }
 
-  // 3. GHSA enrichment per unique CVE found.
-  const seen = new Set(candidates.map((c) => c.cve).filter((c): c is string => c !== null));
+  // 3. GHSA enrichment — capped at the first 5 unique CVEs (R3-5: the loop
+  // is sequential with a 15 s per-request timeout; unbounded, a broad NVD
+  // page would blow the tool's own 60 s budget and fire past its teardown).
+  const seen = [...new Set(candidates.map((c) => c.cve).filter((c): c is string => c !== null))].slice(0, 5);
+  let ghsaError = false;
   for (const cve of seen) {
     const ghsaUrl =
       `https://${CVE_SERVICE_HOSTS.ghsa}/advisories?cve_id=` + encodeURIComponent(cve);
     queries.push(ghsaUrl);
-    const ghsa = (await fetchImpl(ghsaUrl).catch(() => null)) as
+    const ghsa = (await fetchImpl(ghsaUrl).catch(() => {
+      ghsaError = true;
+      return null;
+    })) as
       | Array<GhsaResponse>
       | { items?: Array<GhsaResponse> }
       | null;
@@ -239,10 +269,28 @@ export async function queryCveServices(
     }
   }
 
+  if (ghsaError) service_status.ghsa = "error";
   // Rank: exact-match first, then likely, then possible.
   const rank = { "exact-match": 0, likely: 1, possible: 2 } as const;
   candidates.sort((a, b) => rank[a.confidence] - rank[b.confidence]);
-  return { candidates, queries };
+  return { candidates, queries, service_status };
+}
+
+/**
+ * Known product-name equivalences so "Apache httpd" matches advisory prose
+ * that says "Apache HTTP Server" (R3-2). Small, explicit, and honest about
+ * being a matching aid — not a CPE database.
+ */
+const TOKEN_SYNONYMS: Readonly<Record<string, readonly string[]>> = {
+  httpd: ["http server", "apache http server"],
+};
+
+function tokenMatches(text: string, token: string): boolean {
+  if (text.includes(token)) return true;
+  for (const syn of TOKEN_SYNONYMS[token] ?? []) {
+    if (text.includes(syn)) return true;
+  }
+  return false;
 }
 
 function scoreCandidate(
@@ -254,16 +302,20 @@ function scoreCandidate(
   const t = text.toLowerCase();
   // Token overlap instead of a literal substring: advisory prose varies
   // ("Apache httpd" vs "Apache HTTP Server") — significant product tokens
-  // (len > 2) matched against the text.
+  // (len > 2) matched (with synonyms) against the text.
   const tokens = product
     .toLowerCase()
     .split(/[^a-z0-9.]+/)
     .filter((tok) => tok.length > 2);
-  const hit = tokens.filter((tok) => t.includes(tok)).length;
-  const overlap = tokens.length === 0 ? 1 : hit / tokens.length;
+  // R3-2: a product whose tokens are all trivial ("go", "vi") matches
+  // NOTHING on overlap — never vacuously everything.
+  const hit = tokens.filter((tok) => tokenMatches(t, tok)).length;
+  const overlap = tokens.length === 0 ? 0 : hit / tokens.length;
   const versionHit = version !== undefined && t.includes(version);
   const termHit = terms.some((term) => t.includes(term));
+  // R3-2: exact-match needs real product evidence AND the version AND the
+  // class; "likely" needs product evidence plus one of the two.
   if (overlap >= 0.5 && versionHit && termHit) return "exact-match";
-  if (overlap >= 0.5 || (versionHit && termHit)) return "likely";
+  if (overlap >= 0.5 && (versionHit || termHit)) return "likely";
   return "possible";
 }

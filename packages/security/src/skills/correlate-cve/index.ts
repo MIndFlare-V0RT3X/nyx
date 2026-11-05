@@ -76,36 +76,89 @@ export function correlateCveHandler(
           { name: "SecurityToolError", code: "skill.error" },
         );
       }
-      const fetchImpl =
+      // R3-9: the research traffic charges the engagement's `cve` rate class
+      // (per service host, per request) — the declared class is enforced,
+      // not dead metadata.
+      const baseFetch =
         deps.fetchImpl ??
         createPinnedJsonFetch(deps.resolver !== undefined ? { resolver: deps.resolver } : {});
-      const { candidates, queries } = await queryCveServices(
-        { product: input.product, version: input.version, vuln_terms: input.vuln_terms },
-        fetchImpl,
-      );
-      // The correlation itself is audit-logged (the queries carry
-      // finding-derived terms — a visible, bounded research channel).
-      deps.audit?.({
-        actor: "system:security",
-        action: "security.cve.query",
-        payload: {
-          session_id: ctx.session_id,
-          engagement_id: ctx.engagement.id,
-          finding_id: input.finding_id,
-          product: input.product,
-          queries,
-        },
-      });
-      const cves = candidates
+      const fetchImpl: JsonFetch = async (url, init) => {
+        if (ctx.engagement !== null) {
+          await deps.limiter.acquire({
+            engagement: ctx.engagement,
+            tool_class: "cve",
+            host: new URL(url).hostname,
+            unit: "requests",
+          });
+        }
+        return baseFetch(url, init);
+      };
+      // R3-5: the audit row is written EVEN WHEN the queries throw (the
+      // queries carry finding-derived terms out — the log must reflect
+      // every fired query attempt).
+      // R3-5: track every query that FIRES (including failed attempts) —
+      // the audit row must survive errors and teardown.
+      const firedQueries: string[] = [];
+      const trackingFetch: JsonFetch = async (url, init) => {
+        firedQueries.push(init?.method === "POST" ? `${url} (POST)` : url);
+        return fetchImpl(url, init);
+      };
+      let outcome: Awaited<ReturnType<typeof queryCveServices>>;
+      try {
+        outcome = await queryCveServices(
+          { product: input.product, version: input.version, vuln_terms: input.vuln_terms },
+          trackingFetch,
+        );
+      } finally {
+        deps.audit?.({
+          actor: "system:security",
+          action: "security.cve.query",
+          payload: {
+            session_id: ctx.session_id,
+            engagement_id: ctx.engagement?.id ?? null,
+            finding_id: input.finding_id,
+            product: input.product,
+            version: input.version ?? null,
+            queries: firedQueries,
+          },
+        });
+      }
+      const { candidates, service_status } = outcome;
+      // R3-8: CVE-less advisories still count — "match" is about evidence,
+      // not the registry id.
+      const cves = [...new Set(candidates
         .map((c) => c.cve)
-        .filter((c): c is string => c !== null)
-        .filter((c, i, a) => a.indexOf(c) === i);
-      if (cves.length > 0) {
+        .filter((c): c is string => c !== null))];
+      const advisories = [...new Set(candidates
+        .filter((c) => c.cve === null)
+        .map((c) => c.url))];
+      const allServicesOk =
+        service_status.nvd === "ok" && service_status.osv === "ok" && service_status.ghsa === "ok";
+      const matched = cves.length > 0 || advisories.length > 0;
+      if (matched) {
+        // R3-3: MERGE with the finding's existing CVEs (correlation is
+        // additive; a second run must never erase the first).
+        // R3-11: re-read right before the update (the network round-trip
+        // window is seconds wide).
+        const fresh = await deps.store.get(input.finding_id);
+        const existing = fresh?.cve ?? [];
+        const merged = [...new Set([...existing, ...cves])];
+        // R3-12: per-CVE confidence (not one label for the whole list).
+        const perCve = cves.map((cve) => {
+          const best = candidates
+            .filter((c) => c.cve === cve)
+            .map((c) => c.confidence)
+            .sort()[0];
+          return `${cve} (${best ?? "possible"})`;
+        });
+        // R3-6: the correlated PRODUCT persists on the finding — submit-cve
+        // needs the real product, not the target host.
         await deps.store.update(input.finding_id, {
-          cve: cves,
+          cve: merged,
           notes:
-            (finding.notes.length > 0 ? `${finding.notes}\n` : "") +
-            `correlate-cve: ${cves.join(", ")} (${bestConfidence(candidates)})`,
+            ((fresh?.notes.length ?? 0) > 0 ? `${fresh!.notes}\n` : "") +
+            `correlated-product: ${input.product}${input.version !== undefined ? ` ${input.version}` : ""}` +
+            (perCve.length > 0 ? `\ncorrelate-cve: ${perCve.join(", ")}` : ""),
         });
       }
       return {
@@ -113,9 +166,11 @@ export function correlateCveHandler(
         json: {
           finding_id: input.finding_id,
           cves,
+          advisories,
           confidence: bestConfidence(candidates),
+          service_status,
+          result: matched ? "match" : allServicesOk ? "no_match" : "service_error",
           candidates,
-          result: cves.length > 0 ? "match" : "no_match",
         },
       };
     },
@@ -127,5 +182,3 @@ function bestConfidence(candidates: CveCandidate[]): string {
   if (candidates.some((c) => c.confidence === "likely")) return "likely";
   return "possible";
 }
-
-

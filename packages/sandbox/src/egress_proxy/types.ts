@@ -25,6 +25,14 @@ export interface EgressListenerContext {
    * bound.
    */
   rate_class: string | null;
+  /**
+   * R1-1 (Phase 6.4): the sandbox network's subnet (e.g. "172.19.0.0/16").
+   * Connections are accepted ONLY from source addresses inside it — docker's
+   * --internal confines FORWARD-path egress but NOT the host INPUT path, so
+   * without this check a container on ANOTHER sandbox's bridge could reach
+   * this listener (and authorize under THIS engagement).
+   */
+  source_subnet?: string;
 }
 
 /** One parsed CONNECT request. */
@@ -75,7 +83,13 @@ export interface SandboxEgressBinding {
   bindNetwork(
     network: string,
     gateway: string,
-    context: { session_id: string; sandbox_id: string; engagement: Engagement },
+    context: {
+      session_id: string;
+      sandbox_id: string;
+      engagement: Engagement;
+      /** The network's subnet (source-address enforcement, R1-1). */
+      subnet?: string;
+    },
   ): Promise<EgressListenerInfo>;
 
   /** Unbind a sandbox's listeners. Idempotent; safe to call from any of the

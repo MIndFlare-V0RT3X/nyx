@@ -10,6 +10,7 @@
 // the same way. There is no TLS interception and no unix socket anywhere.
 
 import * as net from "node:net";
+import { cidrContains, isIPLiteral, parseCidr } from "@nyx/scope";
 import type {
   EgressDecisionProvider,
   EgressListenerContext,
@@ -32,6 +33,9 @@ export function parseConnectAuthority(authority: string): { host: string; port: 
     const host = v6[1];
     const portText = v6[2];
     if (host === undefined || portText === undefined || host.length === 0) return null;
+    // R1-11: brackets are for IP literals only — "[example.com]:443" and
+    // other alias forms are refused.
+    if (!isIPLiteral(host)) return null;
     const port = Number(portText);
     if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
     return { host, port };
@@ -47,6 +51,12 @@ export function parseConnectAuthority(authority: string): { host: string; port: 
   // Hostname (or v4/dual-literal) charset — rejects userinfo, paths, spaces.
   if (!/^[A-Za-z0-9._-]+$/.test(host)) return null;
   return { host, port };
+}
+
+/** Methods accepted in absolute (forward-proxy) form. */
+const FORWARD_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
+function isForwardMethod(m: string): boolean {
+  return FORWARD_METHODS.has(m);
 }
 
 interface ListenerRecord {
@@ -168,6 +178,26 @@ export class EgressProxyServer {
   }
 
   private handleConnection(socket: net.Socket, record: ListenerRecord): void {
+    // R1-1: source-address enforcement. docker's --internal bridge confines
+    // FORWARD-path egress but the host INPUT path is open: without this
+    // check a container on ANOTHER sandbox's bridge could reach this
+    // listener and authorize under THIS engagement. The listener accepts
+    // only its own network's subnet.
+    const subnet = record.context.source_subnet;
+    if (subnet !== undefined) {
+      const remote = socket.remoteAddress ?? "";
+      const bare = remote.replace(/^::ffff:/, ""); // docker v4-mapped form
+      let inSubnet = false;
+      try {
+        inSubnet = cidrContains(subnet, bare);
+      } catch {
+        inSubnet = false;
+      }
+      if (!inSubnet) {
+        socket.destroy();
+        return;
+      }
+    }
     if (record.tunnels.size >= record.maxConnections) {
       // The cap is DoS insurance for the kernel process; excess connections
       // die immediately, exactly like scope denials (no response bytes).
@@ -188,12 +218,16 @@ export class EgressProxyServer {
     socket.on("data", (chunk: Buffer) => {
       if (socket.destroyed) return;
       head = head.length === 0 ? chunk : Buffer.concat([head, chunk]);
-      if (head.length > MAX_HEAD_BYTES) {
-        cleanup();
-        return;
-      }
       const end = head.indexOf("\r\n\r\n");
-      if (end === -1) return; // keep accumulating
+      if (end === -1) {
+        // R1-14: the cap bounds the HEAD, not the pipelined body — a huge
+        // chunk containing a complete head is fine; a headless stream past
+        // the cap dies.
+        if (head.length > MAX_HEAD_BYTES) {
+          cleanup();
+        }
+        return; // keep accumulating
+      }
       // The full head plus anything pipelined after it (early TLS/payload
       // bytes often arrive in the same segment) — the remainder is replayed
       // into the tunnel once it is established.
@@ -212,19 +246,48 @@ export class EgressProxyServer {
     const lineEnd = head.indexOf("\r\n");
     const requestLine = (lineEnd === -1 ? head : head.subarray(0, lineEnd)).toString("latin1");
     const pipelined = head.subarray(bodyOffset);
-    // Strict: exactly "CONNECT authority HTTP/1.1" (case-insensitive method
-    // and version per RFC 7231; the authority must parse).
     const parts = requestLine.split(" ");
     if (parts.length !== 3) throw new Error("malformed request line");
     const [method, authority, version] = parts as [string, string, string];
-    if (method.toUpperCase() !== "CONNECT" || version.toUpperCase() !== "HTTP/1.1") {
-      throw new Error(`only CONNECT is accepted (got ${method || "empty"})`);
+    if (version.toUpperCase() !== "HTTP/1.1") {
+      throw new Error(`only HTTP/1.1 is accepted (got ${version || "empty"})`);
     }
-    const target = parseConnectAuthority(authority);
-    if (target === null) {
-      throw new Error(`invalid CONNECT authority: ${authority.slice(0, 100)}`);
+    const m = method.toUpperCase();
+    if (m === "CONNECT") {
+      const target = parseConnectAuthority(authority);
+      if (target === null) {
+        throw new Error(`invalid CONNECT authority: ${authority.slice(0, 100)}`);
+      }
+      await this.tunnelConnect(socket, record, target, pipelined);
+      return;
     }
+    // R1-4: absolute-form requests (forward-proxy GET/POST http://host/…)
+    // are how every standard client reaches PLAIN-HTTP targets through a
+    // proxy — CONNECT-only would break every http:// engagement target.
+    // The request's authority is scope-checked like a CONNECT; the request
+    // is rewritten to origin-form and relayed (Connection: close — one
+    // decision per connection, no unchecked pipelined requests).
+    if (isForwardMethod(m) && /^http:\/\/[^\s]+$/.test(authority)) {
+      await this.forwardAbsolute(
+        socket,
+        record,
+        method,
+        authority,
+        head,
+        bodyOffset,
+        pipelined,
+      );
+      return;
+    }
+    throw new Error(`only CONNECT (or absolute-form http) is accepted (got ${m || "empty"})`);
+  }
 
+  private async tunnelConnect(
+    socket: net.Socket,
+    record: ListenerRecord,
+    target: { host: string; port: number },
+    pipelined: Buffer,
+  ): Promise<void> {
     const decision = await this.policy.decide(record.context, target);
     if (socket.destroyed) return; // the client gave up while we decided
     if (decision.decision === "deny") {
@@ -251,6 +314,68 @@ export class EgressProxyServer {
     upstream.once("close", () => socket.destroy());
   }
 
+  /**
+   * R1-4 — forward one absolute-form http request. The authority
+   * (host[:port]) goes through the SAME decision as a CONNECT; the request
+   * line is rewritten to origin-form, hop-by-hop Connection headers are
+   * dropped and Connection: close is set (one request per connection — a
+   * pipelined second request would ride an unchecked decision), and the
+   * response is relayed verbatim.
+   */
+  private async forwardAbsolute(
+    socket: net.Socket,
+    record: ListenerRecord,
+    method: string,
+    authority: string,
+    head: Buffer,
+    bodyOffset: number,
+    pipelined: Buffer,
+  ): Promise<void> {
+    const url = new URL(authority);
+    const port = url.port !== "" ? Number(url.port) : 80;
+    const decision = await this.policy.decide(record.context, {
+      host: url.hostname.replace(/^\[(.+)\]$/, "$1"),
+      port,
+    });
+    if (socket.destroyed) return;
+    if (decision.decision === "deny") {
+      socket.destroy(new Error(`egress denied: ${decision.reason}`));
+      return;
+    }
+    const upstream = await this.connectPinned(socket, decision.pinned_ips, port);
+    // Rewrite: request line to origin-form; strip hop-by-hop headers; add
+    // Connection: close (the proxy manages hop-by-hop per RFC 7230).
+    const headText = head.subarray(0, bodyOffset).toString("latin1");
+    const lines = headText.split("\r\n");
+    const originForm = `${method} ${url.pathname}${url.search} HTTP/1.1`;
+    const rewritten = [originForm];
+    for (let i = 1; i < lines.length; i += 1) {
+      const line = lines[i] ?? "";
+      if (/^connection:/i.test(line)) continue; // hop-by-hop
+      if (/^proxy-connection:/i.test(line)) continue; // hop-by-hop
+      if (line.length > 0) rewritten.push(line);
+    }
+    rewritten.push("Connection: close");
+    // The head terminator: a blank line after the last header.
+    upstream.write(rewritten.join("\r\n") + "\r\n\r\n");
+    if (pipelined.length > 0) upstream.write(pipelined);
+    // One request per connection: relay the response and close with it.
+    upstream.pipe(socket);
+    const kill = () => {
+      socket.destroy();
+      upstream.destroy();
+    };
+    socket.once("error", kill);
+    socket.once("close", () => upstream.destroy());
+    upstream.once("error", kill);
+    upstream.once("close", () => socket.destroy());
+    // The client must not send a second request on this connection.
+    socket.on("data", () => {
+      // Any further bytes from the client are dropped (the response relay
+      // owns the socket from here); the connection closes with the response.
+    });
+  }
+
   private connectPinned(
     socket: net.Socket,
     pinnedIps: string[],
@@ -262,17 +387,34 @@ export class EgressProxyServer {
           reject(new Error(`all pinned addresses refused for port ${port}`));
           return;
         }
+        let advanced = false; // R1-15: timeout+error can fire together
+        const advance = (fn: () => void): void => {
+          if (advanced) return;
+          advanced = true;
+          fn();
+        };
         const upstream = net.connect({ host: pinnedIps[i], port });
         upstream.setTimeout(CONNECT_TIMEOUT_MS);
-        upstream.once("timeout", () => {
-          upstream.destroy();
-          tryNext(i + 1);
-        });
-        upstream.once("error", () => {
-          // Already destroyed by the error; try the next pinned address.
-          tryNext(i + 1);
-        });
+        upstream.once("timeout", () =>
+          advance(() => {
+            upstream.destroy();
+            tryNext(i + 1);
+          }),
+        );
+        upstream.once("error", () =>
+          advance(() => {
+            // Already destroyed by the error; try the next pinned address.
+            tryNext(i + 1);
+          }),
+        );
+        // R1-15: destroy() emits ONLY 'close' (no 'error') — settle there.
+        upstream.once("close", () =>
+          advance(() => {
+            tryNext(i + 1);
+          }),
+        );
         upstream.once("connect", () => {
+          advanced = true; // settle: later events are post-connect lifecycle
           upstream.setTimeout(0);
           resolve(upstream);
         });
@@ -282,4 +424,5 @@ export class EgressProxyServer {
       tryNext(0);
     });
   }
+
 }

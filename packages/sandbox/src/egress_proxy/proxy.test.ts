@@ -364,3 +364,153 @@ describe("EgressProxyServer — the wire behavior", () => {
     expect(DEFAULT_MAX_CONNECTIONS).toBeGreaterThan(0);
   });
 });
+
+// ── Phase 6.4 fan-out regressions (R1) ──────────────────────────────────────
+
+describe("R1-1 — source-subnet enforcement: a listener accepts ONLY its own network", () => {
+  let echoLocal: Awaited<ReturnType<typeof echoServer>>;
+  beforeAll(async () => {
+    echoLocal = await echoServer();
+  });
+  afterAll(async () => {
+    await echoLocal.close();
+  });
+  it("a connection from outside the listener's subnet is destroyed before any decision", async () => {
+    let decided = 0;
+    const policy = new ScriptedPolicy(() => {
+      decided += 1;
+      return { decision: "allow", reason: "test", pinned_ips: ["127.0.0.1"] };
+    });
+    const server = new EgressProxyServer({ policy });
+    // Subnet that does NOT contain loopback: every local connection must die
+    // at the socket layer — the policy must never even be consulted.
+    const port = await server.bindListener("127.0.0.1", 0, {
+      session_id: "s",
+      sandbox_id: "sbx-r1",
+      engagement: engagement(),
+      rate_class: null,
+      source_subnet: "10.99.0.0/16",
+    });
+    const result = await connectThrough(port, `127.0.0.1:${echoLocal.port}`, "should-not-tunnel");
+    expect(result.destroyed).toBe(true);
+    expect(result.statusLine).toBe("");
+    expect(decided).toBe(0); // denied at the source check, not by policy
+    await server.unbindNetwork("sbx-r1");
+
+    // Subnet that DOES contain loopback: the same connection works.
+    const port2 = await server.bindListener("127.0.0.1", 0, {
+      session_id: "s",
+      sandbox_id: "sbx-r1b",
+      engagement: engagement(),
+      rate_class: null,
+      source_subnet: "127.0.0.0/8",
+    });
+    const ok = await connectThrough(port2, `127.0.0.1:${echoLocal.port}`, "in-subnet");
+    expect(ok.destroyed).toBe(false);
+    expect(ok.reply).toContain("pong:in-subnet");
+    expect(decided).toBe(1);
+    await server.unbindNetwork("sbx-r1b");
+  });
+});
+
+describe("R1-4 — absolute-form HTTP requests reach plain-http targets through the proxy", () => {
+  let echoLocal: Awaited<ReturnType<typeof echoServer>>;
+  beforeAll(async () => {
+    echoLocal = await echoServer();
+  });
+  afterAll(async () => {
+    await echoLocal.close();
+  });
+  it("GET http://host/path is forwarded origin-form with Connection: close and the response relays", async () => {
+    const server = new EgressProxyServer({
+      policy: new ScriptedPolicy(() => ({
+        decision: "allow",
+        reason: "test",
+        pinned_ips: ["127.0.0.1"],
+      })),
+    });
+    const port = await server.bindListener("127.0.0.1", 0, {
+      session_id: "s",
+      sandbox_id: "sbx-r1c",
+      engagement: engagement(),
+      rate_class: null,
+    });
+    const result = await new Promise<{ data: string; destroyed: boolean }>((resolve) => {
+      const socket = net.connect(port, "127.0.0.1");
+      let data = "";
+      const settle = () => resolve({ data, destroyed: !data.includes("pong:") });
+      const timer = setTimeout(() => {
+        socket.destroy();
+        settle();
+      }, 3000);
+      socket.once("error", () => {
+        clearTimeout(timer);
+        settle();
+      });
+      socket.once("close", () => {
+        clearTimeout(timer);
+        settle();
+      });
+      socket.on("data", (c) => {
+        data += c.toString("utf8");
+        // The echo target never closes (it is not an HTTP server); settle as
+        // soon as the response relays.
+        if (data.includes("pong:")) {
+          clearTimeout(timer);
+          socket.destroy();
+          settle();
+        }
+      });
+      socket.write(
+        `GET http://127.0.0.1:${echoLocal.port}/probe?a=1 HTTP/1.1\r\nHost: 127.0.0.1:${echoLocal.port}\r\nUser-Agent: test\r\nConnection: keep-alive\r\n\r\n`,
+      );
+    });
+    expect(result.destroyed).toBe(false);
+    expect(result.data).toContain("pong:");
+    // The upstream saw the ORIGIN form (not the absolute URL) and the proxy
+    // managed the hop-by-hop Connection header.
+    const seen = echoLocal.seen.join("\n");
+    expect(seen).toContain(`GET /probe?a=1 HTTP/1.1`);
+    expect(seen).toContain("Connection: close");
+    expect(seen).not.toContain("GET http://");
+    await server.unbindNetwork("sbx-r1c");
+  });
+
+  it("an out-of-scope absolute-form request is denied with no response bytes (same policy as CONNECT)", async () => {
+    const realPolicy = new ScriptedPolicy((_ctx, req) =>
+      req.host === "127.0.0.1"
+        ? { decision: "allow", reason: "in scope", pinned_ips: ["127.0.0.1"] }
+        : { decision: "deny", reason: `egress denied: ${req.host} is out of scope` },
+    );
+    const server = new EgressProxyServer({ policy: realPolicy });
+    const port = await server.bindListener("127.0.0.1", 0, {
+      session_id: "s",
+      sandbox_id: "sbx-r1d",
+      engagement: engagement(),
+      rate_class: null,
+    });
+    const result = await new Promise<{ data: string; destroyed: boolean }>((resolve) => {
+      const socket = net.connect(port, "127.0.0.1");
+      let data = "";
+      const timer = setTimeout(() => {
+        socket.destroy();
+        resolve({ data, destroyed: true });
+      }, 3000);
+      socket.once("error", () => {
+        clearTimeout(timer);
+        resolve({ data, destroyed: true });
+      });
+      socket.once("close", () => {
+        clearTimeout(timer);
+        resolve({ data, destroyed: true });
+      });
+      socket.on("data", (c) => {
+        data += c.toString("utf8");
+      });
+      socket.write("GET http://outsider.test/x HTTP/1.1\r\nHost: outsider.test\r\n\r\n");
+    });
+    expect(result.destroyed).toBe(true);
+    expect(result.data).toBe("");
+    await server.unbindNetwork("sbx-r1d");
+  });
+});

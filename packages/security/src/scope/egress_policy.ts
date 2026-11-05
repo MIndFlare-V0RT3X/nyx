@@ -86,6 +86,31 @@ export function createEgressPolicy(deps: EgressPolicyDeps): EgressDecisionProvid
         return { decision: "deny", reason: verdict.reason };
       }
 
+      // R1-13: everything after the scope check (resolution, rate
+      // reservation, window re-check) is internal machinery — an error
+      // there must fail CLOSED with an audit row, never surface as an
+      // unhandled rejection (which would destroy the CONNECT silently and
+      // leave no record).
+      try {
+        return await decideChecked(context, request, host);
+      } catch (err) {
+        const reason = `egress proxy internal error: ${(err as Error).message}`;
+        auditRow(context, request, false, reason, {});
+        return { decision: "deny", reason };
+      }
+    },
+  };
+
+  async function decideChecked(
+    context: EgressListenerContext,
+    request: { host: string; port: number },
+    host: string,
+  ): Promise<EgressDecision> {
+    const engagement = context.engagement;
+    // The verdict (recomputed — cheap and pure) carries `matched` for the
+    // audit row; the scope gate itself already passed in the outer decide.
+    const verdict = checkTarget(engagement, { host, port: request.port }, now());
+
       // 2. Resolution + the rebinding check. IP literals passed checkTarget's
       //    CIDR containment already — they pin to themselves. Hostnames are
       //    resolved (the PROXY's resolver, never the container's) and every
@@ -149,8 +174,7 @@ export function createEgressPolicy(deps: EgressPolicyDeps): EgressDecisionProvid
         pinned_ips: pinnedIps,
         ...(verdict.matched !== undefined ? { matched: verdict.matched } : {}),
       };
-    },
-  };
+  }
 }
 
 export interface EgressBinderOptions {
@@ -175,7 +199,12 @@ export function createEgressBinder(
   const bindNetwork = async (
     network: string,
     gateway: string,
-    context: { session_id: string; sandbox_id: string; engagement: Engagement },
+    context: {
+      session_id: string;
+      sandbox_id: string;
+      engagement: Engagement;
+      subnet?: string;
+    },
   ): Promise<EgressListenerInfo> => {
     // Tool rate classes: every declared key EXCEPT "default" (the shared
     // per-host aggregate entry — not a tool class; the base listener IS the
@@ -197,6 +226,7 @@ export function createEgressBinder(
         sandbox_id: context.sandbox_id,
         engagement: context.engagement,
         rate_class: null,
+        ...(context.subnet !== undefined ? { source_subnet: context.subnet } : {}),
       });
       bound.push({ port: defaultPort, rateClass: null });
       for (const c of classes) {
@@ -207,6 +237,7 @@ export function createEgressBinder(
           sandbox_id: context.sandbox_id,
           engagement: context.engagement,
           rate_class: c,
+          ...(context.subnet !== undefined ? { source_subnet: context.subnet } : {}),
         });
         bound.push({ port, rateClass: c });
       }

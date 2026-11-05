@@ -336,3 +336,61 @@ targets:
     expect(loaded.engagement.starts_at).toBeGreaterThan(NOW);
   });
 });
+
+// ── Phase 6.4 fan-out regression (R1-3) ─────────────────────────────────────
+
+async function tempFile(name: string, lines: string[]): Promise<string> {
+  const dir = await tmpDir("nyx-eng-r13-");
+  const file = path.join(dir, `${name}.yaml`);
+  await writeFile(file, lines.join("\n"), "utf8");
+  return file;
+}
+
+describe("R1-3 — declared rate limits require the default aggregate", () => {
+  it("a rate_limits map with a tool class but no default is refused at load", async () => {
+    const file = await tempFile("eng-r13", [
+      "schema: 1",
+      "id: eng-r13",
+      'client: "Test"',
+      'operator_id: "owner"',
+      "signed_at: 2026-11-01T00:00:00Z",
+      "authorized_by: A",
+      "emergency_contact: security@test.example",
+      "window:",
+      "  start: 2026-11-01T00:00:00Z",
+      "  end: 2026-12-01T00:00:00Z",
+      "targets:",
+      "  domains:",
+      "    - example.com",
+      "rate_limits:",
+      "  sqlmap: { requests_per_second: 2 }",
+      "allowed_techniques: [reconnaissance]",
+    ]);
+    await expect(loadEngagementYaml(file)).rejects.toMatchObject({
+      code: "validation_failed",
+    });
+  });
+
+  it("an entirely absent rate_limits remains the operator's explicit choice", async () => {
+    const file = await tempFile("eng-r13-ok", [
+      "schema: 1",
+      "id: eng-r13-ok",
+      'client: "Test"',
+      'operator_id: "owner"',
+      "signed_at: 2026-11-01T00:00:00Z",
+      "authorized_by: A",
+      "emergency_contact: security@test.example",
+      "window:",
+      "  start: 2026-11-01T00:00:00Z",
+      "  end: 2026-12-01T00:00:00Z",
+      "targets:",
+      "  domains:",
+      "    - example.com",
+      "allowed_techniques: [reconnaissance]",
+    ]);
+    const loaded = await loadEngagementYaml(file);
+    // Absent rate_limits: the engagement carries no limits — the operator's
+    // explicit choice (undefined, not defaulted), same semantics as {}.
+    expect(loaded.engagement.rate_limits ?? {}).toEqual({});
+  });
+});

@@ -68,8 +68,12 @@ export function submitCveHandler(deps: SecurityToolDeps & { store: FindingStore 
           { name: "SecurityToolError", code: "skill.error" as const },
         );
       }
-      // The package must exist and its manifest must verify against the
-      // recorded hash chain entry.
+      // R3-1/R3-7: the package is VERIFIED, not trusted. Three gates:
+      //   (1) the manifest binds to THIS finding (manifest.finding_id),
+      //   (2) the on-disk manifest hash equals the hash prepare-disclosure
+      //       recorded on the finding row (the durable, model-unreachable
+      //       record — the model can fs.write the workspace, not the row),
+      //   (3) EVERY package file's content hash equals its manifest entry.
       const dir = assertWorkspacePath(ctx, input.package_dir, "package_dir");
       let manifestRaw: string;
       try {
@@ -85,9 +89,10 @@ export function submitCveHandler(deps: SecurityToolDeps & { store: FindingStore 
       }
       const manifestHash = createHash("sha256").update(manifestRaw).digest("hex");
       let manifest: {
+        finding_id?: string;
         title?: string;
         affected_versions?: string[];
-        sha256?: string;
+        files?: Array<{ name: string; sha256: string; bytes: number }>;
       };
       try {
         manifest = JSON.parse(manifestRaw) as typeof manifest;
@@ -97,6 +102,63 @@ export function submitCveHandler(deps: SecurityToolDeps & { store: FindingStore 
           { name: "SecurityToolError", code: "skill.error" as const },
         );
       }
+      // (1) binding: the package belongs to THIS finding.
+      if (manifest.finding_id !== finding.id) {
+        throw Object.assign(
+          new Error(
+            `package ${dir} belongs to finding ${manifest.finding_id ?? "(none)"}, not ${finding.id} — cross-finding packages are refused`,
+          ),
+          { name: "SecurityToolError", code: "skill.error" as const },
+        );
+      }
+      // (2) the recorded hash: prepare-disclosure stamped it on the finding.
+      const recorded = /disclosure-package: .*sha256=([0-9a-f]{64})/.exec(finding.notes);
+      if (recorded === null) {
+        throw Object.assign(
+          new Error(
+            `finding ${finding.id} carries no recorded package hash — the package was not prepared through security.prepare-disclosure`,
+          ),
+          { name: "SecurityToolError", code: "skill.error" as const },
+        );
+      }
+      if (recorded[1] !== manifestHash) {
+        throw Object.assign(
+          new Error(
+            `package manifest hash mismatch: on disk ${manifestHash.slice(0, 16)}…, recorded ${recorded[1]!.slice(0, 16)}… — ` +
+              "the package was modified after preparation; re-run security.prepare-disclosure",
+          ),
+          { name: "SecurityToolError", code: "skill.error" as const },
+        );
+      }
+      // (3) per-file verification: every entry's content hash matches disk.
+      for (const entry of manifest.files ?? []) {
+        let content: Buffer;
+        try {
+          content = await ctx.sandbox.readFile(`${dir}/${entry.name}`);
+        } catch {
+          throw Object.assign(
+            new Error(`package file ${dir}/${entry.name} is missing (manifest lists it) — tampered package`),
+            { name: "SecurityToolError", code: "skill.error" as const },
+          );
+        }
+        const actual = createHash("sha256").update(content).digest("hex");
+        if (actual !== entry.sha256) {
+          throw Object.assign(
+            new Error(
+              `package file ${entry.name} hash mismatch: on disk ${actual.slice(0, 16)}…, manifest ${entry.sha256.slice(0, 16)}… — ` +
+                "the package was modified after preparation; re-run security.prepare-disclosure",
+            ),
+            { name: "SecurityToolError", code: "skill.error" as const },
+          );
+        }
+      }
+      // R3-6: the PRODUCT is the correlated product recorded on the finding,
+      // never the engagement's target host (client infrastructure).
+      const productMatch = /correlated-product: (.+)/.exec(finding.notes);
+      const product =
+        productMatch !== null
+          ? productMatch[1]!.trim()
+          : "(unknown — run security.correlate-cve with the affected product first)";
 
       // The MITRE CVE request form content (the CNA submission fields).
       const form = [
@@ -104,14 +166,14 @@ export function submitCveHandler(deps: SecurityToolDeps & { store: FindingStore 
         "# https://cveform.mitre.org/ — this tool never submits)",
         "",
         `REQUEST TYPE: Request a CVE ID`,
-        `PRODUCT: ${finding.target.host}`,
+        `PRODUCT: ${product}`,
         `AFFECTED VERSIONS: ${(manifest.affected_versions ?? []).join(", ")}`,
         `VULNERABILITY TYPE: ${finding.title}`,
         `ATTACK VECTOR: ${finding.severity === "critical" || finding.severity === "high" ? "network / low privileges" : "(describe from the finding)"}`,
         `IMPACT: see disclosures/${finding.id}/impact.md`,
         `HOW TO REPRODUCE: see disclosures/${finding.id}/reproduction.md (hash-verified)`,
         `REFERENCES:`,
-        `  - ${manifest.sha256 !== undefined ? `package manifest sha256 ${manifest.sha256}` : ""}`,
+        `  - package manifest sha256 ${manifestHash}`,
         ...(finding.cve ?? []).map((c) => `  - correlated: ${c}`),
         `RESEARCHER CONTACT: ${input.researcher_contact}`,
         `VENDOR CONTACT: ${ctx.engagement.emergency_contact ?? "(from the disclosure package)"}`,

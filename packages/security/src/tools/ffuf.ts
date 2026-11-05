@@ -4,14 +4,11 @@
 // Technique: web_enumeration.
 
 import { z } from "zod";
-import * as path from "node:path";
-import * as fsp from "node:fs/promises";
 import type { ToolContext, ToolDefinition, ToolHandler, ToolOutput } from "@nyx/protocol";
 import { parseActionUrl } from "../engagement/matcher.js";
 import type { SecurityToolMeta } from "../scope/tool_filter.js";
-import { assertWorkspacePath, cooperativeRate, egressProxyUrl, runSecurityTool } from "./shared.js";
+import { cooperativeRate, egressProxyUrl, resolveForExecutor, runSecurityTool } from "./shared.js";
 import type { SecurityToolDeps } from "./shared.js";
-import { HostSecurityExecutor } from "./executor.js";
 
 export const ffufInput = z
   .object({
@@ -118,43 +115,9 @@ export function ffufHandler(deps: SecurityToolDeps): ToolHandler {
             // ffuf appends the extension verbatim — the DOT is required.
             args.push("-e", input.extensions.map((e) => (e.startsWith(".") ? e : `.${e}`)).join(","));
           }
-          // R3-12 (closed Phase 6.2): the wordlist path must resolve where
-          // the BINARY will read it, not where the containment check ran.
-          // Sandbox executor: cwd is the workspace — pass the workspace-
-          // relative path unchanged. Real host executor: resolve to an
-          // ABSOLUTE path from the harness cwd and fail LOUDLY if missing,
-          // instead of letting ffuf die on a confusing "no such file".
-          // (An injected executor — tests — gets the path verbatim.)
-          const wordlist = assertWorkspacePath(ctx, input.wordlist, "wordlist");
-          const realHost =
-            deps.executor instanceof HostSecurityExecutor ||
-            (deps.executor === undefined && deps.use_sandbox_executor !== true);
-          if (realHost) {
-            // After the runtime's containment rewrite the path is absolute
-            // under the SANDBOX workdir; on the host that only exists with
-            // the local provider (its workdir IS a host dir). The docker+
-            // host combination cannot address workspace files — R3-12's
-            // closure: fail LOUDLY with the turnkey recommendation instead
-            // of ffuf's confusing "no such file".
-            const absolute = path.resolve(ctx.sandbox.workdir, wordlist);
-            try {
-              const stat = await fsp.stat(absolute);
-              if (!stat.isFile()) throw new Error("not a file");
-            } catch {
-              throw Object.assign(
-                new Error(
-                  `wordlist "${wordlist}" is not readable on the host at ${absolute} ` +
-                    "(the host executor only addresses workspace files with the local provider). " +
-                    "Use the sandbox executor (security.executor: \"sandbox\") — the turnkey live " +
-                    "mode since the Phase 6.1 egress proxy.",
-                ),
-                { name: "SecurityToolError", code: "skill.error" as const },
-              );
-            }
-            args.push("-w", absolute);
-          } else {
-            args.push("-w", wordlist);
-          }
+          // R3-12 (closed Phase 6.2; generalized as resolveForExecutor in
+          // Phase 6.4/R2-4): the wordlist must resolve where ffuf reads it.
+          args.push("-w", await resolveForExecutor(ctx, deps, input.wordlist, "wordlist"));
           args.push("-u", input.url);
           return args;
         },

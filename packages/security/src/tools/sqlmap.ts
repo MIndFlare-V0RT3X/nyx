@@ -107,7 +107,10 @@ export function parseSqlmapScan(stdout: string): SqlmapScanResult {
       flushPoint();
       continue;
     }
-    const paramMatch = /^Parameter: (.+) \((\w+)\)$/.exec(line.trim());
+    // Real sqlmap forms: "Parameter: q (GET)", "Parameter: X-Forwarded-For
+    // ((custom) HEADER)", "Parameter: #1* ((custom) POST)" — the paren suffix
+    // is a free-form origin, not a bare \w+ (R2-1).
+    const paramMatch = /^Parameter: (.+) \((.*)\)$/.exec(line.trim());
     if (paramMatch !== null) {
       flushPoint();
       current = {
@@ -305,7 +308,50 @@ const EXPLOIT_INPUT_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-export interface SqlmapDumpTable {
+export interface SqlmapDbsResult {
+  databases: string[];
+  /** sqlite cannot enumerate databases — sqlmap says so explicitly. */
+  note: string | null;
+}
+
+/**
+ * Parse `--dbs` output (real format — fixtures/sqlmap-exploit-dbs.txt):
+ * "available databases [N]:" followed by "[*] name" lines. On SQLite sqlmap
+ * warns "it is not possible to enumerate databases" — surfaced as a note.
+ */
+export function parseSqlmapDbs(stdout: string): SqlmapDbsResult {
+  const databases: string[] = [];
+  let note: string | null = null;
+  let inList = false;
+  for (const line of stdout.split("\n")) {
+    const t = line.trim();
+    const headerMatch = /^available databases \[(\d+)\]:$/.exec(t);
+    if (headerMatch !== null) {
+      inList = true;
+      continue;
+    }
+    if (inList) {
+      const entryMatch = /^\[\*\] (.+)$/.exec(t);
+      if (entryMatch !== null) {
+        databases.push(entryMatch[1] ?? "");
+        continue;
+      }
+      if (t.length > 0) inList = false;
+    }
+    if (t.includes("not possible to enumerate databases")) {
+      note = "the back-end DBMS cannot enumerate databases (sqlmap: use --tables)";
+    }
+  }
+  return { databases, note };
+}
+
+export // The parser's mutable box state (firstBoxRow disambiguates header vs data).
+interface BoxParserState {
+  columns: string[] | null;
+  firstBoxRow: string[] | null;
+}
+
+interface SqlmapDumpTable {
   database: string;
   table: string;
   entries: number | null;
@@ -322,14 +368,24 @@ export interface SqlmapDumpTable {
 export function parseSqlmapDump(stdout: string): SqlmapDumpTable[] {
   const lines = stdout.split("\n");
   const tables: SqlmapDumpTable[] = [];
-  let current: SqlmapDumpTable | null = null;
+  let current: (SqlmapDumpTable & BoxParserState) | null = null;
   let inBox = false;
   for (const line of lines) {
     const t = line.trim();
-    const dbMatch = /^Database: (.+)$/.exec(t);
+    // Real shapes: dump mode prints "Database: <current>"; --tables mode on
+    // sqlite prints a BARE "<current>" line. Accept both (R2-3).
+    const dbMatch = /^(?:Database: )?(<current>|<\S+>)$/.exec(t) ?? /^Database: (.+)$/.exec(t);
     if (dbMatch !== null) {
       if (current !== null) tables.push(current);
-      current = { database: dbMatch[1] ?? "", table: "", entries: null, columns: null, rows: [], raw: "" };
+      current = {
+        database: dbMatch[1] ?? "",
+        table: "",
+        entries: null,
+        columns: null,
+        firstBoxRow: null,
+        rows: [],
+        raw: "",
+      };
       inBox = false;
       continue;
     }
@@ -339,7 +395,7 @@ export function parseSqlmapDump(stdout: string): SqlmapDumpTable[] {
       current.table = tableMatch[1] ?? "";
       continue;
     }
-    const entriesMatch = /^\[(\d+) entries?\]$/.exec(t);
+    const entriesMatch = /^\[(\d+) (?:entries?|tables?)\]$/.exec(t);
     if (entriesMatch !== null) {
       current.entries = Number(entriesMatch[1]);
       continue;
@@ -354,19 +410,40 @@ export function parseSqlmapDump(stdout: string): SqlmapDumpTable[] {
         .slice(1, -1)
         .split("|")
         .map((c) => c.trim());
-      // The FIRST | row is the column header (id | name | secret) — the
-      // real format always prints it; keep it out of the data rows.
-      if (current.rows.length === 0 && current.columns === null) {
-        current.columns = cells;
+      // A dump box's FIRST | row is the column header (id | name | secret);
+      // a --tables box has a single data row and no header. Hold the first
+      // row: it becomes the header when a second row follows, data otherwise.
+      if (current.columns === null && current.firstBoxRow === null) {
+        current.firstBoxRow = cells;
       } else {
+        if (current.columns === null && current.firstBoxRow !== null) {
+          current.columns = current.firstBoxRow;
+          current.firstBoxRow = null;
+        }
         current.rows.push(cells);
       }
       current.raw += line + "\n";
       continue;
     }
-    if (inBox && !t.startsWith("|")) inBox = false; // box ended
+    if (inBox && !t.startsWith("|")) {
+      inBox = false; // box ended — an unclaimed first row was DATA
+      if (current.firstBoxRow !== null) {
+        current.rows.push(current.firstBoxRow);
+        current.firstBoxRow = null;
+      }
+    }
   }
-  if (current !== null && current.table !== "") tables.push(current);
+  if (current !== null && current.firstBoxRow !== null) {
+    current.rows.push(current.firstBoxRow);
+    current.firstBoxRow = null;
+  }
+  if (current !== null && current.table !== "") {
+    tables.push(current);
+  } else if (current !== null && current.entries !== null && current.rows.length > 0) {
+    // --tables shape: "Database: <current>" + "[N tables]" + a single-column
+    // box of table names, no "Table:" line — the box rows ARE the tables.
+    tables.push({ ...current, table: "(tables)", entries: current.entries });
+  }
   return tables;
 }
 
@@ -418,11 +495,17 @@ export function sqlmapExploitHandler(deps: SecurityToolDeps): ToolHandler {
           await c.sandbox.writeFile(evidencePath, stdout);
           const hash = createHash("sha256").update(stdout).digest("hex");
           const tables = parseSqlmapDump(stdout);
+          const databases =
+            input.action === "dbs" ? parseSqlmapDbs(stdout).databases : undefined;
+          const dbsNote =
+            input.action === "dbs" ? parseSqlmapDbs(stdout).note : undefined;
           return {
             kind: "json",
             json: {
               action: input.action,
               tables,
+              ...(databases !== undefined ? { databases } : {}),
+              ...(dbsNote !== undefined ? { note: dbsNote } : {}),
               evidence: { path: evidencePath, hash },
             },
           };

@@ -25,12 +25,12 @@ import { z } from "zod";
 import type { ToolContext, ToolDefinition, ToolHandler, ToolOutput } from "@nyx/protocol";
 import { normalizeHost } from "@nyx/scope";
 import type { SecurityToolMeta } from "../scope/tool_filter.js";
-import { runSecurityTool } from "./shared.js";
+import { resolveForExecutor, runSecurityTool } from "./shared.js";
 import type { SecurityToolDeps } from "./shared.js";
 import { assertSafeTokens, HostSecurityExecutor, SandboxSecurityExecutor } from "./executor.js";
 
 const OPTION_VALUE = /^[A-Za-z0-9._:\/\-]+$/;
-const MODULE_PATH = /^(exploit|auxiliary|post|payload|encoder|nop)\/[a-z0-9\/_\-]+$/;
+const MODULE_PATH = /^(exploit|auxiliary|post|payload|encoder|nop|evasion)\/[a-z0-9\/_\-]+$/;
 
 export const MSF_SEARCH_META: SecurityToolMeta = {
   technique: "exploitation",
@@ -98,9 +98,9 @@ export function parseMsfSearch(stdout: string): MsfSearchRow[] {
   const rows: MsfSearchRow[] = [];
   for (const line of stdout.split("\n")) {
     const t = line.trim();
-    if (!/^\d+\s+(exploit|auxiliary|post|payload|encoder|nop)\//.test(t)) continue;
+    if (!/^\d+\s+(exploit|auxiliary|post|payload|encoder|nop|evasion)\//.test(t)) continue;
     const m =
-      /^(\d+)\s+((?:exploit|auxiliary|post|payload|encoder|nop)\/\S+)\s+(\d{4}-\d{2}-\d{2})?\s*(\S+)?\s+(Yes|No)?\s*(.*)$/.exec(
+      /^(\d+)\s+((?:exploit|auxiliary|post|payload|encoder|nop|evasion)\/\S+)\s+(\d{4}-\d{2}-\d{2})?\s*(\S+)?\s+(Yes|No)?\s*(.*)$/.exec(
         t,
       );
     if (m === null) continue;
@@ -153,7 +153,10 @@ export function msfSearchHandler(deps: SecurityToolDeps): ToolHandler {
         (deps.use_sandbox_executor === true
           ? new SandboxSecurityExecutor(ctx.sandbox)
           : new HostSecurityExecutor());
-      const result = await executor.run("msfconsole", ["-q", "-r", scriptPath], { timeout_ms: 600_000 });
+      // R2-4: the resource file must resolve where msfconsole READS it —
+      // the ffuf/R3-12 rule, applied here too.
+      const resolvedScriptPath = await resolveForExecutor(ctx, deps, scriptPath, "resource file");
+      const result = await executor.run("msfconsole", ["-q", "-r", resolvedScriptPath], { timeout_ms: 600_000 });
       if (result.exit_code !== 0) {
         throw Object.assign(
           new Error(`msfconsole exited ${result.exit_code}: ${result.stderr.slice(0, 2000)}`),
@@ -178,10 +181,17 @@ export const msfRunInput = z
     module: z.string().min(3).max(256).regex(MODULE_PATH),
     /** The target — RHOSTS. Scope-checked before the console starts. */
     rhosts: z.string().min(3).max(256),
-    /** Additional module options (charset-guarded values only). */
+    /** Additional module options (charset-guarded values only). RHOSTS/
+     *  RHOST are DENIED: the console applies the LAST set, and a second
+     *  set would redirect the module to an unchecked host (R2-2). The
+     *  scope-checked rhosts input is the only target source. */
     options: z
       .record(z.string().min(1).max(64), z.string().min(1).max(256).regex(OPTION_VALUE))
       .refine((o) => Object.keys(o).length <= 16, "at most 16 options")
+      .refine(
+        (o) => !Object.keys(o).some((k) => k.toUpperCase() === "RHOSTS" || k.toUpperCase() === "RHOST"),
+        "RHOSTS/RHOST cannot be set via options — use the (scope-checked) rhosts input",
+      )
       .optional(),
   })
   .strict();
@@ -214,18 +224,34 @@ export function msfRunHandler(deps: SecurityToolDeps): ToolHandler {
   return {
     async execute(call, ctx: ToolContext): Promise<ToolOutput> {
       const input = msfRunInput.parse(call.input);
-      const host = normalizeHost(input.rhosts);
+      // R2-5: an inline "host:port" authority is split so the port reaches
+      // the scope check AND the console (RPORT), instead of being stripped.
+      let rhosts = input.rhosts;
+      let port: number | undefined;
+      const authority = /^(.+):(\d+)$/.exec(input.rhosts);
+      if (authority !== null && !input.rhosts.includes("::")) {
+        rhosts = authority[1] ?? input.rhosts;
+        port = Number(authority[2]);
+      }
+      const host = normalizeHost(rhosts);
+      if (port !== undefined && input.options?.RPORT !== undefined && input.options.RPORT !== String(port)) {
+        throw Object.assign(
+          new Error(`conflicting ports: rhosts says ${port}, options.RPORT says ${input.options.RPORT}`),
+          { name: "SecurityToolError", code: "skill.error" as const },
+        );
+      }
       return runSecurityTool({
         tool: "security.msf-run",
         binary: "msfconsole",
         meta: MSF_RUN_META,
         ctx,
         deps,
-        targets: [{ host }],
+        targets: [{ host, ...(port !== undefined ? { port } : {}) }],
         buildArgs: async () => {
           const statements = [
             `use ${input.module}`,
             `set RHOSTS ${host}`,
+            ...(port !== undefined ? [`set RPORT ${port}`] : []),
             ...Object.entries(input.options ?? {}).map(([k, v]) => `set ${k} ${v}`),
             "run",
             "exit",
@@ -234,7 +260,8 @@ export function msfRunHandler(deps: SecurityToolDeps): ToolHandler {
           const script = statements.join("\n") + "\n";
           const scriptPath = `artifacts/msf-run-${Date.now()}.rc`;
           await ctx.sandbox.writeFile(scriptPath, script);
-          return ["-q", "-r", scriptPath];
+          const resolved = await resolveForExecutor(ctx, deps, scriptPath, "resource file");
+          return ["-q", "-r", resolved];
         },
         parse: async (stdout) => ({ kind: "text", text: stdout }),
       });

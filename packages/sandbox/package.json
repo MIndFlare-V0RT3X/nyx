@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@nyx/protocol": "workspace:*",
+    "@nyx/scope": "workspace:*",
     "nanoid": "^5.0.9"
   },
   "devDependencies": {

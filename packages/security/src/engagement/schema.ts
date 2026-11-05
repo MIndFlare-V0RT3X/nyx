@@ -114,6 +114,21 @@ export const SecurityEngagementFileSchema = z
         });
       }
     }
+    // R1-3 (Phase 6.4): declaring tool-class limits without `default` would
+    // leave the per-host aggregate (and the egress proxy's base listener)
+    // UNLIMITED — the aggregate is mandatory whenever any limit is declared.
+    // An entirely absent rate_limits remains the operator's explicit choice.
+    if (
+      Object.keys(file.rate_limits).length > 0 &&
+      file.rate_limits.default === undefined
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["rate_limits"],
+        message:
+          "rate_limits.default is required when any rate limit is declared — it is the per-host aggregate every listener charges (docs/EGRESS-PROXY.md)",
+      });
+    }
   });
 
 export type SecurityEngagementFile = z.infer<typeof SecurityEngagementFileSchema>;

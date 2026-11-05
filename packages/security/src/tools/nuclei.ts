@@ -16,7 +16,7 @@ import { scoreCvss3Vector } from "../findings/cvss3.js";
 import { scoreCvss4 } from "../findings/cvss4.js";
 import type { FindingStore } from "../findings/store.js";
 import type { SecurityToolMeta } from "../scope/tool_filter.js";
-import { assertWorkspacePath, cooperativeRate, parseJsonl, runSecurityTool } from "./shared.js";
+import { cooperativeRate, parseJsonl, resolveForExecutor, runSecurityTool } from "./shared.js";
 import type { SecurityToolDeps } from "./shared.js";
 
 export const nucleiInput = z
@@ -43,7 +43,11 @@ export const nucleiInput = z
       .max(5)
       .optional(),
   })
-  .strict();
+  .strict()
+  .refine((i) => i.templates === undefined || i.template === undefined, {
+    message: "templates (tags) and template (a file) are mutually exclusive — nuclei's -tags filter would silently filter out the custom template",
+    path: ["template"],
+  });
 
 const INPUT_SCHEMA = {
   type: "object",
@@ -147,13 +151,13 @@ export function nucleiHandler(deps: SecurityToolDeps & { store: FindingStore }):
         ctx,
         deps,
         targets,
-        buildArgs: () => {
+        buildArgs: async () => {
           const args = ["-jsonl", "-silent", "-nc"];
           if (input.templates !== undefined) args.push("-tags", input.templates);
           if (input.template !== undefined) {
-            // Guarded (no ..; absolute only under the workdir) and normalized
-            // to the relative form — nuclei runs with the workspace as cwd.
-            args.push("-t", assertWorkspacePath(ctx, input.template, "template"));
+            // R2-4: resolve per executor mode (sandbox: relative; host: the
+            // ffuf/R3-12 rule with a loud failure).
+            args.push("-t", await resolveForExecutor(ctx, deps, input.template, "template"));
           }
           if (input.severity !== undefined && input.severity.length > 0) {
             args.push("-severity", input.severity.join(","));

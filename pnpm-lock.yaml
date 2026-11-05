@@ -478,6 +478,9 @@ importers:
       '@nyx/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@nyx/scope':
+        specifier: workspace:*
+        version: link:../scope
       nanoid:
         specifier: ^5.0.9
         version: 5.1.16

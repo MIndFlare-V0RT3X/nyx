@@ -23,7 +23,11 @@ export const prepareDisclosureInput = z
     timeline_days: z.number().int().min(14).max(365).optional(),
     /** The vendor's security contact (from the engagement's emergency channel
      *  or the operator). Required for the notification email draft. */
-    vendor_contact: z.string().min(3).max(320),
+    vendor_contact: z
+      .string()
+      .min(3)
+      .max(320)
+      .regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, "an email address for the vendor security contact"),
     /** Free-form impact statement. */
     impact: z.string().min(1).max(8192),
   })
@@ -76,12 +80,19 @@ export function prepareDisclosureHandler(
           { name: "SecurityToolError", code: "skill.error" },
         );
       }
+      // R3-13: withdrawn/unconfirmed findings do not enter the disclosure
+      // pipeline — false positives and duplicates are not disclosed.
+      if (finding.status === "false_positive" || finding.status === "duplicate") {
+        throw Object.assign(
+          new Error(
+            `finding ${input.finding_id} is ${finding.status} — disclosure packages are only prepared for open/confirmed findings`,
+          ),
+          { name: "SecurityToolError", code: "skill.error" },
+        );
+      }
       const days = input.timeline_days ?? 90;
       const now = deps.now ?? Date.now;
-      const today = new Date(now());
-      const iso = (d: Date) => d.toISOString().slice(0, 10);
-      const plus = (n: number) => iso(new Date(now() + n * 86_400_000));
-      void today;
+      const plus = (n: number) => new Date(now() + n * 86_400_000).toISOString().slice(0, 10);
 
       const dir = `disclosures/${finding.id}`;
       const files: Array<{ name: string; content: string }> = [
@@ -112,7 +123,7 @@ export function prepareDisclosureHandler(
           name: "timeline.md",
           content:
             `# Coordinated disclosure timeline (${days} days)\n\n` +
-            `- ${plus(0)}: vendor notified (this package)\n` +
+            `- ${plus(0)}: notification prepared (send email.md — nothing has been sent yet)\n` +
             `- ${plus(Math.floor(days / 3))}: follow-up if no acknowledgment\n` +
             `- ${plus(days)}: coordinated public disclosure (or earlier by vendor request)\n`,
         },
@@ -127,8 +138,7 @@ export function prepareDisclosureHandler(
             `${finding.title}\n\n${input.impact}\n\n` +
             `Reproduction steps and hash-verified evidence are attached; we follow a ` +
             `${days}-day coordinated disclosure timeline and are happy to work with your ` +
-            `schedule. Our emergency contact per the engagement: ` +
-            `${ctx.engagement.emergency_contact ?? "(see engagement file)"}.\n\n` +
+            `schedule.\n\n` +
             `Regards,\n`,
         },
       ];
@@ -153,6 +163,14 @@ export function prepareDisclosureHandler(
       const manifestJson = JSON.stringify(manifest, null, 2);
       await ctx.sandbox.writeFile(`${dir}/package.json`, manifestJson);
       const packageHash = createHash("sha256").update(manifestJson).digest("hex");
+      // R3-1: record the package hash on the FINDING — the finding row is
+      // the durable, model-unreachable record; submit-cve verifies the
+      // on-disk manifest against it (the audit sink is write-only).
+      await deps.store.update(input.finding_id, {
+        notes:
+          (finding.notes.length > 0 ? `${finding.notes}\n` : "") +
+          `disclosure-package: ${dir} sha256=${packageHash}`,
+      });
       deps.audit?.({
         actor: "system:security",
         action: "security.disclosure.prepared",

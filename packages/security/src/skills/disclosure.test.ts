@@ -611,3 +611,132 @@ describe("R2-5 / R2-8 regressions", () => {
     expect(rendered.content).not.toContain("<img src=x");
   });
 });
+
+// ── Phase 6.4 fan-out regressions (R3) ──────────────────────────────────────
+
+describe("R3-1 — submit-cve verifies the package against the recorded hash chain", () => {
+  it("a tampered package file is REFUSED (the manifest hash no longer matches the finding's record)", async () => {
+    const eng = engagement();
+    const rig = makeRig(eng);
+    const finding = await seedFinding(rig);
+    await call(rig, "security.prepare-disclosure", {
+      finding_id: finding.id,
+      affected_versions: ["2.4.49"],
+      vendor_contact: "security@vendor.example",
+      impact: "impact",
+    });
+    // The model (fs.write, R1) rewrites a package file after preparation.
+    const dir = `disclosures/${finding.id}`;
+    rig.files.set(`${dir}/reproduction.md`, "TOTALLY FABRICATED REPRO\n");
+    const out = await call(rig, "security.submit-cve", {
+      finding_id: finding.id,
+      package_dir: dir,
+      researcher_contact: "r@example.com",
+    });
+    expect(rig.approvals.requested).toBe(1); // R4 still asked first
+    const text = (out as { text?: string }).text ?? JSON.stringify(out);
+    expect(text).toContain("modified after preparation");
+    expect([...rig.files.keys()].filter((k) => k.includes("cve-request"))).toEqual([]);
+  });
+
+  it("a tampered MANIFEST is refused; a cross-finding package is refused", async () => {
+    const eng = engagement();
+    const rig = makeRig(eng);
+    const f1 = await seedFinding(rig, { title: "Path traversal A" });
+    const f2 = await seedFinding(rig, { title: "Unrelated SQLi B" });
+    const prepare1 = await call(rig, "security.prepare-disclosure", {
+      finding_id: f1.id,
+      affected_versions: ["2.4.49"],
+      vendor_contact: "security@vendor.example",
+      impact: "impact",
+    });
+    const dir1 = (prepare1 as { json: { directory: string } }).json.directory;
+
+    // f2 submitted with f1's package: the manifest binds to f1.
+    const cross = await call(rig, "security.submit-cve", {
+      finding_id: f2.id,
+      package_dir: dir1,
+      researcher_contact: "r@example.com",
+    });
+    expect(((cross as { text?: string }).text ?? "")).toContain("belongs to finding");
+
+    // A tampered manifest (rewritten affected_versions).
+    const manifestRaw = rig.files.get(`${dir1}/package.json`)!;
+    const tampered = JSON.parse(manifestRaw) as { affected_versions: string[] };
+    tampered.affected_versions = ["99.99.99"];
+    rig.files.set(`${dir1}/package.json`, JSON.stringify(tampered, null, 2));
+    const out = await call(rig, "security.submit-cve", {
+      finding_id: f1.id,
+      package_dir: dir1,
+      researcher_contact: "r@example.com",
+    });
+    expect(((out as { text?: string }).text ?? "")).toContain("hash mismatch");
+  });
+
+  it("an untampered package produces the form with the correlated PRODUCT (never the target host)", async () => {
+    const eng = engagement();
+    const rig = makeRig(eng, { fetchImpl: fixtureFetch() });
+    const finding = await seedFinding(rig);
+    await call(rig, "security.correlate-cve", {
+      finding_id: finding.id,
+      product: "Apache httpd",
+      version: "2.4.49",
+      vuln_terms: ["path traversal"],
+    });
+    await call(rig, "security.prepare-disclosure", {
+      finding_id: finding.id,
+      affected_versions: ["2.4.49"],
+      vendor_contact: "security@vendor.example",
+      impact: "impact",
+    });
+    const out = await call(rig, "security.submit-cve", {
+      finding_id: finding.id,
+      package_dir: `disclosures/${finding.id}`,
+      researcher_contact: "r@example.com",
+    });
+    const form = (out as { json: { form: string } }).json.form;
+    expect(form).toContain("PRODUCT: Apache httpd 2.4.49");
+    expect(form).not.toContain("PRODUCT: app.example.com");
+  });
+});
+
+describe("R3-3 — correlation MERGES, never overwrites", () => {
+  it("a second correlate run preserves the first run's CVEs", async () => {
+    const eng = engagement();
+    const rig = makeRig(eng, { fetchImpl: fixtureFetch() });
+    const finding = await seedFinding(rig, {
+      cve: ["CVE-2020-1111"],
+    } as never);
+    const out = await call(rig, "security.correlate-cve", {
+      finding_id: finding.id,
+      product: "Apache httpd",
+      version: "2.4.49",
+      vuln_terms: ["path traversal"],
+    });
+    expect((out as { json: { cves: string[] } }).json.cves).toContain("CVE-2021-41773");
+    const updated = await rig.store.get(finding.id);
+    expect(updated!.cve).toContain("CVE-2020-1111"); // preserved
+    expect(updated!.cve).toContain("CVE-2021-41773"); // merged in
+  });
+
+  it("R3-4: unreachable services are service_error, never a silent no_match", async () => {
+    const eng = engagement();
+    const rig = makeRig(eng, {
+      fetchImpl: async () => {
+        throw new Error("network down");
+      },
+    });
+    const finding = await seedFinding(rig);
+    const out = await call(rig, "security.correlate-cve", {
+      finding_id: finding.id,
+      product: "Apache httpd",
+      version: "2.4.49",
+    });
+    const json = (out as { json: { result: string; service_status: Record<string, string> } }).json;
+    expect(json.result).toBe("service_error");
+    expect(json.service_status.nvd).toBe("error");
+    expect(json.service_status.osv).toBe("error");
+    // The failed queries were still audit-logged.
+    expect(rig.auditRows.some((r) => r.action === "security.cve.query")).toBe(true);
+  });
+});

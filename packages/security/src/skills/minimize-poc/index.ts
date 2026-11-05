@@ -22,7 +22,7 @@ export const minimizePocInput = z
     /** Tokens whose lines are load-bearing (the payload, its host, etc.).
      *  A line survives iff it carries a required token, is the request
      *  line, or is blank-line structure. Everything else is removable. */
-    required_tokens: z.array(z.string().min(1).max(256)).max(16).optional(),
+    required_tokens: z.array(z.string().min(1).max(256)).min(1).max(16),
   })
   .strict();
 
@@ -31,9 +31,9 @@ const MINIMIZE_INPUT_SCHEMA = {
   properties: {
     finding_id: { type: "string", description: "The finding the PoC reproduces." },
     poc: { type: "string", description: "The raw PoC (an HTTP request or line-oriented text); defaults to the finding's reproduction field." },
-    required_tokens: { type: "array", items: { type: "string" }, description: "Tokens whose containing lines must survive (the trigger payload etc.)." },
+    required_tokens: { type: "array", items: { type: "string" }, minItems: 1, description: "Tokens whose containing lines must survive (the trigger payload etc.)." },
   },
-  required: ["finding_id"],
+  required: ["finding_id", "required_tokens"],
   additionalProperties: false,
 } as const;
 
@@ -70,13 +70,25 @@ export function minimizePocLines(poc: string, requiredTokens: string[]): Minimiz
   // The first non-empty line is the request/target line — always load-bearing.
   let firstNonEmpty = lines.findIndex((l) => l.trim().length > 0);
   if (firstNonEmpty === -1) firstNonEmpty = 0;
+  // R3-10: the BODY (everything after the first blank line) is a unit — if
+  // any body line survives (carries a token), the whole body block plus its
+  // structural headers (Content-Length, Content-Type) survive. A body-less
+  // POST would be a fabricated non-reproducing PoC.
+  const firstBlank = lines.findIndex((l) => l.trim().length === 0);
+  const bodyStart = firstBlank === -1 ? lines.length : firstBlank + 1;
+  const bodyLines = lines.slice(bodyStart);
+  const bodyHasToken = bodyLines.some((l) => tokens.some((t) => l.includes(t)));
+  const STRUCTURAL_BODY_HEADERS = /^(content-length|content-type|transfer-encoding):/i;
   const kept: string[] = [];
   const removed: string[] = [];
   lines.forEach((line, i) => {
+    const isBody = i >= bodyStart;
     const loadBearing =
       i === firstNonEmpty ||
       line.trim().length === 0 ||
       /^host:/i.test(line.trim()) || // an HTTP request without Host is invalid
+      (bodyHasToken && isBody) ||
+      (bodyHasToken && STRUCTURAL_BODY_HEADERS.test(line.trim())) ||
       tokens.some((t) => line.includes(t));
     if (loadBearing) kept.push(line);
     else removed.push(line);
@@ -135,18 +147,7 @@ export function minimizePocHandler(deps: SecurityToolDeps & { store: FindingStor
           { name: "SecurityToolError", code: "skill.error" },
         );
       }
-      const tokens = input.required_tokens ?? [];
-      if (tokens.length === 0) {
-        throw Object.assign(
-          new Error(
-            "required_tokens is empty — every line would be load-bearing by default and the " +
-              "reduction would be meaningless; name the trigger tokens (the payload, the " +
-              "affected path) instead",
-          ),
-          { name: "SecurityToolError", code: "skill.error" },
-        );
-      }
-      const result = minimizePocLines(poc, tokens);
+      const result = minimizePocLines(poc, input.required_tokens);
       return { kind: "json", json: { finding_id: input.finding_id, ...result } };
     },
   };
