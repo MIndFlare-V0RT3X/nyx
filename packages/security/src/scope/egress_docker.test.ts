@@ -5,6 +5,11 @@
 // runs against the loopback interface: the "target" is a local HTTP server,
 // the engagement authorizes 127.0.0.0/8 + one hostname, and the in-container
 // tools speak to the proxy exactly as a sandboxed binary would.
+//
+// Phase 7.1 (R1-6): all five bypass classes from the Phase 6 §9 suite run
+// LIVE here — namespace escape, fd leak, unix socket pass, DoH through the
+// proxy, raw socket — each attempt is made and the network layer refuses.
+// The `test-docker` CI lane runs this file against a real daemon.
 
 import { execFile } from "node:child_process";
 import * as http from "node:http";
@@ -60,6 +65,12 @@ describe("egress proxy — docker end-to-end (Phase 6.1 §2.5)", () => {
   let sandbox: ProtocolSandbox;
   let tmpRoot: string;
   let binder: SandboxEgressBinding;
+  /** Phase 7.1 traffic companion: every proxy decision lands here — the
+   *  companion test asserts REAL traffic produced REAL audit rows. */
+  const auditRows: { actor: string; action: string; payload: unknown }[] = [];
+  const auditSink = (row: { actor: string; action: string; payload: unknown }): void => {
+    auditRows.push(row);
+  };
 
   beforeAll(async () => {
     if (!dockerAvailable) return;
@@ -73,7 +84,7 @@ describe("egress proxy — docker end-to-end (Phase 6.1 §2.5)", () => {
 
     const limiter = new SecurityRateLimiter();
     proxy = new EgressProxyServer({
-      policy: createEgressPolicy({ resolver: loopbackResolver, limiter }),
+      policy: createEgressPolicy({ resolver: loopbackResolver, limiter, audit: auditSink }),
     });
     // Pick a free base port (the binder derives class ports from it).
     let bound = false;
@@ -185,6 +196,79 @@ describe("egress proxy — docker end-to-end (Phase 6.1 §2.5)", () => {
     );
     expect(r.stdout).not.toContain("200");
     expect(r.stdout).toContain("RAW-DONE");
+  });
+
+  dIt("FD LEAK: the container holds no host fd or socket to ride out on", async () => {
+    // The attempt, made live: enumerate PID 1's descriptors, probe the docker
+    // daemon socket path, and sweep the filesystem for ANY .sock file. A
+    // leaked host fd (the classic docker.sock mount) would show up here.
+    const r = await sandbox.exec(
+      `echo "PID1-FD-SOCKETS:$(ls -l /proc/1/fd/ 2>/dev/null | grep -c 'socket:')"; ` +
+        `test -S /var/run/docker.sock && echo DOCKER-SOCK-PRESENT || echo DOCKER-SOCK-ABSENT; ` +
+        `echo "SOCKFILES:$(find /run /var/run /tmp /workspace -name '*.sock' 2>/dev/null | wc -l)"; ` +
+        `echo "DEVICES:$(ls /dev | grep -cvE '^(null|zero|full|random|urandom|tty|console|shm|fd|ptmx|stdin|stdout|stderr|mqueue|core)$' || true)"`,
+      { timeout_ms: 40_000 },
+    );
+    expect(r.stdout).toContain("PID1-FD-SOCKETS:0");
+    expect(r.stdout).toContain("DOCKER-SOCK-ABSENT");
+    expect(r.stdout).toContain("SOCKFILES:0");
+    // No extra devices (tun, fuse, …) to build a raw interface from.
+    expect(r.stdout).toMatch(/DEVICES:[01]\n/);
+  });
+
+  dIt("UNIX SOCKET PASS: no unix socket exists to pass through to the host daemon", async () => {
+    // The attempt, made live: look for the docker daemon on its socket path,
+    // on ANY abstract unix socket in this network namespace, and on the
+    // daemon's TCP ports at the gateway (host INPUT path — R1-2's documented
+    // surface; nothing listens there on a stock daemon).
+    const gw = sandbox.egress?.gateway;
+    if (gw === undefined) throw new Error("no egress wiring");
+    const r = await sandbox.exec(
+      `test -S /var/run/docker.sock && echo SOCK-MOUNTED || echo SOCK-NOT-MOUNTED; ` +
+        `echo "UNIX-SOCKETS:$(wc -l < /proc/net/unix 2>/dev/null || echo 0)"; ` +
+        `echo "DOCKER-UNIX:$(grep -ci docker /proc/net/unix 2>/dev/null || echo 0)"; ` +
+        `nc -w 3 ${gw} 2375 </dev/null >/dev/null 2>&1; echo "DAEMON-TCP:$?"; ` +
+        `nc -w 3 ${gw} 2376 </dev/null >/dev/null 2>&1; echo "DAEMON-TLS:$?"`,
+      { timeout_ms: 40_000 },
+    );
+    expect(r.stdout).toContain("SOCK-NOT-MOUNTED");
+    // The container's netns has no abstract unix sockets bridging to the
+    // host (a pristine alpine shows only the header line, if anything).
+    expect(r.stdout).toMatch(/UNIX-SOCKETS:[012]\n/);
+    expect(r.stdout).toContain("DOCKER-UNIX:0");
+    // The daemon's TCP ports at the gateway: refused (docker does not listen
+    // on TCP by default — and if an operator's does, that is the documented
+    // R1-2 host-INPUT surface, mitigated at DOCKER-USER, not here).
+    expect(r.stdout).not.toContain("DAEMON-TCP:0");
+    expect(r.stdout).not.toContain("DAEMON-TLS:0");
+  });
+
+  dIt("TRAFFIC COMPANION: the proxy actually carries bytes and writes the audit rows", async () => {
+    // Not just "it starts": a full CONNECT tunnel roundtrip — the handshake
+    // succeeds, the pipelined request rides the tunnel, the response bytes
+    // come back, AND the decision shows up as an audit row.
+    const gw = sandbox.egress?.gateway;
+    const port = sandbox.egress?.portFor(null);
+    if (gw === undefined || port === undefined) throw new Error("no egress wiring");
+    const before = auditRows.length;
+    const r = await sandbox.exec(
+      `( printf 'CONNECT in-scope.test:${targetPort} HTTP/1.1\r\nHost: in-scope.test\r\n\r\n'; ` +
+        `sleep 1; ` +
+        `printf 'GET /tunnel HTTP/1.1\r\nHost: in-scope.test\r\nConnection: close\r\n\r\n'; ` +
+        `sleep 2 ) | nc -w 10 ${gw} ${port}`,
+      { timeout_ms: 60_000 },
+    );
+    // The tunnel was established AND the payload round-tripped through it.
+    expect(r.stdout).toContain("200 Connection Established");
+    expect(r.stdout).toContain("egress-ok /tunnel");
+    // The allow decision was audited on the same sink as every other
+    // security decision (actor "system:security").
+    const allowed = auditRows
+      .slice(before)
+      .filter((row) => row.action === "security.egress.allowed");
+    expect(allowed.length).toBeGreaterThanOrEqual(1);
+    const payload = allowed[0]?.payload as { host?: string };
+    expect(payload?.host).toBe("in-scope.test");
   });
 
   dIt("PROXY DOWN: a binder that fails aborts the provision (no proxy, no tools)", async () => {

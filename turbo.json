@@ -7,7 +7,8 @@
     },
     "test": {
       "dependsOn": ["^build"],
-      "outputs": []
+      "outputs": [],
+      "env": ["NYX_SKIP_DOCKER"]
     }
   }
 }

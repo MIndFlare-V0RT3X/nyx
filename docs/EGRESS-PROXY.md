@@ -179,27 +179,35 @@ row — the allow row for that CONNECT already exists.
 
 ## Bypass coverage (the acceptance suite)
 
+All five bypass classes run **live in the `test-docker` CI lane** (Phase
+7.1, closing R1-6): each attempt is made against a real daemon and the
+network layer refuses —
+
 namespace escape (no NAT out of an `--internal` bridge; host-local INPUT
 reachability is source-subnet-gated at the proxy and documented as a
-residual) · cross-sandbox listeners (refused outside the listener's own
-subnet — R1-1 regression) · fd leak (no host socket or file descriptor is
-ever mounted into a container — asserted on the built arg vectors) · unix
-socket pass (no unix socket exists; only the gateway TCP listeners) ·
-DNS-over-HTTPS through the proxy (a CONNECT to a DoH provider is gated like
-any other destination; DoH resolution cannot create a connection) · raw
-socket injection (garbage/non-CONNECT destroyed; raw packets have no route) ·
-plain-HTTP targets (absolute-form forwarding, scope-checked per request —
-R1-4 regressions) · two-layer proof (an out-of-scope CONNECT with the tool
-layer bypassed is still denied by the REAL policy — R1-18 regression) ·
-rate pacing (wall-clock throttling through the real policy — R1-18) · proxy
-down (provision refused).
+residual) · **fd leak** (live: PID 1's descriptor table holds no sockets,
+no `docker.sock` exists in the container, no `.sock` file anywhere, no raw
+interface devices — plus the arg-vector proof that no host fd is ever
+mounted) · **unix socket pass** (live: the daemon socket path is absent,
+`/proc/net/unix` bridges nothing, the daemon's TCP ports at the gateway are
+refused) · DNS-over-HTTPS through the proxy (a CONNECT to a DoH provider is
+gated like any other destination; DoH resolution cannot create a
+connection) · raw socket injection (garbage/non-CONNECT destroyed; raw
+packets have no route) · cross-sandbox listeners (refused outside the
+listener's own subnet — R1-1 regression) · plain-HTTP targets
+(absolute-form forwarding, scope-checked per request — R1-4 regressions) ·
+two-layer proof (an out-of-scope CONNECT with the tool layer bypassed is
+still denied by the REAL policy — R1-18 regression) · rate pacing
+(wall-clock throttling through the real policy — R1-18) · traffic companion
+(a CONNECT tunnel carries real bytes end-to-end AND writes its audit row) ·
+proxy down (provision refused).
 
 ## Residuals (owned, with target phases)
 
 | Finding | Severity | Reason | Target Phase |
 |---|---|---|---|
 | Host INPUT services reachable (R1-2) | medium | docker networking reality — `--internal` confines FORWARD, not INPUT; the proxy's own listeners are subnet-gated, other host services are not NYX's to firewall | operator environment (DOCKER-USER rule below) / Phase 7 host hardening |
-| The docker acceptance suite skips in CI (R1-6) | medium | CI is hermetic by design (no daemon); the bypass proofs run where a daemon exists | Phase 7 CI (a docker-capable scheduled job) |
+| The docker acceptance suite skips in CI (R1-6) | medium | **CLOSED Phase 7.1** — the `test-docker` lane runs the full suite against a real daemon (push to `main`, tags, docker-surface PRs, `docker`-labeled PRs); branch protection in `.github/BRANCH_PROTECTION.md` | closed |
 | URL-path scoping is invisible to CONNECT (R1-8) | low | a CONNECT carries host:port only; for TLS the path is encrypted — the tool layer enforces paths; plain-HTTP paths ARE enforced via absolute-form | never (protocol limit) |
 | Local provider = dev posture (R1-7) | low | production refuses the local provider entirely; unset NYX_ENV + local + engagement is the documented dev posture (tool layer as the only gate) | never (enforced boundary) |
 | Rebinding pin is 30 s cached (R1-12) | info | the cached answer is the VALIDATED pin — no window opens; a fresh resolve re-validates after TTL | never (by design) |

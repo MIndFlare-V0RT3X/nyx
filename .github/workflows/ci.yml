@@ -1,25 +1,132 @@
 name: CI
 
+# Phase 7.1 (R1-6) — two lanes:
+#
+#   test-fast   hermetic (NYX_SKIP_DOCKER=1), every push + PR. Target <2 min
+#               warm. Never requires a docker daemon.
+#   test-docker full suite against a real daemon + the five LIVE bypass
+#               proofs + the Dockerfile.security rebuild verification
+#               (hard rule #5). Runs on push to main, on tags, and on PRs
+#               that touch packages/sandbox, packages/security,
+#               Dockerfile.security, or this workflow, or carry the
+#               `docker` label. Target <15 min.
+#
+# Merge policy (.github/BRANCH_PROTECTION.md): test-fast required for every
+# PR; test-docker required for PRs in the docker surface and for merges to
+# main.
+#
+# `labeled`/`unlabeled` types matter: adding the `docker` label to an open PR
+# must (re)trigger the docker lane.
+
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  verify:
+  # Decides whether the docker lane runs for this event. Kept as a separate
+  # job so the decision is visible in the checks list.
+  changes:
+    name: lane selection
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      docker: ${{ steps.decide.outputs.docker }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: decide
+        run: |
+          set -eu
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Pushes to main and tags always run the docker lane.
+            echo "docker=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${{ contains(github.event.pull_request.labels.*.name, 'docker') }}" = "true" ]; then
+            echo "docker=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          BASE="${{ github.event.pull_request.base.sha }}"
+          FILES="$(git diff --name-only "${BASE}"..HEAD || true)"
+          PATTERNS='^packages/sandbox/ ^packages/security/ ^Dockerfile\.security$ ^\.github/workflows/ci\.yml$'
+          DOCKER=false
+          for pattern in $PATTERNS; do
+            if echo "$FILES" | grep -Eq "$pattern"; then DOCKER=true; fi
+          done
+          echo "docker=${DOCKER}" >> "$GITHUB_OUTPUT"
+
+  test-fast:
+    name: test-fast (hermetic)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       NYX_SKIP_DOCKER: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 9.15.0
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
+      - name: Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-fast-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-fast-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm test
+      - run: pnpm exec turbo run build --cache-dir=.turbo
+      - run: pnpm -r typecheck
+      # NYX_SKIP_DOCKER is in turbo.json's task env, so this lane's results
+      # can never be served to the docker lane (or vice versa).
+      - run: pnpm exec turbo run test --cache-dir=.turbo
       - run: pnpm lint
+
+  test-docker:
+    name: test-docker (bypass suite + security image)
+    needs: [changes]
+    if: needs.changes.outputs.docker == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-docker-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-docker-${{ runner.os }}-
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec turbo run build --cache-dir=.turbo
+      # NO NYX_SKIP_DOCKER: the daemon is real, so every docker-gated test
+      # runs — including the five live bypass proofs in
+      # packages/security/src/scope/egress_docker.test.ts.
+      - name: Full test suite (docker-gated tests live)
+        run: pnpm exec turbo run test --cache-dir=.turbo
+      # Hard rule #5: a broken Dockerfile.security is a release blocker.
+      # The build itself fails on any version-check mismatch; the smoke run
+      # proves the binaries execute in the built image.
+      - name: Dockerfile.security rebuild verification
+        run: |
+          docker build -f Dockerfile.security -t nyx-security:ci --build-arg TARGETARCH="$(dpkg --print-architecture)" .
+          docker run --rm --network none nyx-security:ci sh -c \
+            'subfinder -version && httpx -version && nuclei -version && katana -version && ffuf -V && nmap --version | head -1 && sqlmap --version'
