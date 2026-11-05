@@ -186,6 +186,15 @@ sandbox:
   provider: docker
   image: "alpine:3.20"
   workdir_root: ~/.nyx/sandboxes
+  # ── Egress proxy (Phase 6.1, docs/EGRESS-PROXY.md) ──────────────────────
+  # Engagement sandboxes run on internal docker bridges; their ONLY egress
+  # is the kernel-process proxy (scope-checked, rate-limited, audited).
+  # enabled: false is a dev-only double opt-in: it requires
+  # NYX_ENV=development AND --allow-direct-egress on the CLI — production
+  # refuses the config outright.
+  egress_proxy:
+    enabled: true
+    port: 3128        # base port on each sandbox bridge gateway
   # — Local (no Docker) alternative: runs commands directly on this machine.
   #   Development only — the local sandbox refuses to run when NYX_ENV=production.
   # provider: local

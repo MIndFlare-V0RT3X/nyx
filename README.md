@@ -150,15 +150,40 @@ cp engagements/example.yaml engagements/my-engagement.yaml   # edit scope
 nyx chat --persona security --engagement engagements/my-engagement.yaml
 ```
 
-The six wrapped tools (subfinder, httpx, nuclei, ffuf, katana, nmap) fire
-only for in-scope targets under the engagement's rate limits, with every
-allow/deny on the audit chain; nuclei records findings with hash-verified
-evidence; the report generator refuses out-of-scope findings outright. The
-sandbox image with pinned tool versions:
+The wrapped tools (subfinder, httpx, nuclei, ffuf, katana, nmap — plus the
+Phase 6 exploitation toolkit) fire only for in-scope targets under the
+engagement's rate limits, with every allow/deny on the audit chain; nuclei
+records findings with hash-verified evidence; the report generator refuses
+out-of-scope findings outright. The sandbox image with pinned tool versions:
 
 ```
 docker build -f Dockerfile.security -t nyx-security:1 .
 ```
+
+### Egress proxy (Phase 6.1)
+
+Engagement sandboxes run on per-sandbox internal docker bridges whose only
+egress is NYX's kernel-process proxy: every outbound connection is
+scope-checked, rate-limited, pinned to the validated IP, and audit-logged
+(`docs/EGRESS-PROXY.md`). Disabling it is a dev-only double opt-in
+(`NYX_ENV=development` + `--allow-direct-egress`) — production refuses the
+config outright.
+
+### Exploitation tooling (Phase 6.2)
+
+sqlmap (detection + authorized extraction), Metasploit console access
+(search/inspect/run-one-module, R4 per run), Burp integration (the
+operator's Burp behind the engagement's egress gate + history capture), and
+custom nuclei templates from findings — every exploitation tool structurally
+absent unless the engagement declares `exploitation`
+(`docs/EXPLOITATION.md`, `engagements/example-exploitation.yaml`).
+
+### CVE mapping + disclosure (Phase 6.3)
+
+correlate-cve (NVD/OSV/GHSA, fixed research hosts) → minimize-poc
+(subset-only, never fabricates) → prepare-disclosure (hash-verified package
+with a 90-day timeline and email draft) → submit-cve (R4; MITRE form
+CONTENT — submission is a human step, by design). `docs/DISCLOSURE.md`.
 
 ## Roadmap
 
@@ -170,8 +195,8 @@ docker build -f Dockerfile.security -t nyx-security:1 .
 | 3     | subagents: isolated context, summary-only return (shipped)       |
 | 4     | durable tasks, retention, sandbox forking, skills (shipped)      |
 | 5     | security subsystem: engagements, findings, reports (shipped)     |
-| 6     | deeper RE / fuzzing / PoC generation on the proven scope engine  |
-| 7     | sandbox egress proxy (container-level network ACLs)              |
+| 6     | egress proxy, exploitation tooling, disclosure workflow (shipped)|
+| 7     | host hardening (INPUT path), docker-capable CI, plugin trust     |
 | 8     | more sandboxes (E2B, Daytona), computer-use                      |
 | 9     | hardening, behavioral evals, release                             |
 

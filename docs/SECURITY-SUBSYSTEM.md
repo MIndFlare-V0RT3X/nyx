@@ -83,28 +83,23 @@ fails the build on version mismatch:
 docker build -f Dockerfile.security -t nyx-security:1 .
 ```
 
-## Documented residuals
+## Residuals — Phase 5 set CLOSED (Phase 6), Phase 6 set owned
 
-- **Binaries re-resolve at exec time.** The harness pins and validates the
-  resolution at check time, but the binary performs its own `getaddrinfo`
-  — a target-controlled DNS that answers differently for the binary can
-  redirect its traffic out of scope. The structural fix is the container
-  egress proxy (the Phase 0 roadmap item this subsystem builds toward);
-  until then this is the known gap between the check-time pin and the
-  binary's connection.
-- **The limiter is per process and per tool call.** Multiple processes
-  sharing `nyx.db` each enforce their own buckets (N× the declared rate in
-  aggregate), and one call carrying many targets paces itself through the
-  cooperative binary flags rather than per-request reservations.
-- **`FindingStore.create()` is exported.** It is the admin/migration
-  surface; the session path (`createInSession`) derives the engagement and
-  session ids from the runtime binding and cannot be forged from model
-  input.
-- **Markdown reports interpolate finding text raw** (it is a paste format);
-  the HTML report escapes every finding-controlled string.
-- **Container network isolation** remains `--network none` by Phase 0
-  design; the checked egress path at the tool layer is the enforcement
-  until the egress proxy lands.
+Every Phase 5 residual is closed; the Phase 6 fan-out's residuals carry an
+owner and a target phase (a residual without a target phase is a bug, not a
+decision):
+
+| Finding | Severity | Reason | Target Phase |
+|---|---|---|---|
+| ~~Binaries re-resolve at exec time~~ (R1-2) | closed | **Phase 6.1**: the egress proxy — the sandbox's only egress is the kernel-process CONNECT/forward proxy; connections go to the PROXY's validated, pinned IP | — |
+| ~~Limiter per process / per tool call~~ (R1-10) | closed | **Phase 6.1**: per-request charging at the proxy with GCRA buckets in nyx.db (BEGIN IMMEDIATE) — every kernel process enforces the same slots | — |
+| ~~ffuf wordlist host/sandbox mismatch~~ (R3-12) | closed | **Phase 6.2**: `resolveForExecutor` — the path resolves where the binary reads it; the host executor fails loudly with the turnkey recommendation | — |
+| ~~`FindingStore.create()` accepts caller ids~~ (R2-5) | closed | **Phase 6.3**: create() verifies the session row exists and its bound engagement matches the finding's engagement id | — |
+| ~~Markdown reports interpolate finding text raw~~ (R2-8) | closed | **Phase 6.3**: every finding-controlled string is HTML-escaped in the Markdown report too (portals render pasted MD as HTML) | — |
+| Host INPUT services reachable from engagement bridges (6.4/R1-2) | medium | docker networking reality; the proxy's own listeners are subnet-gated, other host services are not NYX's to firewall — DOCKER-USER operator mitigation documented in EGRESS-PROXY.md | operator / Phase 7 host hardening |
+| The docker acceptance suite skips in CI (6.4/R1-6) | medium | CI is hermetic by design; the bypass proofs run where a daemon exists | Phase 7 CI |
+| URL-path scoping invisible to CONNECT (6.4/R1-8) | low | CONNECT carries host:port; TLS paths are encrypted — the tool layer enforces paths; plain-HTTP paths ARE enforced via absolute-form forwarding | never (protocol limit) |
+| Trusted plugins can re-register submit-cve at R1 (6.4/R3-14) | info | registry is a trusted-plugin surface; the R4 invariant itself is unbypassable | Phase 7 plugin trust |
 
 ## The Phase 5 fan-out review
 

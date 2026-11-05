@@ -6,6 +6,63 @@ SemVer once 0.1.0 ships.
 
 ## [Unreleased]
 
+### Added — Phase 6 (egress proxy · exploitation tooling · CVE disclosure)
+
+- **Egress proxy (6.1)** — engagement sandboxes run on per-sandbox
+  `--internal` docker bridges whose only egress is the kernel-process
+  CONNECT/absolute-form proxy: scope-checked per request, pinned to the
+  validated IP, rate-limited at the proxy (nyx.db-backed GCRA buckets,
+  cross-process), subnet-gated (R1-1), DNS-dead containers (R1-5),
+  audit-logged per decision. `sandbox.egress_proxy {enabled, port}` config;
+  `enabled: false` is a dev-only double opt-in (`NYX_ENV=development` +
+  `--allow-direct-egress`). Migration `0005_rate_buckets`. Design:
+  `docs/EGRESS-PROXY.md`.
+- **Exploitation toolkit (6.2)** — sqlmap scan/exploit (real console-format
+  parsers, fixtures captured from sqlmap 1.10.11 against a live vulnerable
+  endpoint; LIVE binary test), msf-search/msf-run (resource-file batch
+  mode; RHOSTS scope-checked; R4 per run; RHOSTS-via-options refused),
+  burp wiring/capture (the operator's Burp behind the engagement's egress
+  gate; XML history capture, out-of-scope entries listed and excluded),
+  nuclei-template (finding → nuclei v3 YAML, scope-gated).
+  `engagements/example-exploitation.yaml` declares `exploitation` against
+  TEST-NET. Docs: `docs/EXPLOITATION.md`.
+- **CVE disclosure workflow (6.3)** — correlate-cve (NVD 2.0/OSV/GHSA on
+  FIXED hosts, `net.reference` capability, per-service status, CVE merge,
+  token-synonym confidence), minimize-poc (subset-only reduction — cannot
+  fabricate), prepare-disclosure (hash-verified package + 90-day timeline +
+  email draft; package hash recorded on the finding row), submit-cve (R4;
+  MITRE form content from a VERIFIED package — no submission code path
+  exists). Docs: `docs/DISCLOSURE.md`.
+- **Protocol** — `net.reference` capability (fixed-host research egress);
+  `SandboxSpec.egress` context; `Sandbox.egress` wiring.
+
+### Changed — Phase 6
+
+- The ffuf wordlist (and every sandbox-file tool input) resolves where the
+  BINARY reads it — `resolveForExecutor` (R3-12 closed; also fixed the
+  latent Phase 5 runtime-rewrite vs zod clash that broke production ffuf
+  calls).
+- `FindingStore.create()` verifies the session/engagement pair against the
+  DB (R2-5 closed); the Markdown report HTML-escapes finding-controlled
+  text (R2-8 closed).
+- Declared `rate_limits` now require the `default` aggregate (R1-3).
+- The engagement schema otherwise unchanged; Phase 5 residuals all closed
+  (see `docs/SECURITY-SUBSYSTEM.md`).
+
+### Fixed — Phase 6.4 (the three-reviewer fan-out, 46 findings integrated together)
+
+- R1-1 (HIGH): source-subnet enforcement on every egress listener.
+- R2-1 (HIGH): sqlmap `((custom) HEADER)` parameter forms parsed (silent
+  false negative).
+- R2-2 (HIGH): msf-run refuses RHOSTS/RHOST via options (out-of-scope
+  redirect).
+- R3-1 (HIGH): submit-cve verifies the package (manifest binding + recorded
+  hash + per-file hashes) — the prepare→submit tamper window is closed.
+- Plus 20 MEDIUM/LOW fixes across the proxy, wrappers, and disclosure
+  tools; residuals owned with target phases (`docs/EGRESS-PROXY.md`,
+  `docs/SECURITY-SUBSYSTEM.md`). Every HIGH carries a dedicated regression
+  test; the two-layer proof and rate pacing now run against the REAL policy.
+
 ### Added — Phase 5 (security subsystem: engagements · scope engine · findings · reports · security skills)
 
 - **`@nyx/security` (new package)** — the security subsystem for authorized
