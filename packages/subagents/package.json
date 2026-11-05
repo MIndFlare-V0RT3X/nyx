@@ -39,7 +39,7 @@
     "@nyx/kernel": "workspace:*",
     "@nyx/sandbox": "workspace:*",
     "@nyx/persona": "workspace:*",
-    "better-sqlite3": "^11.8.1",
+    "better-sqlite3": "^12.11.1",
     "@types/better-sqlite3": "^7.6.12"
   }
 }

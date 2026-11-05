@@ -109,8 +109,8 @@ importers:
         specifier: ^18.3.18
         version: 18.3.31
       better-sqlite3:
-        specifier: ^11.8.1
-        version: 11.10.0
+        specifier: ^12.11.1
+        version: 12.11.1
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.5)
@@ -178,8 +178,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/tools
       better-sqlite3:
-        specifier: ^11.8.1
-        version: 11.10.0
+        specifier: ^12.11.1
+        version: 12.11.1
       hono:
         specifier: ^4.6.14
         version: 4.13.16
@@ -335,8 +335,8 @@ importers:
         specifier: workspace:*
         version: link:../protocol
       better-sqlite3:
-        specifier: ^11.8.1
-        version: 11.10.0
+        specifier: ^12.11.1
+        version: 12.11.1
     devDependencies:
       '@types/better-sqlite3':
         specifier: ^7.6.12
@@ -385,8 +385,8 @@ importers:
         specifier: workspace:*
         version: link:../session
       better-sqlite3:
-        specifier: ^11.8.1
-        version: 11.10.0
+        specifier: ^12.11.1
+        version: 12.11.1
     devDependencies:
       '@types/better-sqlite3':
         specifier: ^7.6.12
@@ -433,8 +433,8 @@ importers:
         specifier: workspace:*
         version: link:../protocol
       better-sqlite3:
-        specifier: ^11.8.1
-        version: 11.10.0
+        specifier: ^12.11.1
+        version: 12.11.1
       nanoid:
         specifier: ^5.0.9
         version: 5.1.16
@@ -496,8 +496,8 @@ importers:
         specifier: workspace:*
         version: link:../protocol
       better-sqlite3:
-        specifier: ^11.8.1
-        version: 11.10.0
+        specifier: ^12.11.1
+        version: 12.11.1
       nanoid:
         specifier: ^5.0.9
         version: 5.1.16
@@ -531,8 +531,8 @@ importers:
         specifier: workspace:*
         version: link:../protocol
       better-sqlite3:
-        specifier: ^11.8.1
-        version: 11.10.0
+        specifier: ^12.11.1
+        version: 12.11.1
     devDependencies:
       '@types/better-sqlite3':
         specifier: ^7.6.12
@@ -610,8 +610,8 @@ importers:
         specifier: ^22.10.2
         version: 22.20.5
       better-sqlite3:
-        specifier: ^11.8.1
-        version: 11.10.0
+        specifier: ^12.11.1
+        version: 12.11.1
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.5)
@@ -622,11 +622,11 @@ importers:
         specifier: workspace:*
         version: link:../protocol
       better-sqlite3:
-        specifier: ^11.8.1
-        version: 11.10.0
+        specifier: ^12.11.1
+        version: 12.11.1
       drizzle-orm:
         specifier: ^0.38.3
-        version: 0.38.4(@types/better-sqlite3@7.6.13)(@types/react@18.3.31)(better-sqlite3@11.10.0)(react@18.3.1)
+        version: 0.38.4(@types/better-sqlite3@7.6.13)(@types/react@18.3.31)(better-sqlite3@12.11.1)(react@18.3.1)
       nanoid:
         specifier: ^5.0.9
         version: 5.1.16
@@ -715,8 +715,8 @@ importers:
         specifier: ^22.10.2
         version: 22.20.5
       better-sqlite3:
-        specifier: ^11.8.1
-        version: 11.10.0
+        specifier: ^12.11.1
+        version: 12.11.1
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.5)
@@ -749,8 +749,8 @@ importers:
         specifier: ^22.10.2
         version: 22.20.5
       better-sqlite3:
-        specifier: ^11.8.1
-        version: 11.10.0
+        specifier: ^12.11.1
+        version: 12.11.1
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.5)
@@ -850,8 +850,8 @@ importers:
         specifier: ^22.10.2
         version: 22.20.5
       better-sqlite3:
-        specifier: ^11.8.1
-        version: 11.10.0
+        specifier: ^12.11.1
+        version: 12.11.1
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.5)
@@ -905,8 +905,8 @@ importers:
         specifier: ^22.10.2
         version: 22.20.5
       better-sqlite3:
-        specifier: ^11.8.1
-        version: 11.10.0
+        specifier: ^12.11.1
+        version: 12.11.1
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.5)
@@ -1616,8 +1616,9 @@ packages:
     engines: {node: '>=6.0.0'}
     hasBin: true
 
-  better-sqlite3@11.10.0:
-    resolution: {integrity: sha512-EwhOpyXiOEL/lKzHz9AW1msWFNzGc/z+LzeB3/jnFJpxu+th2yqvzsSWas1v9jgs9+xiXJcD5A8CJxAG2TaghQ==}
+  better-sqlite3@12.11.1:
+    resolution: {integrity: sha512-dq9AtApgg5PGFtBzPFSBl3HZQjHok5gaQCM6zh2Yk0aSmDCs1CbnVI8/HgASQkNKsWFpseIO9beg5xxpYhbIfA==}
+    engines: {node: 20.x || 22.x || 23.x || 24.x || 25.x || 26.x}
 
   bindings@1.5.0:
     resolution: {integrity: sha512-p2q/t/mhvuOj/UeLlV6566GD/guowlr0hHxClI0W9m7MWYkL1F0hLo+0Aexs9HSPCtR1SXQ0TD3MMKrXZajbiQ==}
@@ -3371,7 +3372,7 @@ snapshots:
 
   baseline-browser-mapping@2.11.35: {}
 
-  better-sqlite3@11.10.0:
+  better-sqlite3@12.11.1:
     dependencies:
       bindings: 1.5.0
       prebuild-install: 7.1.3
@@ -3497,11 +3498,11 @@ snapshots:
 
   detect-libc@2.1.2: {}
 
-  drizzle-orm@0.38.4(@types/better-sqlite3@7.6.13)(@types/react@18.3.31)(better-sqlite3@11.10.0)(react@18.3.1):
+  drizzle-orm@0.38.4(@types/better-sqlite3@7.6.13)(@types/react@18.3.31)(better-sqlite3@12.11.1)(react@18.3.1):
     optionalDependencies:
       '@types/better-sqlite3': 7.6.13
       '@types/react': 18.3.31
-      better-sqlite3: 11.10.0
+      better-sqlite3: 12.11.1
       react: 18.3.1
 
   dunder-proto@1.0.1:
