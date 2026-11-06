@@ -49,10 +49,23 @@ What shipped:
 ### Artifact
 
 - **`nyx-0.7.4.tar.gz`** — the tagged tree via `git archive` (content
-  from commit <tagged-sha>, prefix `nyx-0.7.4/`, <N-files> files)
-- **sha256**: recorded at the `main` tip immediately after the tag (a
-  tree cannot contain the hash of its own archive); the tag annotation
-  and the GitHub release body carry it as well.
+  from commit `4909a52`, prefix `nyx-0.7.4/`, 701 files)
+- **sha256**: `4c929c5572428e23f28e966d2187dbe9ec74e7b41e226334b6b140657fefc0d2`
+  (recorded here at the `main` tip; a tree cannot contain the hash of
+  its own archive — the hash covers the bytes that would include it —
+  so the tagged copy of this file points at the tag annotation, the
+  GitHub release body, and this section instead)
+
+The archive is deterministic — `git archive --format=tar.gz
+--prefix=nyx-0.7.4/ v0.7.4` reproduces it byte-for-byte. As before,
+GitHub's auto-generated "Source code (tar.gz)" uses its own archiver and
+will not match; the release asset is canonical.
+
+Signing note: the `v0.7.4` tag is annotated, not GPG-signed (no signing
+key is configured in the build environment — same honest posture as
+v0.7.0 through v0.7.3). The tarball sha256 is the authenticity anchor.
+
+`v0.7.0` through `v0.7.3` and their artifacts are untouched.
 
 ## v0.7.3 — 2026-11-06 — the slow-machine patch
 
