@@ -7,6 +7,49 @@ as unreleased phases, recorded below in order.
 
 ## [Unreleased]
 
+## [0.7.2] — 2026-11-06
+
+A patch release from a second first-run report (Kali Linux, fresh v0.7.1
+tarball): `pnpm install` succeeds but prints three pairs of warnings —
+`WARN Failed to create bin at …/node_modules/.bin/nyx-kernel. ENOENT: no
+such file or directory, open '…/apps/split/dist/kernel-main.js'` — and
+the `nyx-kernel` / `nyx-agent` / `nyx-tools` shims are left missing. The
+install itself was healthy; the bins pointed at build output that cannot
+exist before the first build, and pnpm links package bins at install
+time and never retries after `pnpm build`.
+
+### Fixed
+
+- **Committed bin launchers (the install-time ENOENT)** — the split
+  bins (`nyx-kernel`/`nyx-agent`/`nyx-tools`) and the CLI's `nyx` (same
+  latent bug, no dependents yet) pointed straight at `dist/*.js`. They
+  now point at committed launcher stubs (`apps/split/bin/`,
+  `apps/cli/bin/`) that spawn the build output at runtime — spawn, never
+  import: `kernel-main`/`tools-main` run `main()` at module load and
+  block until signalled, and `agent-main`'s run guard keys off
+  `argv[1]`. Before the build the launchers exit 1 with a
+  plain-language "run `pnpm install && pnpm build` first"; after it the
+  commands behave exactly like `node apps/split/dist/*.js`. The
+  `files` fields gain `bin/` so `npm pack` keeps working. e2e and
+  `launchSplitStack` spawn the dist entries by absolute path —
+  unaffected. Verified on a fresh tarball extraction running the exact
+  README quickstart sequence: zero warnings, shims present, build 25/25,
+  typecheck clean, suite 1298 + 21 = 1319.
+
+### Added
+
+- **`scripts/check-bins.mjs`** — the class-killer: fails on any
+  workspace `bin` whose target is missing or not git-tracked (build
+  output). Wired into the `test-fast` CI lane after `check-spdx`.
+- **Docs** — TOOLING-NOTES gotcha #4 (bins link at install time);
+  PROCESS-MODEL notes the split entrypoints also sit behind the package
+  bins.
+
+Gate: 48/48 turbo tasks, 1319 tests (1298 passing + 21 docker-gated) —
+run both on the dev tree and on a fresh tarball extraction (the quickstart
+sequence); typecheck, lint, format:check, SPDX 393/393, check-bins 4/4
+clean.
+
 ## [0.7.1] — 2026-11-06
 
 A patch release from a first-run user report (Node 24.22.2 / WSL2: install,

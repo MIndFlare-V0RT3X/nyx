@@ -4,6 +4,57 @@ Every tagged release of NYX is recorded here. The artifact hash below is
 the authenticity anchor for its tarball — verify it before trusting a
 download (the how-to is in each entry).
 
+## v0.7.2 — 2026-11-06 — the install-hygiene patch
+
+From a second first-run report (Kali Linux, fresh v0.7.1 tarball):
+`pnpm install` printed three pairs of `WARN Failed to create bin …
+ENOENT` warnings and left the `nyx-kernel` / `nyx-agent` / `nyx-tools`
+shims missing. The install was healthy — the bins pointed at `dist/`
+build output, which cannot exist before the first build, and pnpm links
+package bins at install time and never retries after `pnpm build`.
+
+What shipped:
+
+- **Committed bin launchers** — the split and CLI bin entries now point
+  at committed stubs (`apps/split/bin/`, `apps/cli/bin/`) that spawn the
+  build output at runtime (spawn, never import: the mains run `main()`
+  at module load). Pre-build the launchers exit 1 with a plain-language
+  "run `pnpm install && pnpm build` first"; post-build the commands
+  behave exactly like `node apps/split/dist/*.js`.
+- **`scripts/check-bins.mjs`** — the class-killer guard: every workspace
+  `bin` must point at a git-tracked file; wired into the `test-fast` CI
+  lane.
+- **Docs** — TOOLING-NOTES gotcha #4; PROCESS-MODEL notes the package
+  bins.
+
+### Gate at tag time
+
+- 48/48 turbo tasks — 1319 tests (1298 passing + 21 docker-gated)
+- Verified twice: on the dev tree and on a fresh tarball extraction
+  running the exact README quickstart sequence — zero bin warnings,
+  shims present and functional pre- and post-build, build 25/25,
+  typecheck clean
+- typecheck, lint, format:check, SPDX 393/393, check-bins 4/4 clean
+
+### Artifact
+
+- **`nyx-0.7.2.tar.gz`** — the tagged tree via `git archive`
+  (prefix `nyx-0.7.2/`)
+- **sha256**: recorded at the `main` tip immediately after the tag (a
+  tree cannot contain the hash of its own archive); the tag annotation
+  and the GitHub release body carry it as well.
+
+The archive is deterministic — `git archive --format=tar.gz
+--prefix=nyx-0.7.2/ v0.7.2` reproduces it byte-for-byte. As before,
+GitHub's auto-generated "Source code (tar.gz)" uses its own archiver and
+will not match; the release asset is canonical.
+
+Signing note: the `v0.7.2` tag is annotated, not GPG-signed (no signing
+key is configured in the build environment — same honest posture as
+v0.7.0/v0.7.1). The tarball sha256 is the authenticity anchor.
+
+`v0.7.0` and `v0.7.1` and their artifacts are untouched.
+
 ## v0.7.1 — 2026-11-06 — the machine-assumption patch
 
 A first-run user report became this release: on Node 24.22.2 / WSL2 the

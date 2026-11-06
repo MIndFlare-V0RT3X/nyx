@@ -1,6 +1,6 @@
 {
   "name": "@nyx/security",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "NYX \u2014 security subsystem: engagement files, the technique-gated scope engine, findings DB, and report generation for authorized engagements",
   "type": "module",
   "license": "AGPL-3.0-or-later",
