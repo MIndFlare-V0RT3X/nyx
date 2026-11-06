@@ -43,7 +43,12 @@ function engagement(overrides: Partial<Engagement> = {}): Engagement {
     operator_id: "owner",
     authorized_at: T0 - 86_400_000,
     starts_at: T0 - 86_400_000,
-    expires_at: T0 + 86_400_000,
+    // Real-clock-anchored expiry, same as exploitation.test.ts: the tools
+    // runtime's scope verdict checks the window against Date.now(), so an
+    // absolute calendar expiry is a time bomb (the v0.7.2 fixture expired
+    // at 2026-11-06T12:00:00Z, two hours after release). Tests that need a
+    // short window override expires_at explicitly.
+    expires_at: Date.now() + 86_400_000,
     targets: {
       domains: ["example.com"],
       cidrs: ["203.0.113.0/24"],

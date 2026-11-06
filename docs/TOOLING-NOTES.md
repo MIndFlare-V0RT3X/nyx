@@ -88,3 +88,63 @@ module load and block until signalled, and agent-main's import guard keys
 off `argv[1]`, so the launchers spawn (never import) the entries.
 `scripts/check-bins.mjs`, wired into the `test-fast` CI lane, fails the
 build on any bin that points at a missing or untracked file.
+
+## 5. Timeout ceilings and poll budgets are machine budgets, not assertions
+
+**Symptom:** on a slow box (WSL2 under suite load), heavyweight
+integration tests fail with `Test timed out in 30000ms` or
+`until: condition not met in time` while the same tests pass on CI — and
+the failing set differs run to run (the v0.7.3 report: the same CLI test
+failed in one run at ×30701 ms and passed in the next at ✓24030 ms;
+natural durations on the slow box were 20–32 s against a 30 s ceiling).
+
+**Cause:** the ceilings (vitest `testTimeout`/`hookTimeout` at 30 s) and
+the poll budgets (`until()` defaults of 8–10 s) were sized against fast dev
+hardware. The integration suites build real runtimes — SQLite WAL with
+`synchronous=FULL` fsync per event batch, sandbox forks (`cp -a`), loopback
+servers — whose natural durations scale 3–5× on WSL2 (gotcha #1). A
+ceiling calibrated to a fast machine is a machine-speed assumption wearing
+an infra hat: it converts "slow but correct" into "failed".
+
+**Rule:** a deadline that exists to catch a hang is a machine budget —
+size it for the slowest supported machine (120 s ceilings and 60 s poll
+budgets in the heavyweight suites as of v0.7.3), never tighten it to make
+a failure easier to see, and never treat hitting it as a correctness
+signal. What a test _asserts_ stays on values, identities, and counts
+(gotcha #1's rule); the one sanctioned pattern for bounding time — a lower
+bound on a can-only-fire-late timer (e.g. the auto-deny grace) — is a
+safety property and carries a headroom comment. And in concurrency tests,
+"still running" must be an event the test controls (a gate the test
+releases), never a duration the machine grants — the R4-1 lesson: a fixed
+500 ms hold silently assumed eight fork-spawns settle inside ~1 s, and on
+a box where a spawn takes ~2 s the reap LEGALLY evicted the "running"
+child after it settled early.
+
+## 6. Absolute calendar dates in fixtures are time bombs
+
+**Symptom:** a suite that was green at release time starts failing en
+masse hours or days later with `denied by scope: engagement expired at
+2026-11-06T12:00:00.000Z` — 13 security-tool tests failed on every run
+after that instant, two hours after the v0.7.2 tag; the report
+generator's fixture had the same failure scheduled for 2026-12-01.
+
+**Cause:** the test rigs inject a frozen clock into THEIR components
+(store, limiter, resolver, engine), but code under test legitimately
+consults the REAL clock in places the rig does not control — the tools
+runtime's scope verdict checks engagement windows against `Date.now()`,
+and `generateReport` defaults to `Date.now()` when the test omits `now`.
+An engagement fixture anchored to an absolute calendar instant is checked
+against the real calendar whether the rig likes it or not.
+
+**Rule:** a fixture time window that must be ACTIVE must be anchored to
+the real clock at run time — `starts_at` frozen safely in the past (so
+the rig's own frozen clock sits inside the window) and `expires_at` at
+`Date.now() + <outliving any test run>` — never to a frozen absolute
+instant. Frozen absolute timestamps are fine only for fields that nothing
+outside the rig reads (deterministic rendering), and a test that
+exercises the expiry mechanism overrides `expires_at` explicitly.
+`Date.UTC(202…)` as a window end in a fixture is a scheduled outage. The
+audit that classified every such fixture lives in the v0.7.3 release
+notes; the fully-injected frozen-clock unit suites (scope engine,
+matcher, rate limiter — `NOW = 1_700_000_000_000`) are legitimately
+absolute, and cron's `nextFire` is a pure function of its input instant.

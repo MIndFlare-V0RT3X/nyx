@@ -7,6 +7,90 @@ as unreleased phases, recorded below in order.
 
 ## [Unreleased]
 
+## [0.7.3] — 2026-11-06
+
+A patch release from a third first-run report (the same WSL2 machine, now
+on a fresh v0.7.2 tarball — install clean with zero bin warnings, build
+and typecheck green): the suite failed at `@nyx/subagents` with
+`R4-1: the LRU reap NEVER destroys a still-running child's sandbox`
+(×17.8 s), and the CLI/server integration tests straggled at 20–32 s
+against a 30 s ceiling — the same test failing one run and passing the
+next. The code was correct everywhere; every failure was a machine-speed
+assumption, the same class v0.7.1 started hunting. The release gate then
+caught a second, worse assumption while verifying: engagement fixtures
+anchored to absolute calendar dates — one already expired at noon UTC on
+release day, another scheduled to detonate on 2026-12-01.
+
+### Fixed
+
+- **R4-1 is now event-driven** — the test held its "still-running child"
+  open with a fixed 500 ms-per-turn sleep, which silently assumed the
+  eight fill-spawns after it settle inside ~1 s. On a machine where a
+  fork-spawn takes ~2 s the child settled early, became the oldest
+  _settled_ sandbox, and the LRU reap then LEGALLY evicted it — the final
+  artifact read failed with `not_found … reaped past the retention cap`.
+  Reproduced deterministically by slowing the fills (the old test fails
+  with exactly that error; the rewrite passes under the same slowdown).
+  The harness provider gained `gated()`: the child's first model turn
+  blocks on a test-held promise, so "still running" is an event the test
+  controls, not a duration the machine grants. The test also asserts the
+  mid-flight invariant directly now — after the storm the gated child is
+  STILL listed running, proving the reap (which provably ran: the map hit
+  9 > cap 8) skipped live work — before releasing the gate.
+- **The calendar time bombs in the security fixtures** — the
+  exploitation/integration rigs froze their engagement windows to
+  2026-11-05T12:00Z → 2026-11-06T12:00Z. The rigs inject a frozen clock
+  into THEIR components, but the tools runtime's scope verdict checks the
+  window against the REAL `Date.now()` (as it must in production) — the
+  fixture expired at noon UTC, two hours after v0.7.2 shipped, and 13
+  tests failed on every later run with `denied by scope: engagement
+expired at 2026-11-06T12:00:00.000Z`. The report generator's fixture
+  had the same shape scheduled for 2026-12-01 (its scope gate also runs
+  on the real clock; the tests never inject `now`). Default fixture
+  windows are now anchored to the real clock — `starts_at` frozen in the
+  past so the rigs' frozen clocks sit inside the window, `expires_at`
+  `Date.now()` + 24h/26d so it is always active for the lifetime of a
+  run — and tests that exercise the expiry mechanism itself still
+  override `expires_at` explicitly. The suite-wide audit that found
+  these: every `expires_at`/`Date.UTC(202…)` fixture classified by
+  whether any real-clock path can read it (the fully-injected frozen-
+  clock unit suites are legitimately absolute; cron's `nextFire` is a
+  pure function of its input instant).
+- **The last wall-clock upper bound in the touched suites** —
+  `run.test.ts` asserted the whole non-interactive-approval turn finishes
+  in <10 s; on the slow box the turn takes 20 s+ while the ~2 s grace
+  still fires on time. The upper bound is gone; the lower bound (the
+  grace actually elapsed — the auto-deny timer can only fire LATE) stays
+  as the safety property it is, with the headroom comment it now carries.
+
+### Changed
+
+- **Timeout ceilings for the heavyweight integration suites** (cli,
+  server, subagents, security: 30 s → 120 s; e2e: 60 s → 120 s) and
+  **poll budgets** (every `until()` helper: 8–10 s → 60 s). These are
+  machine budgets, not assertions: the suites build real runtimes (WAL +
+  `synchronous=FULL` fsync per event batch, sandbox forks, loopback
+  servers) whose natural durations scale 3–5× on WSL2. A fast CI box
+  never notices; a slow box stops converting "slow but correct" into
+  "failed".
+- A stale comment in the server channel-approvals test ("400ms TTL" —
+  the actual TTL is 1200 ms) now tells the truth.
+
+### Added
+
+- **TOOLING-NOTES gotchas #5 and #6** — ceilings and poll budgets are
+  machine budgets (size for the slowest supported machine, never treat
+  hitting one as a correctness signal; "still running" is an event, not
+  a duration), and absolute calendar dates in fixtures are time bombs
+  when any real-clock path can read them.
+
+Gate: 48/48 turbo tasks, 1319 tests (1298 passing + 21 docker-gated) on
+Node 24.22.2 and Node 26.13.0, per-package counts identical across both;
+run both on the dev tree and on a fresh tarball extraction (the quickstart
+sequence); the slow-machine condition itself reproduced and verified gone
+(R4-1 under simulated 4× fork latency: old ×, new ✓); typecheck, lint,
+format:check, SPDX 393/393, check-bins 4/4 clean.
+
 ## [0.7.2] — 2026-11-06
 
 A patch release from a second first-run report (Kali Linux, fresh v0.7.1

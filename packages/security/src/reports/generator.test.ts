@@ -11,6 +11,13 @@ import { generateReport, OutOfScopeFindingError } from "./generator.js";
 import { verifyEvidence } from "./evidence.js";
 
 const NOW = Date.UTC(2026, 10, 5, 12, 0, 0);
+// The engagement window's END must be anchored to the REAL clock: the
+// generator's scope gate runs on `input.now ?? Date.now()` and these tests
+// never inject `now`, so an absolute calendar expiry is a time bomb (the
+// old 2026-12-01 fixture would have failed every test after that instant).
+// Evaluated ONCE at module scope so the fixture and the rendered-content
+// assertion below observe the same value.
+const WINDOW_EXPIRES = Date.now() + 26 * 86_400_000;
 
 const stacks: Array<() => Promise<void> | void> = [];
 afterAll(async () => {
@@ -30,7 +37,7 @@ function engagement(): Engagement {
     operator_id: "owner",
     authorized_at: Date.UTC(2026, 10, 1),
     starts_at: Date.UTC(2026, 10, 1),
-    expires_at: Date.UTC(2026, 11, 1),
+    expires_at: WINDOW_EXPIRES,
     targets: {
       domains: ["example.com"],
       cidrs: ["203.0.113.0/24"],
@@ -377,7 +384,7 @@ describe("generateReport — markdown (§2.4)", () => {
     // Engagement id + exact window (hard rule #6).
     expect(c).toContain("acme-q4-2026");
     expect(c).toContain(new Date(Date.UTC(2026, 10, 1)).toISOString());
-    expect(c).toContain(new Date(Date.UTC(2026, 11, 1)).toISOString());
+    expect(c).toContain(new Date(WINDOW_EXPIRES).toISOString());
     expect(c).toContain("Jane Smith, CISO");
     // All the §2.3 sections.
     for (const section of [

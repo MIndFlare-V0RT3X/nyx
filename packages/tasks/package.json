@@ -1,6 +1,6 @@
 {
   "name": "@nyx/tasks",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "NYX \u2014 durable tasks (restart-surviving long-running work on the subagent substrate)",
   "type": "module",
   "license": "AGPL-3.0-or-later",

@@ -333,8 +333,14 @@ describe("fork-per-child (§4.4)", () => {
 describe("§6.2 fan-out hardening (fork isolation + artifact security)", () => {
   it("R4-1: the LRU reap NEVER destroys a still-running child's sandbox", async () => {
     const { h } = await makeForkHarness(true, { max_total_per_turn: 2_000_000 });
-    // Child #1 publishes, then HOLDS (a real duration) — it stays running.
-    h.provider.script("slow-kid", artifactTurn("slow.txt"), 500);
+    // Child #1 publishes, then BLOCKS on a test-held gate — it stays running
+    // for exactly as long as the test decides, on any machine speed. (The
+    // previous shape held it with a fixed 500ms-per-turn sleep, which
+    // silently assumed the eight fills below settle inside that window; on
+    // a slow box they don't, the child settles early, and the reap then
+    // LEGALLY evicts it as the oldest settled entry. "Still running" must
+    // be an event the test controls, not a duration the machine grants.)
+    const slowGate = h.provider.gated("slow-kid", artifactTurn("slow.txt"));
     const slow = h.manager.spawn({ task: "slow-kid" }, h.parentCtx, {
       session_id: h.parent.session_id,
       turn_id: "t1",
@@ -342,10 +348,14 @@ describe("§6.2 fan-out hardening (fork isolation + artifact security)", () => {
     // Wait until it is provably running (poll — a fixed sleep flakes under
     // parallel suite load), then bury the map with 8 settled siblings — the
     // oldest settled entry (not the running one) is evicted.
-    const deadline = Date.now() + 5_000;
+    let slowId: string | undefined;
+    const deadline = Date.now() + 30_000;
     for (;;) {
       const listed = await h.manager.list(h.parent.session_id);
-      if (listed.length > 0 && listed[0]!.state === "running") break;
+      if (listed.length > 0 && listed[0]!.state === "running") {
+        slowId = listed[0]!.session_id;
+        break;
+      }
       if (Date.now() > deadline) {
         throw new Error(`slow-kid never reached running state (listed: ${JSON.stringify(listed)})`);
       }
@@ -359,7 +369,16 @@ describe("§6.2 fan-out hardening (fork isolation + artifact security)", () => {
       });
       expect(r.state).toBe("completed");
     }
+    // Mid-flight invariant, timing-independent: the storm pushed the sandbox
+    // map to 9 entries > cap 8, so the reap has provably run at fill-7's
+    // spawn — and the gated child is STILL listed running: live work was
+    // skipped, only a settled entry was evicted.
+    const mid = await h.manager.list(h.parent.session_id);
+    expect(mid.find((c) => c.session_id === slowId)?.state).toBe("running");
+
+    slowGate.release();
     const settled = await slow; // the running child survives the storm
+    expect(settled.session_id).toBe(slowId);
     expect(settled.state).toBe("completed");
     expect(settled.artifacts).toEqual([{ path: "artifacts/slow.txt", bytes: SEED.length }]);
 

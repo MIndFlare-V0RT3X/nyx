@@ -12,8 +12,12 @@ export default defineConfig({
     // test files applies, and it registers no tests, so vitest must not run it.
     exclude: ["**/node_modules/**", "**/dist/**", "src/harness.test.ts"],
     environment: "node",
-    testTimeout: 30000,
-    hookTimeout: 30000,
+    // Integration suites build real runtimes (sqlite WAL+FULL fsync, sandbox
+    // forks, loopback servers): seconds on a fast CI box, 3–5× that on WSL2.
+    // A 30s ceiling converted slow machines into flakes (v0.7.3); 120s is a
+    // machine budget, not a correctness bound.
+    testTimeout: 120000,
+    hookTimeout: 120000,
     passWithNoTests: true,
   },
 });

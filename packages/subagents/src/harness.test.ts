@@ -134,6 +134,7 @@ export class TaskDispatchProvider implements ModelProvider {
   private readonly byMarker = new Map<string, MockTurn[]>();
   private readonly fallback: MockTurn[] = [];
   private readonly holds = new Map<string, number>();
+  private readonly gates = new Map<string, Promise<void>>();
 
   constructor(models?: ModelInfo[]) {
     this.models = models ?? [
@@ -145,11 +146,27 @@ export class TaskDispatchProvider implements ModelProvider {
 
   /** Script the turns for every request whose last user message contains `marker`.
    * `holdMs` sleeps before the marker's turn yields — gives a scripted child a
-   * real duration (parallel-window and running-eviction tests). */
+   * real duration (parallel-window tests). */
   script(marker: string, turns: MockTurn[], holdMs = 0): this {
     this.byMarker.set(marker, [...turns]);
     if (holdMs > 0) this.holds.set(marker, holdMs);
     return this;
+  }
+
+  /** Script `marker` so its FIRST model turn blocks until the returned gate
+   * is released — an event-driven "still running" child that stays running
+   * for exactly as long as the test decides, independent of machine speed.
+   * (A fixed `holdMs` assumes the rest of the test finishes inside the
+   * window; on a slow box it doesn't, the child settles early, and the LRU
+   * reap legally becomes allowed to evict it — see fork.test.ts R4-1.) */
+  gated(marker: string, turns: MockTurn[]): { release(): void } {
+    this.byMarker.set(marker, [...turns]);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.gates.set(marker, gate);
+    return { release: () => release() };
   }
 
   /** Script the fallback queue (parent session requests). */
@@ -164,26 +181,37 @@ export class TaskDispatchProvider implements ModelProvider {
 
   async *complete(req: CompletionRequest): AsyncGenerator<ModelChunk, void, void> {
     this.requests.push(req);
-    const { turn, hold } = this.nextTurn(req);
+    const { turn, hold, gate } = this.nextTurn(req);
     if (turn === undefined) {
       throw new Error("task-dispatch provider: script exhausted");
     }
     if (!Array.isArray(turn)) {
       throw Object.assign(new Error(turn.fail.message), { name: turn.fail.name });
     }
+    if (gate !== undefined) await gate;
     if (hold > 0) await new Promise((r) => setTimeout(r, hold));
     for (const chunk of turn) yield chunk;
   }
 
-  private nextTurn(req: CompletionRequest): { turn: MockTurn | undefined; hold: number } {
+  private nextTurn(req: CompletionRequest): {
+    turn: MockTurn | undefined;
+    hold: number;
+    gate: Promise<void> | undefined;
+  } {
     const lastUser = [...req.messages].reverse().find((m) => m.role === "user");
     const text = lastUser?.content.map((b) => (b.type === "text" ? b.text : "")).join("") ?? "";
     for (const marker of this.byMarker.keys()) {
       if (text.includes(marker)) {
-        return { turn: this.byMarker.get(marker)!.shift(), hold: this.holds.get(marker) ?? 0 };
+        const gate = this.gates.get(marker);
+        if (gate !== undefined) this.gates.delete(marker); // one-shot: only the first turn waits
+        return {
+          turn: this.byMarker.get(marker)!.shift(),
+          hold: this.holds.get(marker) ?? 0,
+          gate,
+        };
       }
     }
-    return { turn: this.fallback.shift(), hold: 0 };
+    return { turn: this.fallback.shift(), hold: 0, gate: undefined };
   }
 }
 

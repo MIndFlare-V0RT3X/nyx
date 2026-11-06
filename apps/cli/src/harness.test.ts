@@ -152,8 +152,11 @@ export function repeatingMock(text: string): ModelProvider {
   };
 }
 
-/** Await a condition, polling at 25ms, up to `ms` (default 8s). */
-export async function until(cond: () => boolean | Promise<boolean>, ms = 8_000): Promise<void> {
+/** Await a condition, polling at 25ms, up to `ms` (default 60s). The
+ * deadline is a machine budget, not an assertion: every condition polled
+ * here is event-driven, and a slow box (WSL2 runs 3–5× slower) needs the
+ * headroom. Must stay under the package's testTimeout. */
+export async function until(cond: () => boolean | Promise<boolean>, ms = 60_000): Promise<void> {
   const deadline = Date.now() + ms;
   for (;;) {
     if (await cond()) return;

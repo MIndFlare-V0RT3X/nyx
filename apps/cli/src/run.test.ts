@@ -125,10 +125,14 @@ describe("runOneShot", () => {
         "approval required in non-interactive mode — denied; use `nyx chat`",
       );
       expect(stderr).toContain("✗ web.fetch: denied (approval)");
-      // The denial path must actually have waited for the grace period, and
-      // must not have hung: comfortably between 2s and a 10s sanity bound.
+      // The denial path must actually have waited for the ~2s grace: the
+      // auto-deny timer can only ever fire LATE, so this lower bound is a
+      // safety property and holds on any machine speed. The old upper bound
+      // (<10s on the WHOLE turn) was a machine-speed assumption — on a slow
+      // box the turn itself takes 20s+ while the grace still fires at ~2s.
+      // The turn completing at all is the no-hang proof; testTimeout is the
+      // ceiling. Timing is never asserted as an upper bound.
       expect(elapsed).toBeGreaterThanOrEqual(1_900);
-      expect(elapsed).toBeLessThan(10_000);
     } finally {
       await server.close();
     }

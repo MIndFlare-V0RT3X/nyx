@@ -96,7 +96,11 @@ async function makeRig(opts: {
   return { ...rig, apiPort };
 }
 
-async function until(cond: () => Promise<boolean> | boolean, ms = 8000): Promise<void> {
+/** Await a condition, polling at 25ms, up to `ms` (default 60s). The
+ * deadline is a machine budget, not an assertion: every condition polled
+ * here is event-driven, and a slow box (WSL2 runs 3–5× slower) needs the
+ * headroom. Must stay under the package's testTimeout. */
+async function until(cond: () => Promise<boolean> | boolean, ms = 60_000): Promise<void> {
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) {
     if (await cond()) return;
@@ -364,7 +368,7 @@ describe("channel approvals over Telegram (2.1.4)", () => {
       );
       return keyboards.length >= 2;
     });
-    // Let the 400ms TTL lapse: the engine auto-denies and withdraws.
+    // Let the 1200ms approval TTL lapse: the engine auto-denies and withdraws.
     await until(() =>
       telegram.sent.some((s) => s.args.text === "⏱ approval expired — action denied"),
     );

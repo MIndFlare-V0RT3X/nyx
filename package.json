@@ -1,7 +1,7 @@
 {
   "name": "nyx-monorepo",
   "private": true,
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "NYX \u2014 local-first, memory-first, security-first personal agent runtime. The harness, not the model.",
   "type": "module",
   "license": "AGPL-3.0-or-later",

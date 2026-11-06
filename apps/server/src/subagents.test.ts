@@ -151,7 +151,11 @@ function guestHeaders(): Record<string, string> {
   return { Authorization: `Bearer ${GUEST_TOKEN}`, "Content-Type": "application/json" };
 }
 
-async function until(check: () => Promise<boolean>, ms = 10_000): Promise<void> {
+/** Await a condition, polling at 25ms, up to `ms` (default 60s). The
+ * deadline is a machine budget, not an assertion: every condition polled
+ * here is event-driven, and a slow box (WSL2 runs 3–5× slower) needs the
+ * headroom. Must stay under the package's testTimeout. */
+async function until(check: () => Promise<boolean>, ms = 60_000): Promise<void> {
   const deadline = Date.now() + ms;
   for (;;) {
     if (await check()) return;

@@ -4,6 +4,88 @@ Every tagged release of NYX is recorded here. The artifact hash below is
 the authenticity anchor for its tarball — verify it before trusting a
 download (the how-to is in each entry).
 
+## v0.7.3 — 2026-11-06 — the slow-machine patch
+
+From a third first-run report (the same WSL2 machine, now on a fresh
+v0.7.2 tarball — install clean, zero bin warnings, build and typecheck
+green): the suite failed at `@nyx/subagents` with
+`R4-1: the LRU reap NEVER destroys a still-running child's sandbox`, and
+the CLI/server integration tests straggled at 20–32 s against a 30 s
+ceiling, the same test failing one run and passing the next. The code was
+correct everywhere; every failure was a machine-speed assumption — the
+class v0.7.1 started hunting, now finished for the integration suites.
+The release gate then caught a second, worse assumption while verifying:
+engagement fixtures anchored to absolute calendar dates — one already
+expired at noon UTC on release day, another scheduled to detonate on
+2026-12-01.
+
+What shipped:
+
+- **R4-1, event-driven** — the test's "still-running child" was held open
+  by a fixed 500 ms-per-turn sleep that assumed the eight fill-spawns
+  settle inside ~1 s; on a box where a spawn takes ~2 s the child settled
+  early and the LRU reap LEGALLY evicted it (`not_found … reaped past the
+retention cap`). The harness provider gained `gated()` — the child's
+  first model turn blocks on a test-held promise — so "still running" is
+  an event the test controls, and the test now asserts the mid-flight
+  invariant directly (the gated child is STILL running after the storm
+  that provably triggered the reap). The failure was reproduced
+  deterministically under simulated slow-fork conditions; the rewrite
+  passes under the same conditions.
+- **The calendar time bombs** — engagement fixtures anchored to absolute
+  dates: the exploitation/integration windows expired at
+  2026-11-06T12:00:00Z (two hours after v0.7.2 shipped; 13 tests failed
+  on every later run — the tools runtime's scope verdict checks the
+  window against the real clock, which the rigs' frozen clocks cannot
+  influence) and the report generator's was scheduled for 2026-12-01.
+  Default fixture windows are now real-clock-anchored (always active for
+  a run's lifetime); expiry-mechanism tests still override the window
+  explicitly. Found by this release's own gate, not by a user.
+- **The last wall-clock upper bound in the touched suites** — the
+  non-interactive-approval test asserted the whole turn finishes in
+  <10 s. Gone; the grace lower bound (a can-only-fire-late timer) stays
+  as a safety property.
+- **Machine budgets, sized for the slowest supported machine** —
+  `testTimeout`/`hookTimeout` 30 s → 120 s for cli, server, subagents and
+  security (e2e 60 s → 120 s), and every `until()` poll budget 8–10 s →
+  60 s. Deadlines that exist to catch hangs are not correctness
+  assertions.
+- **Docs** — TOOLING-NOTES gotchas #5 (ceilings and poll budgets are
+  machine budgets; "still running" is an event, not a duration) and #6
+  (absolute calendar dates in fixtures are time bombs).
+
+### Gate at tag time
+
+- 48/48 turbo tasks — 1319 tests (1298 passing + 21 docker-gated) on
+  Node 24.22.2 and Node 26.13.0, per-package counts identical across both
+- Verified twice: on the dev tree and on a fresh tarball extraction
+  running the exact README quickstart sequence
+- The slow-machine condition reproduced (R4-1 fails on the old shape
+  under simulated 4× fork latency) and verified gone (the rewrite passes
+  under the same conditions)
+- The time bombs verified: the suite runs green with the real clock past
+  the old fixtures' expiry (2026-11-06T12:00Z)
+- typecheck, lint, format:check, SPDX 393/393, check-bins 4/4 clean
+
+### Artifact
+
+- **`nyx-0.7.3.tar.gz`** — the tagged tree via `git archive` (content
+  from commit <tagged-sha>, prefix `nyx-0.7.3/`, <N> files)
+- **sha256**: recorded at the `main` tip immediately after the tag (a
+  tree cannot contain the hash of its own archive); the tag annotation
+  and the GitHub release body carry it as well.
+
+The archive is deterministic — `git archive --format=tar.gz
+--prefix=nyx-0.7.3/ v0.7.3` reproduces it byte-for-byte. As before,
+GitHub's auto-generated "Source code (tar.gz)" uses its own archiver and
+will not match; the release asset is canonical.
+
+Signing note: the `v0.7.3` tag is annotated, not GPG-signed (no signing
+key is configured in the build environment — same honest posture as
+v0.7.0/v0.7.1/v0.7.2). The tarball sha256 is the authenticity anchor.
+
+`v0.7.0`, `v0.7.1` and `v0.7.2` and their artifacts are untouched.
+
 ## v0.7.2 — 2026-11-06 — the install-hygiene patch
 
 From a second first-run report (Kali Linux, fresh v0.7.1 tarball):

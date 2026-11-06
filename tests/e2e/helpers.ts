@@ -67,7 +67,11 @@ export async function cleanupRigs(): Promise<void> {
   }
 }
 
-export async function until(cond: () => Promise<boolean> | boolean, ms = 8000): Promise<void> {
+/** Await a condition, polling at 25ms, up to `ms` (default 60s). The
+ * deadline is a machine budget, not an assertion: every condition polled
+ * here is event-driven, and a slow box (WSL2 runs 3–5× slower) needs the
+ * headroom. Must stay under the package's testTimeout. */
+export async function until(cond: () => Promise<boolean> | boolean, ms = 60_000): Promise<void> {
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) {
     if (await cond()) return;
