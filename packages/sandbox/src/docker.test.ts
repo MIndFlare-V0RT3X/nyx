@@ -12,6 +12,7 @@ import {
   checkDocker,
   egressNetworkCreateArgs,
   egressNetworkGatewayInspectArgs,
+  forkImageName,
 } from "./docker.js";
 import { isForkable } from "./fork.js";
 
@@ -57,6 +58,19 @@ afterAll(async () => {
 describe("DockerSandboxProvider (no daemon required)", () => {
   it("checkDocker is false for a missing docker binary", async () => {
     expect(await checkDocker("nyx-no-such-docker-bin")).toBe(false);
+  });
+
+  it("fork temp image names are lowercase-only docker repository references", () => {
+    // v0.7.4: `nyx-fork-${nanoid()}` died at `docker commit` with
+    // "invalid reference format: repository name must be lowercase"
+    // whenever nanoid drew an uppercase char (all but ~(36/62)^21 ≈
+    // 0.001% of 21-char draws) — red on the test-docker CI lane since
+    // its first run, invisible to every daemon-less dev machine. The
+    // name now draws lowercase-only; this hermetic line holds the
+    // regression in the fast lane.
+    for (let i = 0; i < 256; i++) {
+      expect(forkImageName()).toMatch(/^nyx-fork-[0-9a-z]{21}$/);
+    }
   });
 
   it("refuses allowlist without a binder and open always (Phase 6.1 semantics)", async () => {

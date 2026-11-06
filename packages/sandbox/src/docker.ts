@@ -14,7 +14,7 @@ import type { ChildProcess, ChildProcessWithoutNullStreams } from "node:child_pr
 import { promises as fsp } from "node:fs";
 import * as net from "node:net";
 import * as path from "node:path";
-import { nanoid } from "nanoid";
+import { customAlphabet, nanoid } from "nanoid";
 import type { ExecResult, Sandbox, SandboxProvider, SandboxSpec } from "@nyx/protocol";
 import { resolveContained } from "./paths.js";
 import type { ForkableSandbox } from "./fork.js";
@@ -299,6 +299,25 @@ interface EgressNet {
   ownsListeners: boolean;
 }
 
+/**
+ * Docker repository references are lowercase-only — `docker commit` dies
+ * with `invalid reference format: repository name … must be lowercase` on
+ * any uppercase byte. nanoid's default alphabet is mixed-case, so a fork's
+ * temp image draws from this lowercase-only alphabet instead (36^21 ≈ 2^109
+ * ids; collision odds stay astronomically low for a tag that lives
+ * minutes). Container names (`nyx-sbx-…`) and network names
+ * (`nyx-egress-…`) are different contracts — `[a-zA-Z0-9][a-zA-Z0-9_.-]*` —
+ * and keep nanoid. (v0.7.4: the mixed-case tag kept the test-docker CI
+ * lane red on every run it ever had; docker.test.ts asserts this
+ * hermetically.)
+ */
+const lowerId = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 21);
+
+/** The temp image a fork commits the parent to: `nyx-fork-<lowercase-id>`. */
+export function forkImageName(): string {
+  return `nyx-fork-${lowerId()}`;
+}
+
 class DockerSandbox implements ForkableSandbox {
   /** The sandbox id IS the container name: nyx-sbx-<nanoid>. */
   readonly id: string;
@@ -348,7 +367,7 @@ class DockerSandbox implements ForkableSandbox {
    * the parent after this returns — isolation is the point.
    */
   async fork(): Promise<Sandbox> {
-    const tempImage = `nyx-fork-${nanoid()}`;
+    const tempImage = forkImageName();
     const childName = `nyx-sbx-${nanoid()}`;
     const childHostDir = path.join(path.dirname(this.hostDir), childName);
 

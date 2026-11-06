@@ -148,3 +148,37 @@ audit that classified every such fixture lives in the v0.7.3 release
 notes; the fully-injected frozen-clock unit suites (scope engine,
 matcher, rate limiter — `NOW = 1_700_000_000_000`) are legitimately
 absolute, and cron's `nextFire` is a pure function of its input instant.
+
+## 7. Docker repository references are lowercase-only — and a release is not done until the CI conclusions are green
+
+**Symptom:** the `test-docker` CI lane fails in ~60 s at
+`DockerSandbox.fork` with
+
+```
+Error: docker commit (fork) failed (exit 1): invalid reference format: repository name (library/nyx-fork-…) must be lowercase
+```
+
+— on every run the lane ever had: v0.7.1, v0.7.2 and v0.7.3 all shipped
+with it red. No dev machine has a docker daemon (the 21 docker-gated
+tests run only in CI), and the release ritual verified the push —
+ls-remote, release asset digests — without ever reading the Actions
+conclusions.
+
+**Cause:** two naming contracts were conflated. Container names
+(`nyx-sbx-…`) and network names (`nyx-egress-…`) follow
+`[a-zA-Z0-9][a-zA-Z0-9_.-]*` and may be mixed-case; image repository
+references (the targets of `docker commit`/`tag`/`push`) allow only
+lowercase. `fork()` built the temp image as `nyx-fork-${nanoid()}` and
+nanoid's default alphabet is mixed-case — an uppercase byte appears in
+all but ~(36/62)^21 ≈ 0.001% of 21-char draws, so the tag was rejected
+essentially every time it met a real daemon.
+
+**Rule:** anything handed to `docker commit`/`tag`/`push` as a
+repository name is generated from a lowercase-only alphabet
+(`forkImageName()` draws `0-9a-z`, and a hermetic test holds that line
+so the fast lane catches a regression). Container and network names
+keep nanoid. And the process rule, the expensive half of this gotcha:
+a release is not done when the push lands — it is done when the CI
+conclusions are green. Push-time checks prove delivery, not health; a
+surface that runs only in CI (the daemon lane) is evidenced only by
+its lane's conclusion.
