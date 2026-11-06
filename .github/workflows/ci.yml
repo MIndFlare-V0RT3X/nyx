@@ -107,6 +107,10 @@ jobs:
       - run: pnpm lint
       # Phase 7.5: the SPDX audit is a release invariant, not a one-off.
       - run: node scripts/check-spdx.mjs
+      # v0.7.2: package bins must point at committed files — pnpm links
+      # them at install time, before any build output exists (the
+      # install-time ENOENT class; docs/TOOLING-NOTES.md gotcha #4).
+      - run: node scripts/check-bins.mjs
 
   test-docker:
     name: test-docker (bypass suite + security image)
