@@ -1,6 +1,6 @@
 {
   "name": "@nyx/sandbox",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "description": "NYX \u2014 sandbox package",
   "type": "module",
   "license": "AGPL-3.0-or-later",

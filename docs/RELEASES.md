@@ -4,6 +4,56 @@ Every tagged release of NYX is recorded here. The artifact hash below is
 the authenticity anchor for its tarball — verify it before trusting a
 download (the how-to is in each entry).
 
+## v0.7.4 — 2026-11-07 — the docker-case patch
+
+From reading the CI conclusions nobody had read: the `test-docker` lane
+had been red on every run it ever had — v0.7.1, v0.7.2 and v0.7.3 all
+shipped without its verdict being checked (the local gate has no docker
+daemon; the 21 docker-gated tests run only on the CI daemon, and the
+release ritual verified pushes — ls-remote, release asset digests —
+without ever reading the Actions conclusions). The failure was
+deterministic and one line deep, in the class the previous three
+patches were hunting: an assumption about the environment, this time
+Docker's naming contract rather than the machine's speed.
+
+What shipped:
+
+- **The fork temp image is a valid docker repository reference** —
+  `DockerSandbox.fork()` tagged the parent commit
+  `nyx-fork-${nanoid()}`; nanoid's default alphabet is mixed-case and
+  docker repository references are lowercase-only, so `docker commit`
+  died with `invalid reference format: repository name
+(library/nyx-fork-…) must be lowercase` on all but ~0.001% of 21-char
+  draws (both ids the CI lane ever printed drew uppercase).
+  `forkImageName()` now draws from a lowercase-only alphabet
+  (36^21 ≈ 2^109 ids); container names (`nyx-sbx-…`) and network names
+  (`nyx-egress-…`) keep nanoid — different contracts that allow mixed
+  case. The fork temp image was the only image-reference construction
+  in the tree.
+- **A hermetic regression line** — the name is asserted lowercase-only
+  in the no-daemon describe block of `docker.test.ts`, so the fast
+  lane holds the fix on every push.
+- **Docs** — TOOLING-NOTES gotcha #7: docker repository references are
+  lowercase-only, and a release is not done when the push lands — it is
+  done when the CI conclusions are green.
+
+### Gate at tag time
+
+- 48/48 turbo tasks on Node 24.22.2 (the .nvmrc pin) — 1320 tests
+  (1299 passing + 21 docker-gated) in the hermetic lane
+- The Node 26 fast-lane leg and the docker lane verified on GitHub
+  Actions after the push, conclusions checked — the step the previous
+  three releases skipped
+- typecheck, lint, format:check, SPDX 393/393, check-bins 4/4 clean
+
+### Artifact
+
+- **`nyx-0.7.4.tar.gz`** — the tagged tree via `git archive` (content
+  from commit <tagged-sha>, prefix `nyx-0.7.4/`, <N-files> files)
+- **sha256**: recorded at the `main` tip immediately after the tag (a
+  tree cannot contain the hash of its own archive); the tag annotation
+  and the GitHub release body carry it as well.
+
 ## v0.7.3 — 2026-11-06 — the slow-machine patch
 
 From a third first-run report (the same WSL2 machine, now on a fresh

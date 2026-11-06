@@ -7,6 +7,44 @@ as unreleased phases, recorded below in order.
 
 ## [Unreleased]
 
+## [0.7.4] — 2026-11-07
+
+A patch release from reading the CI conclusions nobody had read: the
+`test-docker` lane had been red on every run it ever had — v0.7.1,
+v0.7.2 and v0.7.3 all shipped without its verdict being checked. The
+failure was deterministic and one line deep: `DockerSandbox.fork()`
+tagged the parent-commit temp image `nyx-fork-${nanoid()}`, nanoid's
+default alphabet is mixed-case, and docker repository references are
+lowercase-only — `docker commit` died with `invalid reference format:
+repository name (library/nyx-fork-…) must be lowercase` on all but
+~0.001% of draws. No developer machine ever saw it: the 21
+docker-gated tests run only on the CI daemon.
+
+### Fixed
+
+- **The fork temp image is a valid docker repository reference** —
+  `forkImageName()` draws from a lowercase-only alphabet (`0-9a-z`, 21
+  chars — 36^21 ≈ 2^109 ids; collision odds stay astronomically low
+  for a tag that lives minutes). Container names (`nyx-sbx-…`) and
+  network names (`nyx-egress-…`) keep nanoid — different contracts
+  (`[a-zA-Z0-9][a-zA-Z0-9_.-]*`) that allow mixed case. Audit: the
+  fork temp image was the only image-reference construction in the
+  tree.
+- **A hermetic regression line** — the fork temp image name is asserted
+  lowercase-only in the no-daemon describe block of
+  `packages/sandbox/src/docker.test.ts`, so the fast lane (every push,
+  both Node majors) holds the fix; previously nothing runnable without
+  a daemon could catch the class.
+
+### Changed
+
+- **The release ritual gained a final step** — a release is not done
+  when the push lands; it is done when the CI conclusions are green.
+  Push-time checks (ls-remote, release asset digests) prove delivery,
+  not health — a surface that runs only in CI is evidenced only by its
+  lane's conclusion. TOOLING-NOTES gotcha #7 carries the contract and
+  the rule.
+
 ## [0.7.3] — 2026-11-06
 
 A patch release from a third first-run report (the same WSL2 machine, now

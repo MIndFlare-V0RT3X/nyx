@@ -1,6 +1,6 @@
 {
   "name": "@nyx/evals",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "description": "NYX \u2014 behavioral evals: the harness's integration tests. Scripted mock providers, assertions on the session EVENT LOG (never the final text), a recorded baseline, and a regression gate.",
   "private": true,
   "type": "module",
