@@ -4,6 +4,47 @@ Every tagged release of NYX is recorded here. The artifact hash below is
 the authenticity anchor for its tarball — verify it before trusting a
 download (the how-to is in each entry).
 
+## v0.7.6 — 2026-11-07 — the e2e-ordering patch
+
+One flaky assertion, caught by v0.7.5's tag-run CI while the parallel
+main run of the same tree ran green: the e2e "two subagents in one
+round" test asserted `quick.start >= slow.start` — that dispatch order
+maps to timestamp order across two async child sessions. On one loaded
+runner the quick child's `turn.started` landed 25 ms before the slow
+child's. Scheduler noise at millisecond scale, asserted as if it were
+semantics.
+
+What shipped:
+
+- **The parallelism proof asserts the overlap, not the order** —
+  `quick.start < slow.end` (impossible under sequential dispatch: the
+  second spawn cannot start until the first completes) plus the
+  existing `quick.end < slow.end`, both of which held on the failing
+  runner. The start-order assertion is gone; it added narrative, not
+  proof.
+- **The "not deferred dispatch" guards widened 2 s → 10 s** — machine
+  budgets sized for the slowest supported box (a fork-spawn takes
+  ~2 s there), per gotcha #5's rule; the bound rules out deferred
+  dispatch, it does not measure.
+- **Docs** — TOOLING-NOTES gotcha #9: timestamp ordering across async
+  sessions is scheduler noise, not semantics.
+
+### Gate at tag time
+
+- 48/48 turbo tasks on Node 24.22.2 (the .nvmrc pin) — 1320 tests
+  (1299 passing + 21 docker-gated) in the hermetic lane
+- The Node 26 fast-lane leg and the docker lane verified on GitHub
+  Actions after the push, conclusions checked
+- typecheck, lint, format:check, SPDX 393/393, check-bins 4/4 clean
+
+### Artifact
+
+- **`nyx-0.7.6.tar.gz`** — the tagged tree via `git archive` (content
+  from commit <tagged-sha>, prefix `nyx-0.7.6/`, <N-files> files)
+- **sha256**: recorded at the `main` tip immediately after the tag (a
+  tree cannot contain the hash of its own archive); the tag annotation
+  and the GitHub release body carry it as well.
+
 ## v0.7.5 — 2026-11-07 — the version-check patch
 
 One byte wide. v0.7.4's fork fix unblocked the test-docker lane's test

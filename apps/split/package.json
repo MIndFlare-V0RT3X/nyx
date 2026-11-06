@@ -1,6 +1,6 @@
 {
   "name": "@nyx/split",
-  "version": "0.7.5",
+  "version": "0.7.6",
   "description": "NYX \u2014 the Phase 7.3 process split: nyx-kernel (trusted: config, credentials, policy, audit, DB), nyx-agent (semi-trusted: loop, prompts, model), nyx-tools (untrusted: tools, sandbox)",
   "type": "module",
   "license": "AGPL-3.0-or-later",

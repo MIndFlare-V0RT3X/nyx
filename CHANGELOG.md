@@ -7,6 +7,35 @@ as unreleased phases, recorded below in order.
 
 ## [Unreleased]
 
+## [0.7.6] — 2026-11-07
+
+A patch release for one flaky assertion that v0.7.5's tag-run CI
+caught: the e2e "two subagents in one round" test asserted
+`quick.start >= slow.start` — that dispatch order maps to timestamp
+order across two async child sessions. On one loaded runner the quick
+child's `turn.started` landed 25 ms before the slow child's
+(`expected 1794004633956 to be greater than or equal to 1794004633981`);
+the same tree ran green on the parallel main run, both fast lanes and
+every dev machine. Scheduler noise at millisecond scale, asserted as
+if it were semantics.
+
+### Fixed
+
+- **The parallelism proof asserts the overlap, not the order** —
+  `quick.start < slow.end` (impossible under sequential dispatch: the
+  second spawn cannot start until the first completes) plus the
+  existing `quick.end < slow.end`. The start-order assertion is gone;
+  it added narrative, not proof. The "not deferred dispatch" guards
+  widened from 2 s to 10 s machine budgets (a fork-spawn takes ~2 s on
+  the slowest supported box — gotcha #5's rule).
+
+### Changed
+
+- **TOOLING-NOTES gotcha #9** — timestamp ordering across async
+  sessions is scheduler noise, not semantics: cross-process timestamps
+  may prove containment and budget-bounded lateness, never dispatch
+  order.
+
 ## [0.7.5] — 2026-11-07
 
 A patch release one byte wide. v0.7.4's fork fix unblocked the

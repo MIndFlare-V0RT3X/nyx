@@ -1,6 +1,6 @@
 {
   "name": "@nyx/memory",
-  "version": "0.7.5",
+  "version": "0.7.6",
   "description": "NYX \u2014 memory package",
   "type": "module",
   "license": "AGPL-3.0-or-later",
