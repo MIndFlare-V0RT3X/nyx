@@ -212,3 +212,29 @@ expect the next layer: verify the whole remaining chain by evidence,
 not by the fact that it is written down. v0.7.4's "the docker lane
 verified post-push" was true of the test step and false of the rebuild
 step behind it — the lesson that produced this gotcha and v0.7.5.
+
+## 9. Timestamp ordering across async sessions is scheduler noise, not semantics
+
+**Symptom:** the e2e "two subagents in one round" test failed on ONE CI
+runner (v0.7.5's tag run) with `expected 1794004633956 to be greater
+than or equal to 1794004633981` — the quick child's `turn.started`
+preceded the slow child's by 25 ms — while the same tree ran green on
+the parallel main run, on both fast lanes, and on every dev machine.
+
+**Cause:** the test asserted that dispatch order maps to timestamp
+order across two asynchronously-started child sessions (`quick.start >=
+slow.start`). Both children spawn in one round; each records
+`turn.started` when its own session begins, and that interleaving is
+scheduler noise at millisecond scale. The assertion added narrative
+("quick started after slow even began") but no proof value — the
+parallelism proof is the OVERLAP (`quick.start < slow.end`, impossible
+under sequential dispatch) plus `quick.end < slow.end`, both of which
+the test already had and both of which held on the failing runner.
+
+**Rule:** assert the overlap, not the order. Cross-process timestamps
+may prove containment (a start before an end) and budget-bounded
+lateness (gotcha #5's machine budgets); they may not prove that two
+async sessions began in dispatch order. The failing numbers are the
+reproduction: archived in the v0.7.5 tag run's log (job 128195213942),
+not reproducible on an unloaded dev box — the assumption was about the
+scheduler, and only a loaded scheduler disproves it.

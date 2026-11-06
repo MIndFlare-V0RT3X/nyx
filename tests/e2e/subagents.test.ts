@@ -167,15 +167,25 @@ describe("e2e: two subagents in one round (Phase 3 §5.2)", () => {
     const slowWindow = await window(slow.subagent_session_id);
     const quickWindow = await window(quick.subagent_session_id);
 
-    // Parallel proof: the QUICK child started AND finished while the SLOW
-    // child was still running. Under sequential dispatch this is impossible
-    // — the second spawn would only start after the first completed.
-    expect(quickWindow.start).toBeGreaterThanOrEqual(slowWindow.start);
+    // Parallel proof: the QUICK child's whole execution happened while the
+    // SLOW child was still running. The load-bearing half is the OVERLAP —
+    // quick started before slow ENDED (under sequential dispatch the second
+    // spawn cannot start until the first completes, so overlap is
+    // impossible) — together with quick finishing first. Start-ORDER across
+    // two async child sessions is deliberately NOT asserted: each child
+    // records turn.started when its own session begins, and the runner
+    // recorded the quick child's 25 ms before the slow one's on a loaded CI
+    // box (v0.7.5's tag run) — dispatch order does not order timestamps
+    // (TOOLING-NOTES gotcha #9).
+    expect(quickWindow.start).toBeLessThan(slowWindow.end);
     expect(quickWindow.end).toBeLessThan(slowWindow.end);
     // …and not because the slow one started late: both started together,
-    // right after the parent's round began.
-    expect(slowWindow.start - parentTurnStartedAt).toBeLessThan(2_000);
-    expect(quickWindow.start - parentTurnStartedAt).toBeLessThan(2_000);
+    // right after the parent's round began. 10 s is a machine budget, not
+    // an assertion — a fork-spawn takes ~2 s on the slowest supported box
+    // (gotcha #5); the bound exists to rule out deferred dispatch, not to
+    // measure.
+    expect(slowWindow.start - parentTurnStartedAt).toBeLessThan(10_000);
+    expect(quickWindow.start - parentTurnStartedAt).toBeLessThan(10_000);
 
     // Child sessions: kind subagent, correct lineage, isolated logs.
     const { openSessionStore } = await import("@nyx/session");
