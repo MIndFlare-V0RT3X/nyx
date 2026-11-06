@@ -182,3 +182,33 @@ a release is not done when the push lands — it is done when the CI
 conclusions are green. Push-time checks prove delivery, not health; a
 surface that runs only in CI (the daemon lane) is evidenced only by
 its lane's conclusion.
+
+## 8. A check that has never run is a check that has never passed
+
+**Symptom:** v0.7.4's fork fix unblocked the `test-docker` lane's test
+step — the full docker-gated suite ran green on a real daemon for the
+first time in the lane's life — and the lane then failed at the step
+BEHIND it: the `Dockerfile.security` rebuild verification, exit 1 with
+no diagnostic (the checks pipe to `grep -q`). The ffuf check grepped
+for `version 2.3.0`; the binary prints `ffuf version: 2.3.0` — a
+colon, not a space. One byte; red lane.
+
+**Cause:** dead code behind a failure. A verification step that is
+unreachable behind an earlier failure accumulates unvalidated
+assumptions — its greps were written from how the tools were ASSUMED
+to report versions, and never once executed until v0.7.4 promoted
+them all to release blockers. (Exactly one was wrong: the other five
+checks matched. The sqlmap stage's `^1.10.11` against `1.10.11#pip`
+and nmap's `Nmap version 7.93` against the compiled-in
+`%s version %s ( %s )` banner were byte-verified before pushing the
+fix — verified, not assumed.)
+
+**Rule:** when unblocking a lane, validate the newly-reachable steps
+against real bytes before pushing — the pinned binaries download
+WITHOUT docker, so the exact command+grep pairs can be reproduced
+locally (`ffuf -V`, `sqlmap --version`, `strings` on the extracted deb
+for a banner that won't run). And when a fix unblocks a dead step,
+expect the next layer: verify the whole remaining chain by evidence,
+not by the fact that it is written down. v0.7.4's "the docker lane
+verified post-push" was true of the test step and false of the rebuild
+step behind it — the lesson that produced this gotcha and v0.7.5.

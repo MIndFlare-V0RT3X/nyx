@@ -70,12 +70,17 @@ RUN case "${TARGETARCH}" in \
  && rm -rf /tmp/pd
 
 # The version checks FAIL the build on mismatch (grep's exit code is the
-# check — a wrong or broken binary stops the build).
+# check — a wrong or broken binary stops the build). Formats are
+# byte-verified against the pinned binaries' actual output (v0.7.5): the
+# ProjectDiscovery tools print "… Version: vX.Y.Z"; ffuf prints
+# "ffuf version: X.Y.Z" — colon, no v (a space there kept the never-run
+# check failing, TOOLING-NOTES gotcha #8); nmap prints
+# "Nmap version X.YY ( url )".
 RUN subfinder -version 2>&1 | grep -q "v${SUBFINDER_VERSION#v}" \
  && httpx -version 2>&1 | grep -q "v${HTTPX_VERSION#v}" \
  && nuclei -version 2>&1 | grep -q "v${NUCLEI_VERSION#v}" \
  && katana -version 2>&1 | grep -q "v${KATANA_VERSION#v}" \
- && ffuf -V | grep -q "version ${FFUF_VERSION#v}" \
+ && ffuf -V | grep -q "version: ${FFUF_VERSION#v}" \
  && nmap --version | grep -q "Nmap version ${NMAP_VERSION%%+*}"
 
 # sqlmap: pinned pip release (upstream publishes on PyPI; the pin is the
