@@ -43,11 +43,13 @@ What shipped:
 
 ### Artifact
 
-- **`nyx-0.7.1.tar.gz`** — the tagged tree via `git archive`
-  (prefix `nyx-0.7.1/`)
-- **sha256**: recorded at the `main` tip immediately after the tag (a
-  tree cannot contain the hash of its own archive); the tag annotation
-  and the GitHub release body carry it as well.
+- **`nyx-0.7.1.tar.gz`** — the tagged tree via `git archive` (content
+  from commit `697f43f`, prefix `nyx-0.7.1/`, 694 files)
+- **sha256**: `7ac0ab5c969a7ee4099506f8b77d4756b463f6532c7a6f5db108c9a958cb7ead`
+  (recorded here at the `main` tip; a tree cannot contain the hash of its
+  own archive — the hash covers the bytes that would include it — so the
+  tagged copy of this file points at the tag annotation, the GitHub
+  release body, and this section instead)
 
 The archive is deterministic — `git archive --format=tar.gz
 --prefix=nyx-0.7.1/ v0.7.1` reproduces it byte-for-byte. As with v0.7.0,
