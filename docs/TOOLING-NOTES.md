@@ -61,3 +61,30 @@ major), check `prebuilds/` coverage for the _exact_ Node majors you
 support before assuming the install is fast — and keep the Node support
 matrix in CI (`test-fast` on `[24, 26]`) so an "only works on one Node
 version" assumption fails a check instead of a user.
+
+## 4. Package `bin` entries link at INSTALL time — point them at committed files
+
+**Symptom:** a fresh `pnpm install` (before the first build) prints three
+pairs of warnings —
+
+```
+WARN Failed to create bin at …/node_modules/.bin/nyx-kernel. ENOENT: no such file or directory, open '…/apps/split/dist/kernel-main.js'
+```
+
+— and the install still succeeds, which understates the damage: the
+`nyx-kernel` / `nyx-agent` / `nyx-tools` shims are left MISSING, and pnpm
+never retries the links after `pnpm build` (reported by a first-run user
+against v0.7.1, on a fresh tarball extraction).
+
+**Cause:** pnpm links a package's `bin` entries into dependents'
+`node_modules/.bin` during install — before any build output exists. The
+split (and CLI) bins pointed at `dist/*.js`, which a fresh clone cannot
+have yet.
+
+**Rule:** every `bin` target must be a file git tracks. The entrypoints
+are committed launcher stubs (`apps/split/bin/`, `apps/cli/bin/`) that
+spawn the build output at runtime — kernel/tools mains run `main()` at
+module load and block until signalled, and agent-main's import guard keys
+off `argv[1]`, so the launchers spawn (never import) the entries.
+`scripts/check-bins.mjs`, wired into the `test-fast` CI lane, fails the
+build on any bin that points at a missing or untracked file.

@@ -130,5 +130,12 @@ node apps/split/dist/agent-main.js --config nyx.config.yaml \
   --runtime-dir ~/.nyx/runtime --message "hello across the boundary"
 ```
 
+The same entrypoints sit behind the package bins (`nyx-kernel`,
+`nyx-agent`, `nyx-tools`) for tooling that depends on `@nyx/split` — the
+bin targets are committed launchers (`apps/split/bin/`) that exec these
+dist files, so the shims exist from `pnpm install` onward (v0.7.2; before
+that they pointed straight at `dist/` and never linked on a fresh
+install).
+
 The reference orchestration (scrubbed child envs, boot await, teardown) is
 `launchSplitStack` in `@nyx/split` — the same code the e2e suite uses.

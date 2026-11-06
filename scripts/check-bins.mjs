@@ -38,9 +38,7 @@ for (const dir of packageDirs) {
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   if (!manifest.bin) continue;
   const bins =
-    typeof manifest.bin === "string"
-      ? { [manifest.name ?? dir]: manifest.bin }
-      : manifest.bin;
+    typeof manifest.bin === "string" ? { [manifest.name ?? dir]: manifest.bin } : manifest.bin;
   for (const [name, target] of Object.entries(bins)) {
     checked += 1;
     const abs = resolve(root, dir, target);
