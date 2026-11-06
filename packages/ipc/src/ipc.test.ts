@@ -36,7 +36,7 @@ describe("IpcServer + IpcClient (real unix socket)", () => {
     const server = new IpcServer({
       socketPath,
       token: "tok-1",
-      serverVersion: "0.7.0-test",
+      serverVersion: "0.7.1-test",
       handler: async (request) => {
         if (request.type === "echo") return { echoed: request.value };
         if (request.type === "fail") {
@@ -49,7 +49,7 @@ describe("IpcServer + IpcClient (real unix socket)", () => {
     try {
       const client = new IpcClient({ socketPath, token: "tok-1", role: "kernel-client" });
       await client.connect();
-      expect(client.serverVersion).toBe("0.7.0-test");
+      expect(client.serverVersion).toBe("0.7.1-test");
       const result = await client.request<{ echoed: number }>({ type: "echo", value: 42 });
       expect(result).toEqual({ echoed: 42 });
       await expect(client.request({ type: "fail" })).rejects.toMatchObject({

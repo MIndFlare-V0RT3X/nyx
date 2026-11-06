@@ -1,6 +1,6 @@
 {
   "name": "@nyx/scope",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "NYX \u2014 scope package",
   "type": "module",
   "license": "AGPL-3.0-or-later",

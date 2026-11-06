@@ -7,6 +7,66 @@ as unreleased phases, recorded below in order.
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-11-06
+
+A patch release from a first-run user report (Node 24.22.2 / WSL2: install,
+build, typecheck, and 39/48 turbo tasks green with exactly one failure —
+the harness works; a timing assertion written against the dev machine did
+not). Two fixes, one audit, and the Node matrix that makes the class of
+bug visible before a user hits it.
+
+### Fixed
+
+- **The machine-bound timing assertion in the session replay suite** —
+  `packages/session/src/replay.test.ts` asserted a file-backed append of
+  10,000 events completes in under 5 s, a bound calibrated on the dev
+  machine. WSL2's 9p/virtio filesystem makes file-backed SQLite writes
+  3–5× slower than native Linux: the append ran ~28.5 s with the store
+  itself completely correct (the same workload's identity test passed
+  everywhere). The redundant 10k scale block is deleted from
+  `replay.test.ts`; its unique ground-truth count assertions (expected
+  messages / tool calls / approvals / usage derived from the generator)
+  moved into `replay-10k.test.ts`, which stays the canonical 10k test —
+  byte-identity of projections across replay, now held to the generator's
+  expectations as well. Timings are logged, never asserted: speed is a
+  cost concern, not a correctness concern. Not fixed by raising the
+  constant — the assumption went, not the number.
+- **Repo-wide audit of hardcoded performance bounds** — every
+  `toBeLessThan/OrEqual` with a large numeric bound in the test suite
+  inventoried and classified (the full table ships in the v0.7.1 release
+  notes). Outcome: the two deleted session assertions were the suite's
+  only machine-speed assumptions. The bounds that remain are correctness:
+  the sandbox kill-promptness bounds (a wall-clock kill that never
+  completes is a broken sandbox, not a slow one), the approval-TTL bounds
+  (semantic `createdAt + ttl` arithmetic, not machine speed), and
+  dimensionless caps (chars, tokens, rows, indices).
+
+### Changed
+
+- **`better-sqlite3` ^11.8.1 → ^12.11.1** (13 manifests) — prebuilds for
+  Node 24 and 26: `pnpm install` drops from a ~4-minute node-gyp source
+  build (11.x has no Node 24 prebuild) to seconds on both majors.
+  Verified native on 24.22.2 and 26.13.0.
+
+### Added
+
+- **CI Node matrix** — `test-fast` runs on `[24, 26]` (fail-fast off,
+  per-leg turbo cache keys so a 24 result can never serve the 26 leg);
+  `test-docker` stays on 24. `.github/BRANCH_PROTECTION.md` now lists the
+  per-leg required checks.
+- **README quickstart leads with the Node requirement** — Node 24 LTS via
+  `nvm use` before any command; Node 26 supported by better-sqlite3 12.x,
+  `.nvmrc` is the verified pin. CONTRIBUTING's prerequisites line matches.
+- **`docs/TOOLING-NOTES.md`** — the environment gotchas, each with symptom,
+  cause, and rule: WSL2 file-backed timing (never assert absolute
+  wall-clock in tests), the `[m`/`[0m` display artifact (verify bytes
+  before declaring a file broken), and better-sqlite3 prebuild coverage
+  per Node major.
+
+Gate: 48/48 turbo tasks on **both** Node 24.22.2 and Node 26.13.0 — 1319
+tests each (1298 passing + 21 docker-gated), identical per-package counts;
+typecheck, lint, format:check, and the SPDX audit (388/388) clean.
+
 ## [0.7.0] — 2026-11-06
 
 The first publishable release: Phases 0–7, feature-complete against the

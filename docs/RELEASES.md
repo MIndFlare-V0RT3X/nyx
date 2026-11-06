@@ -4,6 +4,62 @@ Every tagged release of NYX is recorded here. The artifact hash below is
 the authenticity anchor for its tarball — verify it before trusting a
 download (the how-to is in each entry).
 
+## v0.7.1 — 2026-11-06 — the machine-assumption patch
+
+A first-run user report became this release: on Node 24.22.2 / WSL2 the
+harness installed, built, typechecked, and ran 39/48 turbo tasks green —
+the one failure was `expect(appendMs).toBeLessThan(5000)` in the session
+replay suite failing at ~28.5 s with the store itself completely correct.
+The code was right; the assertion was written against the dev machine.
+
+What shipped:
+
+- **Timing-bound removal (the reported failure)** — the redundant 10k
+  scale block in `replay.test.ts` (which carried the two wall-clock
+  bounds) is deleted; its unique ground-truth count assertions moved into
+  `replay-10k.test.ts`, the canonical 10k test: byte-identity of
+  projections across replay, now checked against the generator's expected
+  counts too. Timings are logged, never asserted.
+- **better-sqlite3 ^11.8.1 → ^12.11.1** — prebuilds for Node 24 and 26;
+  installs drop from a ~4-minute source build to seconds on both.
+- **The hardcoded-perf-bound audit** — every large numeric
+  `toBeLessThan/OrEqual` in the suite classified correctness vs
+  machine-speed assumption. The two deleted session assertions were the
+  only machine-speed assumptions. Kept as correctness: the sandbox
+  kill-promptness bounds (a wall-clock kill that never completes is a
+  broken sandbox) and the approval-TTL bounds (semantic
+  `createdAt + ttl` arithmetic). Full table in the GitHub release body.
+- **CI Node matrix** — `test-fast` on `[24, 26]`; `test-docker` on 24.
+- **README quickstart leads with the Node requirement**; new
+  `docs/TOOLING-NOTES.md` (WSL2 timing, the `[m`/`[0m` display artifact,
+  prebuild coverage).
+
+### Gate at tag time
+
+- 48/48 turbo tasks on **both** Node 24.22.2 and Node 26.13.0 — 1319
+  tests each (1298 passing + 21 docker-gated), identical per-package
+  counts
+- typecheck, lint, format:check, SPDX (388/388) clean
+
+### Artifact
+
+- **`nyx-0.7.1.tar.gz`** — the tagged tree via `git archive`
+  (prefix `nyx-0.7.1/`)
+- **sha256**: recorded at the `main` tip immediately after the tag (a
+  tree cannot contain the hash of its own archive); the tag annotation
+  and the GitHub release body carry it as well.
+
+The archive is deterministic — `git archive --format=tar.gz
+--prefix=nyx-0.7.1/ v0.7.1` reproduces it byte-for-byte. As with v0.7.0,
+GitHub's auto-generated "Source code (tar.gz)" uses its own archiver and
+will not match; the release asset is canonical.
+
+Signing note: the `v0.7.1` tag is annotated, not GPG-signed (no signing
+key is configured in the build environment — same honest posture as
+v0.7.0). The tarball sha256 is the authenticity anchor.
+
+`v0.7.0` and its artifact are untouched by this release.
+
 ## v0.7.0 — 2026-11-06 — the first publishable release
 
 Phases 0–7 complete and feature-complete against the original roadmap:

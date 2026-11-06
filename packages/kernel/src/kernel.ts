@@ -45,7 +45,7 @@ import { ServiceRegistryImpl, ToolRegistryImpl } from "./registry.js";
 import { satisfies } from "./semver.js";
 
 export interface KernelOptions {
-  /** Kernel API version plugin ranges are checked against. Default "0.7.0". */
+  /** Kernel API version plugin ranges are checked against. Default "0.7.1". */
   version?: string;
   /** Backing tool registry; a fresh one is created when omitted. */
   tools?: ToolRegistry;
@@ -78,7 +78,7 @@ export class KernelImpl implements Kernel {
   #closed = false;
 
   constructor(options?: KernelOptions) {
-    this.version = options?.version ?? "0.7.0";
+    this.version = options?.version ?? "0.7.1";
     this.#backingTools = options?.tools ?? new ToolRegistryImpl();
     this.hooks = new HookBusImpl(this.#hookScope());
     this.tools = this.#toolFacade();
@@ -430,7 +430,7 @@ export class KernelImpl implements Kernel {
   }
 }
 
-/** Create a kernel. `version` defaults to "0.7.0". */
+/** Create a kernel. `version` defaults to "0.7.1". */
 export function createKernel(options?: KernelOptions): KernelImpl {
   return new KernelImpl(options);
 }

@@ -1,6 +1,6 @@
 {
   "name": "@nyx/ipc",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "NYX \u2014 the kernel-process IPC: versioned JSON-RPC over a token-authenticated unix socket (the Phase 7.3 process split's boundary)",
   "type": "module",
   "license": "AGPL-3.0-or-later",

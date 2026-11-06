@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BRAND } from "@nyx/config";
 
-const FALLBACK_VERSION = "0.7.0";
+const FALLBACK_VERSION = "0.7.1";
 
 function readVersion(): string {
   try {
@@ -25,5 +25,5 @@ function readVersion(): string {
 /** The @nyx/server workspace package version. */
 export const SERVER_VERSION: string = readVersion();
 
-/** Brand + version, e.g. "nyx/0.7.0" — the health endpoint's `version` field. */
+/** Brand + version, e.g. "nyx/0.7.1" — the health endpoint's `version` field. */
 export const SERVER_ID: string = `${BRAND.name}/${SERVER_VERSION}`;
