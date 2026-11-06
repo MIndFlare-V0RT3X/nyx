@@ -4,6 +4,47 @@ Every tagged release of NYX is recorded here. The artifact hash below is
 the authenticity anchor for its tarball — verify it before trusting a
 download (the how-to is in each entry).
 
+## v0.7.5 — 2026-11-07 — the version-check patch
+
+One byte wide. v0.7.4's fork fix unblocked the test-docker lane's test
+step — the full docker-gated suite ran green on a real daemon for the
+first time in the lane's life — and the lane then failed at the step
+behind it: the `Dockerfile.security` rebuild verification, which no
+run had ever reached (every prior run died at the test step above it).
+The ffuf version check grepped for `version 2.3.0`; the binary prints
+`ffuf version: 2.3.0` — a colon. A check that had never executed was
+never wrong until it ran.
+
+What shipped:
+
+- **The ffuf check greps the real output** — `"version:
+${FFUF_VERSION#v}"`, byte-verified against the pinned ffuf v2.3.0.
+- **The remaining chain verified by evidence, not assumption** — the
+  four other ProjectDiscovery checks matched already; sqlmap's
+  `1.10.11#pip` satisfies the anchored `^1.10.11`; nmap's compiled-in
+  `%s version %s ( %s )` banner with its `7.93` constant satisfies
+  `Nmap version 7.93`. All reproduced locally by downloading the
+  pinned binaries — no docker needed to validate the checks.
+- **Docs** — TOOLING-NOTES gotcha #8: a check that has never run is a
+  check that has never passed.
+
+### Gate at tag time
+
+- 48/48 turbo tasks on Node 24.22.2 (the .nvmrc pin) — 1320 tests
+  (1299 passing + 21 docker-gated) in the hermetic lane
+- The Node 26 fast-lane leg and the docker lane (the test step AND
+  the Dockerfile.security rebuild) verified on GitHub Actions after
+  the push, conclusions checked
+- typecheck, lint, format:check, SPDX 393/393, check-bins 4/4 clean
+
+### Artifact
+
+- **`nyx-0.7.5.tar.gz`** — the tagged tree via `git archive` (content
+  from commit <tagged-sha>, prefix `nyx-0.7.5/`, <N-files> files)
+- **sha256**: recorded at the `main` tip immediately after the tag (a
+  tree cannot contain the hash of its own archive); the tag annotation
+  and the GitHub release body carry it as well.
+
 ## v0.7.4 — 2026-11-07 — the docker-case patch
 
 From reading the CI conclusions nobody had read: the `test-docker` lane

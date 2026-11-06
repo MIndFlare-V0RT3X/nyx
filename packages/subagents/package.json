@@ -1,6 +1,6 @@
 {
   "name": "@nyx/subagents",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "description": "NYX \u2014 subagent system (context-isolated child sessions)",
   "type": "module",
   "license": "AGPL-3.0-or-later",

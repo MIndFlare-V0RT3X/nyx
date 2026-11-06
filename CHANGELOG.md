@@ -7,6 +7,38 @@ as unreleased phases, recorded below in order.
 
 ## [Unreleased]
 
+## [0.7.5] — 2026-11-07
+
+A patch release one byte wide. v0.7.4's fork fix unblocked the
+`test-docker` lane's test step — the full docker-gated suite ran green
+on a real daemon for the first time — and the lane then failed at the
+step behind it: the `Dockerfile.security` rebuild verification, which
+no run had ever reached (every prior run died at the test step above
+it). Its ffuf version check grepped for `version 2.3.0`; the binary
+prints `ffuf version: 2.3.0` — a colon. A check that had never
+executed was never wrong until it ran.
+
+### Fixed
+
+- **The ffuf version check greps the binary's actual output** —
+  `"version: ${FFUF_VERSION#v}"` (byte-verified: ffuf v2.3.0 prints
+  `ffuf version: 2.3.0`). The whole remaining chain was verified by
+  evidence before the push, not assumption: the four other
+  ProjectDiscovery checks matched already; sqlmap's `1.10.11#pip`
+  satisfies the anchored `^1.10.11`; nmap's compiled-in
+  `%s version %s ( %s )` banner with its `7.93` constant satisfies
+  `Nmap version 7.93`. All reproduced locally by downloading the
+  pinned binaries — no docker needed to validate the checks.
+
+### Changed
+
+- **TOOLING-NOTES gotcha #8** — a check that has never run is a check
+  that has never passed: when a fix unblocks a dead step, validate the
+  newly-reachable steps against real bytes before pushing, and expect
+  the next layer. v0.7.4's "the docker lane verified post-push" was
+  true of the test step and false of the rebuild step behind it; the
+  v0.7.4 GitHub release body carries the addendum.
+
 ## [0.7.4] — 2026-11-07
 
 A patch release from reading the CI conclusions nobody had read: the
