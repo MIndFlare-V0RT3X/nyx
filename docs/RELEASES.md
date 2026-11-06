@@ -70,10 +70,12 @@ retention cap`). The harness provider gained `gated()` — the child's
 ### Artifact
 
 - **`nyx-0.7.3.tar.gz`** — the tagged tree via `git archive` (content
-  from commit <tagged-sha>, prefix `nyx-0.7.3/`, <N> files)
-- **sha256**: recorded at the `main` tip immediately after the tag (a
-  tree cannot contain the hash of its own archive); the tag annotation
-  and the GitHub release body carry it as well.
+  from commit `f148fed`, prefix `nyx-0.7.3/`, 701 files)
+- **sha256**: `382291fff89790ec89d55a2942231dd4f4f2638240fde7b46ab85ce332fd2e02`
+  (recorded here at the `main` tip; a tree cannot contain the hash of its
+  own archive — the hash covers the bytes that would include it — so the
+  tagged copy of this file points at the tag annotation, the GitHub
+  release body, and this section instead)
 
 The archive is deterministic — `git archive --format=tar.gz
 --prefix=nyx-0.7.3/ v0.7.3` reproduces it byte-for-byte. As before,
